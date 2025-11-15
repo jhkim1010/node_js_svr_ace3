@@ -1,0 +1,14 @@
+
+services:
+  syncace:
+    image: sync-ace
+    container_name: syncace
+    build: ./
+    restart: always
+    env_file: ./.env
+    ports:
+      - '3030:3030'
+    stdin_open: true
+    tty: true
+
+ 
