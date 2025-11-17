@@ -7,6 +7,13 @@ const codigosRouter = require('./codigos');
 const todocodigosRouter = require('./todocodigos');
 const gastoInfoRouter = require('./gasto_info');
 const gastosRouter = require('./gastos');
+const colorRouter = require('./color');
+const creditoventasRouter = require('./creditoventas');
+const clientesRouter = require('./clientes');
+const tiposRouter = require('./tipos');
+const vtagsRouter = require('./vtags');
+const onlineVentasRouter = require('./online_ventas');
+const logsRouter = require('./logs');
 
 const router = Router();
 
@@ -19,6 +26,13 @@ router.use('/codigos', codigosRouter);
 router.use('/todocodigos', todocodigosRouter);
 router.use('/gasto_info', gastoInfoRouter);
 router.use('/gastos', gastosRouter);
+router.use('/color', colorRouter);
+router.use('/creditoventas', creditoventasRouter);
+router.use('/clientes', clientesRouter);
+router.use('/tipos', tiposRouter);
+router.use('/vtags', vtagsRouter);
+router.use('/online_ventas', onlineVentasRouter);
+router.use('/logs', logsRouter);
 
 module.exports = router;
 

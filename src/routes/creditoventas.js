@@ -6,12 +6,12 @@ const router = Router();
 
 router.get('/', async (req, res) => {
     try {
-        const Codigos = getModelForRequest(req, 'Codigos');
-        const records = await Codigos.findAll({ limit: 100, order: [['id_codigo', 'DESC']] });
+        const Creditoventas = getModelForRequest(req, 'Creditoventas');
+        const records = await Creditoventas.findAll({ limit: 100, order: [['creditoventa_id', 'DESC']] });
         res.json(records);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to list codigos', details: err.message });
+        res.status(500).json({ error: 'Failed to list creditoventas', details: err.message });
     }
 });
 
@@ -19,24 +19,24 @@ router.get('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
-        const Codigos = getModelForRequest(req, 'Codigos');
-        const record = await Codigos.findByPk(id);
+        const Creditoventas = getModelForRequest(req, 'Creditoventas');
+        const record = await Creditoventas.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to fetch codigo', details: err.message });
+        res.status(500).json({ error: 'Failed to fetch creditoventa', details: err.message });
     }
 });
 
 router.post('/', async (req, res) => {
     try {
-        const Codigos = getModelForRequest(req, 'Codigos');
+        const Creditoventas = getModelForRequest(req, 'Creditoventas');
         
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            // codigos는 codigo만 기본 키로 사용
-            const result = await handleBatchSync(req, res, Codigos, 'codigo', 'Codigos');
+            // creditoventas는 creditoventa_id만 기본 키로 사용
+            const result = await handleBatchSync(req, res, Creditoventas, 'creditoventa_id', 'Creditoventas');
             return res.status(200).json(result);
         }
         
@@ -45,19 +45,19 @@ router.post('/', async (req, res) => {
         if (Array.isArray(rawData)) {
             // 배열인 경우 BATCH_SYNC와 동일하게 처리
             req.body.data = rawData;
-            const result = await handleBatchSync(req, res, Codigos, 'codigo', 'Codigos');
+            const result = await handleBatchSync(req, res, Creditoventas, 'creditoventa_id', 'Creditoventas');
             return res.status(200).json(result);
         }
         
         // 일반 단일 생성 요청 처리
         const cleanedData = removeSyncField(rawData);
-        const dataToCreate = filterModelFields(Codigos, cleanedData);
-        const created = await Codigos.create(dataToCreate);
+        const dataToCreate = filterModelFields(Creditoventas, cleanedData);
+        const created = await Creditoventas.create(dataToCreate);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ Codigos 생성 에러:', err);
+        console.error('\n❌ Creditoventas 생성 에러:', err);
         res.status(400).json({ 
-            error: 'Failed to create codigo', 
+            error: 'Failed to create creditoventa', 
             details: err.message,
             errorType: err.constructor.name
         });
@@ -68,16 +68,16 @@ router.put('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
-        const Codigos = getModelForRequest(req, 'Codigos');
+        const Creditoventas = getModelForRequest(req, 'Creditoventas');
         const cleanedData = removeSyncField(req.body);
-        const dataToUpdate = filterModelFields(Codigos, cleanedData);
-        const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id } });
+        const dataToUpdate = filterModelFields(Creditoventas, cleanedData);
+        const [count] = await Creditoventas.update(dataToUpdate, { where: { creditoventa_id: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
-        const updated = await Codigos.findByPk(id);
+        const updated = await Creditoventas.findByPk(id);
         res.json(updated);
     } catch (err) {
         console.error(err);
-        res.status(400).json({ error: 'Failed to update codigo', details: err.message });
+        res.status(400).json({ error: 'Failed to update creditoventa', details: err.message });
     }
 });
 
@@ -85,13 +85,13 @@ router.delete('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
-        const Codigos = getModelForRequest(req, 'Codigos');
-        const count = await Codigos.destroy({ where: { id_codigo: id } });
+        const Creditoventas = getModelForRequest(req, 'Creditoventas');
+        const count = await Creditoventas.destroy({ where: { creditoventa_id: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         res.status(204).end();
     } catch (err) {
         console.error(err);
-        res.status(400).json({ error: 'Failed to delete codigo', details: err.message });
+        res.status(400).json({ error: 'Failed to delete creditoventa', details: err.message });
     }
 });
 

@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, handleBatchSync } = require('../utils/batch-sync-handler');
+const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
 
 const router = Router();
 
@@ -41,7 +41,8 @@ router.post('/', async (req, res) => {
         
         // 일반 단일 생성 요청 처리
         const rawData = req.body.new_data || req.body;
-        const dataToCreate = removeSyncField(rawData);
+        const cleanedData = removeSyncField(rawData);
+        const dataToCreate = filterModelFields(Todocodigos, cleanedData);
         const created = await Todocodigos.create(dataToCreate);
         res.status(201).json(created);
     } catch (err) {
@@ -59,7 +60,8 @@ router.put('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Todocodigos = getModelForRequest(req, 'Todocodigos');
-        const dataToUpdate = removeSyncField(req.body);
+        const cleanedData = removeSyncField(req.body);
+        const dataToUpdate = filterModelFields(Todocodigos, cleanedData);
         const [count] = await Todocodigos.update(dataToUpdate, { where: { id_todocodigo: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Todocodigos.findByPk(id);

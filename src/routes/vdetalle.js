@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, handleBatchSync } = require('../utils/batch-sync-handler');
+const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
 
 const router = Router();
 
@@ -33,25 +33,18 @@ router.post('/', async (req, res) => {
     try {
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
         
-        console.log('\n📥 Vdetalle POST 요청 수신');
-        console.log('Request body:', JSON.stringify(req.body, null, 2));
-        
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            console.log(`🔄 BATCH_SYNC 처리 시작: ${req.body.data.length}개 항목`);
             const result = await handleBatchSync(req, res, Vdetalle, 'id_vdetalle', 'Vdetalle');
-            console.log('✅ BATCH_SYNC 처리 완료:', JSON.stringify(result, null, 2));
             return res.status(200).json(result);
         }
         
         // 일반 단일 생성 요청 처리
         const rawData = req.body.new_data || req.body;
-        console.log('Raw data:', JSON.stringify(rawData, null, 2));
-        const dataToCreate = removeSyncField(rawData);
-        console.log('Data to create:', JSON.stringify(dataToCreate, null, 2));
+        const cleanedData = removeSyncField(rawData);
+        const dataToCreate = filterModelFields(Vdetalle, cleanedData);
         
         const created = await Vdetalle.create(dataToCreate);
-        console.log('✅ Vdetalle 생성 성공:', JSON.stringify(created.toJSON(), null, 2));
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Vdetalle 생성 에러:');
@@ -87,7 +80,8 @@ router.put('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
-        const dataToUpdate = removeSyncField(req.body);
+        const cleanedData = removeSyncField(req.body);
+        const dataToUpdate = filterModelFields(Vdetalle, cleanedData);
         const [count] = await Vdetalle.update(dataToUpdate, { where: { id_vdetalle: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Vdetalle.findByPk(id);

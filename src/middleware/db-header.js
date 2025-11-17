@@ -25,38 +25,6 @@ function parseDbHeader(req, res, next) {
         ssl: dbSsl === 'true' || dbSsl === '1'
     };
     
-    // 화면에 헤더 정보 출력 (비밀번호 포함)
-    const timestamp = new Date().toISOString();
-    
-    console.log('\n╔═══════════════════════════════════════════════════════════╗');
-    console.log(`║ [${timestamp}] 요청 수신 - ${req.method} ${req.path}`);
-    console.log('╠═══════════════════════════════════════════════════════════╣');
-    console.log('║ 모든 요청 헤더 정보:');
-    console.log('╠═══════════════════════════════════════════════════════════╣');
-    
-    // 모든 헤더 출력
-    Object.keys(req.headers).forEach(key => {
-        console.log(`║   ${key}: ${req.headers[key]}`);
-    });
-    
-    console.log('╠═══════════════════════════════════════════════════════════╣');
-    console.log('║ 헤더에서 읽은 데이터베이스 연결 정보:');
-    console.log(`║   서버 URL:  ${dbHost}:${dbPort}`);
-    console.log(`║   데이터베이스명: ${dbName}`);
-    console.log(`║   사용자명:  ${dbUser}`);
-    console.log(`║   비밀번호:  ${dbPassword || 'N/A'}`);
-    console.log(`║   SSL 사용:  ${req.dbConfig.ssl ? 'Yes' : 'No'}`);
-    console.log('╚═══════════════════════════════════════════════════════════╝\n');
-    
-    // 응답 헤더에 DB 연결 정보 추가 (비밀번호 제외, 디버깅용)
-    res.setHeader('X-DB-Connection-Info', JSON.stringify({
-        host: dbHost,
-        port: dbPort,
-        database: dbName,
-        user: dbUser,
-        ssl: req.dbConfig.ssl
-    }));
-    
     next();
 }
 

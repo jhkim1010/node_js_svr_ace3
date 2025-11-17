@@ -11,10 +11,29 @@ function removeSyncField(data) {
     return cleaned;
 }
 
+// 모델에 정의된 필드만 남기는 함수
+function filterModelFields(Model, data) {
+    if (!data || typeof data !== 'object') return data;
+    if (!Model || !Model.rawAttributes) return data;
+    
+    // 모델에 정의된 필드명 목록 가져오기
+    const definedFields = Object.keys(Model.rawAttributes);
+    
+    // 정의된 필드만 필터링
+    const filtered = {};
+    for (const key of definedFields) {
+        if (key in data) {
+            filtered[key] = data[key];
+        }
+    }
+    
+    return filtered;
+}
+
 // BATCH_SYNC 처리를 위한 공통 함수
 async function handleBatchSync(req, res, Model, primaryKey, modelName) {
-    console.log(`\n🔄 BATCH_SYNC 요청 수신 (${modelName}): ${req.body.data.length}개 항목`);
-    console.log('Received batch data:', JSON.stringify(req.body, null, 2));
+    // 데이터 개수를 req에 저장 (로깅용)
+    req._dataCount = Array.isArray(req.body.data) ? req.body.data.length : 1;
     
     const results = [];
     const errors = [];
@@ -29,16 +48,19 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
         // b_sincronizado_node_svr 필드 제거
         const cleanedItem = removeSyncField(item);
         
+        // 모델에 정의되지 않은 필드 제거
+        const filteredItem = filterModelFields(Model, cleanedItem);
+        
         // primary key 확인 (단일 키 또는 복합 키)
         const hasPrimaryKey = Array.isArray(primaryKey) 
-            ? primaryKey.every(key => cleanedItem[key] !== undefined && cleanedItem[key] !== null)
-            : cleanedItem[primaryKey] !== undefined && cleanedItem[primaryKey] !== null;
+            ? primaryKey.every(key => filteredItem[key] !== undefined && filteredItem[key] !== null)
+            : filteredItem[primaryKey] !== undefined && filteredItem[primaryKey] !== null;
         
         if (hasPrimaryKey) {
-            itemsToUpdate.push({ item: cleanedItem, index: i });
+            itemsToUpdate.push({ item: filteredItem, index: i });
             updateIndices.push(i);
         } else {
-            itemsToInsert.push({ item: cleanedItem, index: i });
+            itemsToInsert.push({ item: filteredItem, index: i });
             insertIndices.push(i);
         }
     });
@@ -47,8 +69,6 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
     if (itemsToInsert.length > 0) {
         try {
             const insertData = itemsToInsert.map(({ item }) => item);
-            console.log(`📦 일괄 생성 시도 (${modelName}): ${insertData.length}개 항목`);
-            console.log('Insert data sample:', JSON.stringify(insertData[0], null, 2));
             
             const created = await Model.bulkCreate(insertData, { 
                 returning: true,
@@ -62,7 +82,6 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                     data: record 
                 });
             });
-            console.log(`✅ ${itemsToInsert.length}개 항목 일괄 생성 완료 (${modelName})`);
         } catch (err) {
             console.error(`\n❌ 일괄 생성 실패 (${modelName}):`);
             console.error('   에러 타입:', err.constructor.name);
@@ -80,13 +99,11 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
             console.error('');
             
             // bulkCreate 실패 시 개별 처리
-            console.log(`🔄 개별 처리로 전환 (${modelName})...`);
             for (const { item, index } of itemsToInsert) {
                 try {
-                    console.log(`   처리 중: 인덱스 ${index}`);
-                    const result = await Model.create(item);
+                    const filteredItem = filterModelFields(Model, item);
+                    const result = await Model.create(filteredItem);
                     results.push({ index, action: 'created', data: result });
-                    console.log(`   ✅ 인덱스 ${index} 성공`);
                 } catch (individualErr) {
                     console.error(`   ❌ 인덱스 ${index} 실패:`, individualErr.message);
                     if (individualErr.errors && Array.isArray(individualErr.errors)) {
@@ -121,7 +138,9 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                 }, {})
                 : { [primaryKey]: item[primaryKey] };
             
-            const [count] = await Model.update(item, { where: whereCondition });
+            // 모델에 정의된 필드만 필터링
+            const filteredItem = filterModelFields(Model, item);
+            const [count] = await Model.update(filteredItem, { where: whereCondition });
             
             if (count > 0) {
                 const result = Array.isArray(primaryKey)
@@ -130,7 +149,7 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                 results.push({ index, action: 'updated', data: result });
             } else {
                 // primary key가 있지만 레코드가 없으면 insert
-                const result = await Model.create(item);
+                const result = await Model.create(filteredItem);
                 results.push({ index, action: 'created', data: result });
             }
         } catch (err) {
@@ -148,8 +167,6 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
     results.sort((a, b) => a.index - b.index);
     errors.sort((a, b) => a.index - b.index);
     
-    console.log(`✅ BATCH_SYNC 완료 (${modelName}): 성공 ${results.length}개, 실패 ${errors.length}개\n`);
-    
     return {
         success: true,
         message: `처리 완료: 성공 ${results.length}개, 실패 ${errors.length}개`,
@@ -160,5 +177,5 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
     };
 }
 
-module.exports = { removeSyncField, handleBatchSync };
+module.exports = { removeSyncField, filterModelFields, handleBatchSync };
 

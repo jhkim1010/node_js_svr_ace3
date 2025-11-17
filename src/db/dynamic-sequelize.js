@@ -15,26 +15,19 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
         return connectionPool.get(key);
     }
     
-    // 연결 정보 로깅
-    console.log('\n╔═══════════════════════════════════════════════════════════╗');
-    console.log('║ Sequelize 연결 생성 시도');
-    console.log('╠═══════════════════════════════════════════════════════════╣');
-    console.log(`║   Host: ${host}`);
-    console.log(`║   Port: ${port} (parsed: ${parseInt(port, 10)})`);
-    console.log(`║   Database: ${database}`);
-    console.log(`║   User: ${user}`);
-    console.log(`║   Password: ${password}`);
-    console.log(`║   SSL: ${ssl}`);
-    console.log(`║   Connection Key: ${key}`);
-    console.log('╚═══════════════════════════════════════════════════════════╝\n');
-    
     // 새로운 연결 생성
     const sequelize = new Sequelize(database, user, password, {
         host: host,
         port: parseInt(port, 10),
         dialect: 'postgres',
         dialectOptions: ssl ? { ssl: { rejectUnauthorized: false } } : {},
-        pool: { max: 5, idle: 10000 },
+        pool: {
+            max: 50,              // 최대 연결 수 (100개 동시 클라이언트 대응)
+            min: 2,               // 최소 연결 수 (항상 유지할 연결)
+            idle: 10000,          // 유휴 연결 유지 시간 (10초)
+            acquire: 30000,       // 연결 획득 대기 시간 (30초)
+            evict: 1000           // 유휴 연결 체크 주기 (1초)
+        },
         logging: false,  // Sequelize 쿼리 로깅 비활성화
         // 연결 실패 시 재시도 설정
         retry: {
@@ -55,25 +48,6 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     });
     
     connectionPool.set(key, sequelize);
-    
-    // 연결 테스트 (비동기, 에러는 쿼리 시점에 발생)
-    sequelize.authenticate()
-        .then(() => {
-            console.log('✅ 데이터베이스 연결 성공!\n');
-        })
-        .catch((err) => {
-            console.error('\n❌ 데이터베이스 연결 실패!');
-            console.error('   에러 타입:', err.constructor.name);
-            console.error('   에러 메시지:', err.message);
-            console.error('   연결 정보:');
-            console.error(`     Host: ${host}`);
-            console.error(`     Port: ${port}`);
-            console.error(`     Database: ${database}`);
-            console.error(`     User: ${user}`);
-            console.error(`     Password: ${password}`);
-            console.error('   전체 에러:', err);
-            console.error('');
-        });
     
     return sequelize;
 }
