@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post('/', async (req, res) => {
         // BATCH_SYNC 작업 처리 (복합키: id_gasto, codigo)
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             const result = await handleBatchSync(req, res, GastoInfo, ['id_gasto', 'codigo'], 'GastoInfo');
+            await notifyBatchSync(req, GastoInfo, result);
             return res.status(200).json(result);
         }
         
@@ -45,6 +47,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(GastoInfo, cleanedData);
         const created = await GastoInfo.create(dataToCreate);
+        await notifyDbChange(req, GastoInfo, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ GastoInfo 생성 에러:', err);
@@ -67,6 +70,7 @@ router.put('/:id_gasto/:codigo', async (req, res) => {
         const [count] = await GastoInfo.update(dataToUpdate, { where: { id_gasto: id, codigo } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await GastoInfo.findOne({ where: { id_gasto: id, codigo } });
+        await notifyDbChange(req, GastoInfo, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -80,8 +84,10 @@ router.delete('/:id_gasto/:codigo', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id_gasto' });
     try {
         const GastoInfo = getModelForRequest(req, 'GastoInfo');
+        const toDelete = await GastoInfo.findOne({ where: { id_gasto: id, codigo } });
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await GastoInfo.destroy({ where: { id_gasto: id, codigo } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, GastoInfo, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);

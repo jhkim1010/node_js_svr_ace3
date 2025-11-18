@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post('/', async (req, res) => {
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             // vtags는 vtag_id만 기본 키로 사용
             const result = await handleBatchSync(req, res, Vtags, 'vtag_id', 'Vtags');
+            await notifyBatchSync(req, Vtags, result);
             return res.status(200).json(result);
         }
         
@@ -46,6 +48,7 @@ router.post('/', async (req, res) => {
             // 배열인 경우 BATCH_SYNC와 동일하게 처리
             req.body.data = rawData;
             const result = await handleBatchSync(req, res, Vtags, 'vtag_id', 'Vtags');
+            await notifyBatchSync(req, Vtags, result);
             return res.status(200).json(result);
         }
         
@@ -53,6 +56,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(Vtags, cleanedData);
         const created = await Vtags.create(dataToCreate);
+        await notifyDbChange(req, Vtags, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Vtags 생성 에러:', err);
@@ -74,6 +78,7 @@ router.put('/:id', async (req, res) => {
         const [count] = await Vtags.update(dataToUpdate, { where: { vtag_id: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Vtags.findByPk(id);
+        await notifyDbChange(req, Vtags, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -86,8 +91,10 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Vtags = getModelForRequest(req, 'Vtags');
+        const toDelete = await Vtags.findByPk(id);
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await Vtags.destroy({ where: { vtag_id: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, Vtags, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);

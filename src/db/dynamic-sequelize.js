@@ -1,4 +1,5 @@
 const { Sequelize } = require('sequelize');
+const { setupDbListener } = require('../services/websocket-service');
 
 // 연결 풀: 동일한 DB 연결 정보는 재사용
 const connectionPool = new Map();
@@ -48,6 +49,11 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     });
     
     connectionPool.set(key, sequelize);
+    
+    // WebSocket LISTEN 리스너 설정 (비동기, 에러는 무시)
+    setupDbListener(host, port, database, user, password, ssl).catch(() => {
+        // LISTEN 설정 실패는 조용히 무시 (이미 설정되어 있을 수 있음)
+    });
     
     return sequelize;
 }

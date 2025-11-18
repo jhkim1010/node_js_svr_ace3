@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -48,6 +49,7 @@ router.post('/', async (req, res) => {
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             const result = await handleBatchSync(req, res, Gastos, 'id_ga', 'Gastos');
+            await notifyBatchSync(req, Gastos, result);
             return res.status(200).json(result);
         }
         
@@ -58,6 +60,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(Gastos, cleanedData);
         const created = await Gastos.create(dataToCreate);
+        await notifyDbChange(req, Gastos, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Gastos 생성 에러:');
@@ -87,7 +90,8 @@ router.put('/:id', async (req, res) => {
         const dataToUpdate = filterModelFields(Gastos, cleanedData);
         const [count] = await Gastos.update(dataToUpdate, { where: { id_ga: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
-        const updated = await Gastos.findByPk(id);  
+        const updated = await Gastos.findByPk(id);
+        await notifyDbChange(req, Gastos, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -100,8 +104,10 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Gastos = getModelForRequest(req, 'Gastos');
+        const toDelete = await Gastos.findByPk(id);
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await Gastos.destroy({ where: { id_ga: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, Gastos, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);
