@@ -42,6 +42,7 @@ function initializeWebSocket(server) {
             // 이전 방식 호환성: 문자열로 전달된 경우
             if (typeof data === 'string') {
                 socket.clientId = data;
+                console.log(`[WebSocket] 클라이언트 등록 (문자열): socketId=${socket.id}, clientId=${data}`);
             } else {
                 // 객체로 전달된 경우
                 socket.clientId = data.clientId;
@@ -61,6 +62,9 @@ function initializeWebSocket(server) {
                         dbClientGroups.set(dbKey, new Set());
                     }
                     dbClientGroups.get(dbKey).add(socket.id);
+                    console.log(`[WebSocket] 클라이언트 등록: socketId=${socket.id}, clientId=${data.clientId || socket.id}, dbKey=${dbKey}, 그룹 크기=${dbClientGroups.get(dbKey).size}`);
+                } else {
+                    console.log(`[WebSocket] 클라이언트 등록 실패: dbKey를 생성할 수 없습니다. data:`, data);
                 }
             }
         });
@@ -82,7 +86,9 @@ function initializeWebSocket(server) {
 }
 
 function getConnectionKey(host, port, database, user) {
-    return `${host}:${port}/${database}@${user}`;
+    // 포트를 문자열로 통일하여 일관성 유지
+    const portStr = String(port).trim();
+    return `${host}:${portStr}/${database}@${user}`;
 }
 
 async function setupDbListener(host, port, database, user, password, ssl = false) {
@@ -179,12 +185,57 @@ function broadcastToOthers(excludeClientId, eventName, data) {
     });
 }
 
+// 특정 데이터베이스에 연결된 다른 클라이언트 개수 조회 (요청한 클라이언트 제외)
+function getConnectedClientCount(dbKey, excludeClientId = null) {
+    if (!dbKey) {
+        console.log(`[WebSocket] getConnectedClientCount: dbKey가 없습니다`);
+        return 0;
+    }
+    
+    // 등록된 모든 dbKey 출력 (디버깅)
+    if (dbClientGroups.size > 0) {
+        const allDbKeys = Array.from(dbClientGroups.keys());
+        console.log(`[WebSocket] 등록된 모든 dbKey:`, allDbKeys);
+    }
+    
+    const clientGroup = dbClientGroups.get(dbKey);
+    if (!clientGroup || clientGroup.size === 0) {
+        console.log(`[WebSocket] getConnectedClientCount: dbKey(${dbKey})에 연결된 클라이언트 그룹이 없습니다. 등록된 dbKey와 일치하는지 확인하세요.`);
+        return 0;
+    }
+    
+    console.log(`[WebSocket] getConnectedClientCount: dbKey(${dbKey})에 ${clientGroup.size}개의 소켓이 등록되어 있습니다`);
+    
+    // excludeClientId가 제공된 경우 해당 클라이언트를 제외한 개수 계산
+    if (excludeClientId) {
+        let count = 0;
+        const socketDetails = [];
+        clientGroup.forEach((socketId) => {
+            const socket = io?.sockets.sockets.get(socketId);
+            if (socket) {
+                const socketClientId = socket.clientId || socket.id;
+                socketDetails.push({ socketId, clientId: socketClientId, dbKey: socket.dbKey });
+                if (socketClientId !== excludeClientId) {
+                    count++;
+                }
+            }
+        });
+        console.log(`[WebSocket] getConnectedClientCount: excludeClientId(${excludeClientId}) 제외 후 ${count}개, 전체 소켓 정보:`, socketDetails);
+        return count;
+    }
+    
+    // excludeClientId가 없으면 전체 클라이언트 개수 반환
+    console.log(`[WebSocket] getConnectedClientCount: excludeClientId가 없어 전체 클라이언트 수 ${clientGroup.size} 반환`);
+    return clientGroup.size;
+}
+
 module.exports = {
     initializeWebSocket,
     setupDbListener,
     getWebSocketServer,
     broadcastToOthers,
     broadcastToDbClients,
-    getConnectionKey
+    getConnectionKey,
+    getConnectedClientCount
 };
 

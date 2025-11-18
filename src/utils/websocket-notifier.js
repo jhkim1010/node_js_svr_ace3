@@ -1,4 +1,4 @@
-const { getWebSocketServer, broadcastToDbClients, getConnectionKey } = require('../services/websocket-service');
+const { getWebSocketServer, broadcastToDbClients, getConnectionKey, getConnectedClientCount } = require('../services/websocket-service');
 
 // 테이블명 매핑 (라우트 경로 -> 테이블명)
 const routeToTableMap = {
@@ -62,10 +62,20 @@ async function notifyDbChange(req, Model, operation, data) {
             return item;
         });
         
+        // 동일한 데이터베이스에 연결된 다른 클라이언트 개수 조회
+        // clientId가 없어도 전체 클라이언트 수를 반환하도록 함
+        const connectedClientCount = getConnectedClientCount(dbKey, clientId || null);
+        
+        // 디버깅 로그
+        console.log(`[WebSocket] DB 변경 알림 - 테이블: ${tableName}, 작업: ${operation}, dbKey: ${dbKey}, clientId: ${clientId || '없음'}, 연결된 클라이언트 수: ${connectedClientCount}`);
+        console.log(`[WebSocket] req.dbConfig:`, req.dbConfig);
+        
         // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
         broadcastToDbClients(dbKey, clientId, 'db-change', {
             table: tableName,
-            data: plainData
+            operation: operation,
+            data: plainData,
+            connectedClients: connectedClientCount
         });
     } catch (err) {
         // WebSocket 알림 실패는 조용히 무시 (CRUD 작업은 이미 완료됨)
@@ -103,10 +113,19 @@ async function notifyBatchSync(req, Model, result) {
             });
         
         if (successData.length > 0) {
+            // 동일한 데이터베이스에 연결된 다른 클라이언트 개수 조회
+            // clientId가 없어도 전체 클라이언트 수를 반환하도록 함
+            const connectedClientCount = getConnectedClientCount(dbKey, clientId || null);
+            
+            // 디버깅 로그
+            console.log(`[WebSocket] BATCH_SYNC 알림 - 테이블: ${tableName}, dbKey: ${dbKey}, clientId: ${clientId || '없음'}, 연결된 클라이언트 수: ${connectedClientCount}`);
+            
             // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
             broadcastToDbClients(dbKey, clientId, 'db-change', {
                 table: tableName,
-                data: successData
+                operation: 'batch_sync',
+                data: successData,
+                connectedClients: connectedClientCount
             });
         }
     } catch (err) {
