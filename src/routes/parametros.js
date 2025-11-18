@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, handleBatchSync } = require('../utils/batch-sync-handler');
+const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
 
 const router = Router();
 
@@ -40,7 +40,8 @@ router.post('/', async (req, res) => {
         
         // 일반 단일 생성 요청 처리
         const rawData = req.body.new_data || req.body;
-        const dataToCreate = removeSyncField(rawData);
+        const cleanedData = removeSyncField(rawData);
+        const dataToCreate = filterModelFields(Parametros, cleanedData);
         const created = await Parametros.create(dataToCreate);
         res.status(201).json(created);
     } catch (err) {
@@ -57,7 +58,8 @@ router.put('/:progname/:pname/:opcion', async (req, res) => {
     const { progname, pname, opcion } = req.params;
     try {
         const Parametros = getModelForRequest(req, 'Parametros');
-        const dataToUpdate = removeSyncField(req.body);
+        const cleanedData = removeSyncField(req.body);
+        const dataToUpdate = filterModelFields(Parametros, cleanedData);
         const [count] = await Parametros.update(dataToUpdate, { where: { progname, pname, opcion } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Parametros.findOne({ where: { progname, pname, opcion } });

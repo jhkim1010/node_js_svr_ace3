@@ -7,6 +7,13 @@ const { defineParametrosModel } = require('./Parametros');
 const { defineTodocodigosModel } = require('./Todocodigos');
 const { defineGastoInfoModel } = require('./GastoInfo');
 const { defineGastosModel } = require('./Gastos');
+const { defineColorModel } = require('./Color');
+const { defineCreditoventasModel } = require('./Creditoventas');
+const { defineClientesModel } = require('./Clientes');
+const { defineTiposModel } = require('./Tipos');
+const { defineVtagsModel } = require('./Vtags');
+const { defineOnlineVentasModel } = require('./OnlineVentas');
+const { defineLogsModel } = require('./Logs');
 
 // 모델 정의 함수들
 const modelDefinitions = {
@@ -18,6 +25,13 @@ const modelDefinitions = {
     'Todocodigos': defineTodocodigosModel,
     'GastoInfo': defineGastoInfoModel,
     'Gastos': defineGastosModel,
+    'Color': defineColorModel,
+    'Creditoventas': defineCreditoventasModel,
+    'Clientes': defineClientesModel,
+    'Tipos': defineTiposModel,
+    'Vtags': defineVtagsModel,
+    'OnlineVentas': defineOnlineVentasModel,
+    'Logs': defineLogsModel,
 };
 
 function getModelForRequest(req, modelName) {

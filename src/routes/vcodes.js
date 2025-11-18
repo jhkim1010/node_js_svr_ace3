@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, handleBatchSync } = require('../utils/batch-sync-handler');
+const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
 
 const router = Router();
 
@@ -43,9 +43,8 @@ router.post('/', async (req, res) => {
         // new_data가 있으면 그것을 사용하고, 없으면 req.body를 직접 사용
         const rawData = req.body.new_data || req.body;
         // b_sincronizado_node_svr 필드 제거
-        const dataToCreate = removeSyncField(rawData);
-        console.log('Received data:', req.body);
-        console.log('Data to create:', dataToCreate);
+        const cleanedData = removeSyncField(rawData);
+        const dataToCreate = filterModelFields(Vcode, cleanedData);
         const created = await Vcode.create(dataToCreate);
         res.status(201).json(created);
     } catch (err) {
@@ -72,7 +71,8 @@ router.put('/:id', async (req, res) => {
     try {
         const Vcode = getModelForRequest(req, 'Vcode');
         // b_sincronizado_node_svr 필드 제거
-        const dataToUpdate = removeSyncField(req.body);
+        const cleanedData = removeSyncField(req.body);
+        const dataToUpdate = filterModelFields(Vcode, cleanedData);
         const [count] = await Vcode.update(dataToUpdate, { where: { vcode_id: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Vcode.findByPk(id);
