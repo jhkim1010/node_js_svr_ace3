@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const path = require('path');
 const config = require('./config');
 const routes = require('./routes');
 const { parseDbHeader } = require('./middleware/db-header');
@@ -12,6 +13,7 @@ const server = http.createServer(app);
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));  // BATCH_SYNC 대용량 데이터 처리를 위해 10MB로 증가
+app.use(express.static(path.resolve('./') + '/public'));
 
 // Health 체크는 헤더 필요 없음
 app.get('/api/health', (req, res) => {
