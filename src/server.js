@@ -10,7 +10,7 @@ const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));  // BATCH_SYNC 대용량 데이터 처리를 위해 10MB로 증가
-this.app.use(express.static(path.resolve('./') + '/public'));
+app.use(express.static(path.resolve('./') + '/public'));
 
 // Health 체크는 헤더 필요 없음
 app.get('/api/health', (req, res) => {
