@@ -49,7 +49,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Ingresos, 'create', created);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ Ingresos 생성 에러:', err);
+        console.error('\n❌ Ingresos creation error:', err);
         res.status(400).json({ 
             error: 'Failed to create ingreso', 
             details: err.message,

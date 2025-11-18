@@ -51,12 +51,12 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Vcode, 'create', created);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ Vcode 생성 에러:');
-        console.error('   에러 타입:', err.constructor.name);
-        console.error('   에러 메시지:', err.message);
-        console.error('   전체 에러:', err);
+        console.error('\n❌ Vcode creation error:');
+        console.error('   Error type:', err.constructor.name);
+        console.error('   Error message:', err.message);
+        console.error('   Full error:', err);
         if (err.original) {
-            console.error('   원본 에러:', err.original);
+            console.error('   Original error:', err.original);
         }
         console.error('');
         res.status(400).json({ 

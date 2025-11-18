@@ -49,7 +49,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Todocodigos, 'create', created);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ Todocodigos 생성 에러:', err);
+        console.error('\n❌ Todocodigos creation error:', err);
         res.status(400).json({ 
             error: 'Failed to create todocodigo', 
             details: err.message,

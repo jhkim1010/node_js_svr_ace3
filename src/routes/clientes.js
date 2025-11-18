@@ -59,7 +59,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Clientes, 'create', created);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ Clientes 생성 에러:', err);
+        console.error('\n❌ Clientes creation error:', err);
         res.status(400).json({ 
             error: 'Failed to create cliente', 
             details: err.message,

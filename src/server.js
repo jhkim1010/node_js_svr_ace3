@@ -30,13 +30,13 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
     if (err.type === 'entity.too.large') {
-        console.error('\n❌ 요청 본문 크기 초과:');
-        console.error(`   요청 크기: ${(err.length / 1024 / 1024).toFixed(2)}MB`);
-        console.error(`   제한 크기: ${(err.limit / 1024 / 1024).toFixed(2)}MB`);
+        console.error('\n❌ Request body size exceeded:');
+        console.error(`   Request size: ${(err.length / 1024 / 1024).toFixed(2)}MB`);
+        console.error(`   Size limit: ${(err.limit / 1024 / 1024).toFixed(2)}MB`);
         console.error('');
         return res.status(413).json({ 
             error: 'Payload Too Large', 
-            message: `요청 본문이 너무 큽니다. 최대 ${(err.limit / 1024 / 1024).toFixed(2)}MB까지 허용됩니다.`,
+            message: `Request body is too large. Maximum ${(err.limit / 1024 / 1024).toFixed(2)}MB is allowed.`,
             received: `${(err.length / 1024 / 1024).toFixed(2)}MB`,
             limit: `${(err.limit / 1024 / 1024).toFixed(2)}MB`
         });

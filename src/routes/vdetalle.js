@@ -50,18 +50,18 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Vdetalle, 'create', created);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ Vdetalle 생성 에러:');
-        console.error('   에러 타입:', err.constructor.name);
-        console.error('   에러 메시지:', err.message);
-        console.error('   전체 에러:', err);
+        console.error('\n❌ Vdetalle creation error:');
+        console.error('   Error type:', err.constructor.name);
+        console.error('   Error message:', err.message);
+        console.error('   Full error:', err);
         if (err.errors && Array.isArray(err.errors)) {
-            console.error('   Validation 에러:');
+            console.error('   Validation errors:');
             err.errors.forEach((validationError) => {
-                console.error(`     - 필드: ${validationError.path}, 값: ${validationError.value}, 메시지: ${validationError.message}`);
+                console.error(`     - Field: ${validationError.path}, Value: ${validationError.value}, Message: ${validationError.message}`);
             });
         }
         if (err.original) {
-            console.error('   원본 에러:', err.original);
+            console.error('   Original error:', err.original);
         }
         console.error('');
         res.status(400).json({ 

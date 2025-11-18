@@ -59,7 +59,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, OnlineVentas, 'create', created);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ OnlineVentas 생성 에러:', err);
+        console.error('\n❌ OnlineVentas creation error:', err);
         res.status(400).json({ 
             error: 'Failed to create online_venta', 
             details: err.message,

@@ -48,7 +48,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Parametros, 'create', created);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ Parametros 생성 에러:', err);
+        console.error('\n❌ Parametros creation error:', err);
         res.status(400).json({ 
             error: 'Failed to create parametro', 
             details: err.message,

@@ -83,19 +83,19 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                 });
             });
         } catch (err) {
-            console.error(`\n❌ 일괄 생성 실패 (${modelName}):`);
-            console.error('   에러 타입:', err.constructor.name);
-            console.error('   에러 메시지:', err.message);
+            console.error(`\n❌ Bulk creation failed (${modelName}):`);
+            console.error('   Error type:', err.constructor.name);
+            console.error('   Error message:', err.message);
             if (err.errors && Array.isArray(err.errors)) {
-                console.error('   상세 Validation 에러:');
+                console.error('   Detailed validation errors:');
                 err.errors.forEach((validationError, idx) => {
-                    console.error(`     [${idx}] 필드: ${validationError.path}, 값: ${validationError.value}, 메시지: ${validationError.message}`);
+                    console.error(`     [${idx}] Field: ${validationError.path}, Value: ${validationError.value}, Message: ${validationError.message}`);
                 });
             }
             if (err.original) {
-                console.error('   원본 에러:', err.original);
+                console.error('   Original error:', err.original);
             }
-            console.error('   전체 에러:', err);
+            console.error('   Full error:', err);
             console.error('');
             
             // bulkCreate 실패 시 개별 처리
@@ -105,10 +105,10 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                     const result = await Model.create(filteredItem);
                     results.push({ index, action: 'created', data: result });
                 } catch (individualErr) {
-                    console.error(`   ❌ 인덱스 ${index} 실패:`, individualErr.message);
+                    console.error(`   ❌ Index ${index} failed:`, individualErr.message);
                     if (individualErr.errors && Array.isArray(individualErr.errors)) {
                         individualErr.errors.forEach((validationError) => {
-                            console.error(`      - 필드: ${validationError.path}, 값: ${validationError.value}, 메시지: ${validationError.message}`);
+                            console.error(`      - Field: ${validationError.path}, Value: ${validationError.value}, Message: ${validationError.message}`);
                         });
                     }
                     errors.push({ 
@@ -153,7 +153,7 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                 results.push({ index, action: 'created', data: result });
             }
         } catch (err) {
-            console.error(`❌ 항목 ${index} 처리 실패 (${modelName}):`, err.message);
+            console.error(`❌ Item ${index} processing failed (${modelName}):`, err.message);
             errors.push({ 
                 index, 
                 error: err.message,
@@ -169,7 +169,7 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
     
     return {
         success: true,
-        message: `처리 완료: 성공 ${results.length}개, 실패 ${errors.length}개`,
+        message: `Processing complete: ${results.length} succeeded, ${errors.length} failed`,
         processed: results.length,
         failed: errors.length,
         results: results,

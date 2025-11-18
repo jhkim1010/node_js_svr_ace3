@@ -59,7 +59,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Vtags, 'create', created);
         res.status(201).json(created);
     } catch (err) {
-        console.error('\n❌ Vtags 생성 에러:', err);
+        console.error('\n❌ Vtags creation error:', err);
         res.status(400).json({ 
             error: 'Failed to create vtag', 
             details: err.message,
