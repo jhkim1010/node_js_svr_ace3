@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post('/', async (req, res) => {
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             // online_ventas는 online_venta_id만 기본 키로 사용
             const result = await handleBatchSync(req, res, OnlineVentas, 'online_venta_id', 'OnlineVentas');
+            await notifyBatchSync(req, OnlineVentas, result);
             return res.status(200).json(result);
         }
         
@@ -46,6 +48,7 @@ router.post('/', async (req, res) => {
             // 배열인 경우 BATCH_SYNC와 동일하게 처리
             req.body.data = rawData;
             const result = await handleBatchSync(req, res, OnlineVentas, 'online_venta_id', 'OnlineVentas');
+            await notifyBatchSync(req, OnlineVentas, result);
             return res.status(200).json(result);
         }
         
@@ -53,6 +56,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(OnlineVentas, cleanedData);
         const created = await OnlineVentas.create(dataToCreate);
+        await notifyDbChange(req, OnlineVentas, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ OnlineVentas 생성 에러:', err);
@@ -74,6 +78,7 @@ router.put('/:id', async (req, res) => {
         const [count] = await OnlineVentas.update(dataToUpdate, { where: { online_venta_id: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await OnlineVentas.findByPk(id);
+        await notifyDbChange(req, OnlineVentas, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -86,8 +91,10 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const OnlineVentas = getModelForRequest(req, 'OnlineVentas');
+        const toDelete = await OnlineVentas.findByPk(id);
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await OnlineVentas.destroy({ where: { online_venta_id: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, OnlineVentas, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);

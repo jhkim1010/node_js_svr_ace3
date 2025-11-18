@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.post('/', async (req, res) => {
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             const result = await handleBatchSync(req, res, Todocodigos, 'id_todocodigo', 'Todocodigos');
+            await notifyBatchSync(req, Todocodigos, result);
             return res.status(200).json(result);
         }
         
@@ -44,6 +46,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(Todocodigos, cleanedData);
         const created = await Todocodigos.create(dataToCreate);
+        await notifyDbChange(req, Todocodigos, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Todocodigos 생성 에러:', err);
@@ -65,6 +68,7 @@ router.put('/:id', async (req, res) => {
         const [count] = await Todocodigos.update(dataToUpdate, { where: { id_todocodigo: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Todocodigos.findByPk(id);
+        await notifyDbChange(req, Todocodigos, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -77,8 +81,10 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Todocodigos = getModelForRequest(req, 'Todocodigos');
+        const toDelete = await Todocodigos.findByPk(id);
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await Todocodigos.destroy({ where: { id_todocodigo: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, Todocodigos, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);

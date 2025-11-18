@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post('/', async (req, res) => {
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             // clientes는 dni만 기본 키로 사용
             const result = await handleBatchSync(req, res, Clientes, 'dni', 'Clientes');
+            await notifyBatchSync(req, Clientes, result);
             return res.status(200).json(result);
         }
         
@@ -46,6 +48,7 @@ router.post('/', async (req, res) => {
             // 배열인 경우 BATCH_SYNC와 동일하게 처리
             req.body.data = rawData;
             const result = await handleBatchSync(req, res, Clientes, 'dni', 'Clientes');
+            await notifyBatchSync(req, Clientes, result);
             return res.status(200).json(result);
         }
         
@@ -53,6 +56,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(Clientes, cleanedData);
         const created = await Clientes.create(dataToCreate);
+        await notifyDbChange(req, Clientes, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Clientes 생성 에러:', err);
@@ -74,6 +78,7 @@ router.put('/:id', async (req, res) => {
         const [count] = await Clientes.update(dataToUpdate, { where: { dni: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Clientes.findByPk(id);
+        await notifyDbChange(req, Clientes, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -86,8 +91,10 @@ router.delete('/:id', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Clientes = getModelForRequest(req, 'Clientes');
+        const toDelete = await Clientes.findByPk(id);
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await Clientes.destroy({ where: { dni: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, Clientes, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);

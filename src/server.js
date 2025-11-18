@@ -1,12 +1,15 @@
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
 const path = require('path');
 const config = require('./config');
 const routes = require('./routes');
 const { parseDbHeader } = require('./middleware/db-header');
 const { responseLogger } = require('./middleware/response-logger');
+const { initializeWebSocket } = require('./services/websocket-service');
 
 const app = express();
+const server = http.createServer(app);
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));  // BATCH_SYNC 대용량 데이터 처리를 위해 10MB로 증가
@@ -46,9 +49,13 @@ app.use((err, req, res, next) => {
 
 async function start() {
     try {
-        // 헤더 기반 동적 연결 사용하므로 서버 시작 시 DB 연결 불필요
-        app.listen(config.port, () => {
+        // WebSocket 서버 초기화
+        initializeWebSocket(server);
+        
+        // HTTP 및 WebSocket 서버 시작
+        server.listen(config.port, () => {
             console.log(`Server listening on http://localhost:${config.port}`);
+            console.log(`WebSocket server ready on ws://localhost:${config.port}`);
             console.log('Ready to accept requests with DB connection info in headers');
         });
     } catch (err) {

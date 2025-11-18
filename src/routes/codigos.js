@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -37,6 +38,8 @@ router.post('/', async (req, res) => {
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             // codigos는 codigo만 기본 키로 사용
             const result = await handleBatchSync(req, res, Codigos, 'codigo', 'Codigos');
+            // WebSocket 알림 전송
+            await notifyBatchSync(req, Codigos, result);
             return res.status(200).json(result);
         }
         
@@ -46,6 +49,8 @@ router.post('/', async (req, res) => {
             // 배열인 경우 BATCH_SYNC와 동일하게 처리
             req.body.data = rawData;
             const result = await handleBatchSync(req, res, Codigos, 'codigo', 'Codigos');
+            // WebSocket 알림 전송
+            await notifyBatchSync(req, Codigos, result);
             return res.status(200).json(result);
         }
         
@@ -53,6 +58,8 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(Codigos, cleanedData);
         const created = await Codigos.create(dataToCreate);
+        // WebSocket 알림 전송
+        await notifyDbChange(req, Codigos, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Codigos 생성 에러:', err);
@@ -74,6 +81,8 @@ router.put('/:id', async (req, res) => {
         const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Codigos.findByPk(id);
+        // WebSocket 알림 전송
+        await notifyDbChange(req, Codigos, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -86,8 +95,12 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Codigos = getModelForRequest(req, 'Codigos');
+        // 삭제 전에 데이터 가져오기
+        const toDelete = await Codigos.findByPk(id);
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await Codigos.destroy({ where: { id_codigo: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        // WebSocket 알림 전송
+        await notifyDbChange(req, Codigos, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);

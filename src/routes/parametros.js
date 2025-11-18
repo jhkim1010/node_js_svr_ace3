@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -35,6 +36,7 @@ router.post('/', async (req, res) => {
         // BATCH_SYNC 작업 처리 (복합키: progname, pname, opcion)
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             const result = await handleBatchSync(req, res, Parametros, ['progname', 'pname', 'opcion'], 'Parametros');
+            await notifyBatchSync(req, Parametros, result);
             return res.status(200).json(result);
         }
         
@@ -43,6 +45,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(Parametros, cleanedData);
         const created = await Parametros.create(dataToCreate);
+        await notifyDbChange(req, Parametros, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Parametros 생성 에러:', err);
@@ -63,6 +66,7 @@ router.put('/:progname/:pname/:opcion', async (req, res) => {
         const [count] = await Parametros.update(dataToUpdate, { where: { progname, pname, opcion } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Parametros.findOne({ where: { progname, pname, opcion } });
+        await notifyDbChange(req, Parametros, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -74,8 +78,10 @@ router.delete('/:progname/:pname/:opcion', async (req, res) => {
     const { progname, pname, opcion } = req.params;
     try {
         const Parametros = getModelForRequest(req, 'Parametros');
+        const toDelete = await Parametros.findOne({ where: { progname, pname, opcion } });
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await Parametros.destroy({ where: { progname, pname, opcion } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, Parametros, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);

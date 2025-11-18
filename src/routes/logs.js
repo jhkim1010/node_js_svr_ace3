@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post('/', async (req, res) => {
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             // logs는 복합 기본 키 (fecha, hora, evento, progname) 사용
             const result = await handleBatchSync(req, res, Logs, ['fecha', 'hora', 'evento', 'progname'], 'Logs');
+            await notifyBatchSync(req, Logs, result);
             return res.status(200).json(result);
         }
         
@@ -46,6 +48,7 @@ router.post('/', async (req, res) => {
             // 배열인 경우 BATCH_SYNC와 동일하게 처리
             req.body.data = rawData;
             const result = await handleBatchSync(req, res, Logs, ['fecha', 'hora', 'evento', 'progname'], 'Logs');
+            await notifyBatchSync(req, Logs, result);
             return res.status(200).json(result);
         }
         
@@ -53,6 +56,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(Logs, cleanedData);
         const created = await Logs.create(dataToCreate);
+        await notifyDbChange(req, Logs, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Logs 생성 에러:', err);
@@ -92,6 +96,7 @@ router.put('/:id', async (req, res) => {
                 progname: existing.progname
             } 
         });
+        await notifyDbChange(req, Logs, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -117,6 +122,7 @@ router.delete('/:id', async (req, res) => {
             } 
         });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, Logs, 'delete', existing);
         res.status(204).end();
     } catch (err) {
         console.error(err);

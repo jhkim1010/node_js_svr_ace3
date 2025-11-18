@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.post('/', async (req, res) => {
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             const result = await handleBatchSync(req, res, Vcode, 'vcode_id', 'Vcode');
+            await notifyBatchSync(req, Vcode, result);
             return res.status(200).json(result);
         }
         
@@ -46,6 +48,7 @@ router.post('/', async (req, res) => {
         const cleanedData = removeSyncField(rawData);
         const dataToCreate = filterModelFields(Vcode, cleanedData);
         const created = await Vcode.create(dataToCreate);
+        await notifyDbChange(req, Vcode, 'create', created);
         res.status(201).json(created);
     } catch (err) {
         console.error('\n❌ Vcode 생성 에러:');
@@ -76,6 +79,7 @@ router.put('/:id', async (req, res) => {
         const [count] = await Vcode.update(dataToUpdate, { where: { vcode_id: id } });
         if (count === 0) return res.status(404).json({ error: 'Not found' });
         const updated = await Vcode.findByPk(id);
+        await notifyDbChange(req, Vcode, 'update', updated);
         res.json(updated);
     } catch (err) {
         console.error(err);
@@ -88,8 +92,10 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Vcode = getModelForRequest(req, 'Vcode');
+        const toDelete = await Vcode.findByPk(id);
+        if (!toDelete) return res.status(404).json({ error: 'Not found' });
         const count = await Vcode.destroy({ where: { vcode_id: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
+        await notifyDbChange(req, Vcode, 'delete', toDelete);
         res.status(204).end();
     } catch (err) {
         console.error(err);
