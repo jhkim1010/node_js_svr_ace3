@@ -78,8 +78,8 @@ async function notifyDbChange(req, Model, operation, data) {
             connectedClients: connectedClientCount
         });
     } catch (err) {
-        // WebSocket 알림 실패는 조용히 무시 (CRUD 작업은 이미 완료됨)
-        console.error('WebSocket 알림 실패:', err.message);
+        // WebSocket notification failure is silently ignored (CRUD operation is already completed)
+        console.error('WebSocket notification failed:', err.message);
     }
 }
 
@@ -129,7 +129,7 @@ async function notifyBatchSync(req, Model, result) {
             });
         }
     } catch (err) {
-        console.error('WebSocket 알림 실패:', err.message);
+        console.error('WebSocket notification failed:', err.message);
     }
 }
 

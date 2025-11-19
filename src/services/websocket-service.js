@@ -42,7 +42,7 @@ function initializeWebSocket(server) {
             // 이전 방식 호환성: 문자열로 전달된 경우
             if (typeof data === 'string') {
                 socket.clientId = data;
-                console.log(`[WebSocket] 클라이언트 등록 (문자열): socketId=${socket.id}, clientId=${data}`);
+                console.log(`[WebSocket] Client registered (string): socketId=${socket.id}, clientId=${data}`);
             } else {
                 // 객체로 전달된 경우
                 socket.clientId = data.clientId;
@@ -62,9 +62,9 @@ function initializeWebSocket(server) {
                         dbClientGroups.set(dbKey, new Set());
                     }
                     dbClientGroups.get(dbKey).add(socket.id);
-                    console.log(`[WebSocket] 클라이언트 등록: socketId=${socket.id}, clientId=${data.clientId || socket.id}, dbKey=${dbKey}, 그룹 크기=${dbClientGroups.get(dbKey).size}`);
+                    console.log(`[WebSocket] Client registered: socketId=${socket.id}, clientId=${data.clientId || socket.id}, dbKey=${dbKey}, group size=${dbClientGroups.get(dbKey).size}`);
                 } else {
-                    console.log(`[WebSocket] 클라이언트 등록 실패: dbKey를 생성할 수 없습니다. data:`, data);
+                    console.log(`[WebSocket] Client registration failed: Cannot generate dbKey. data:`, data);
                 }
             }
         });
@@ -138,7 +138,7 @@ async function setupDbListener(host, port, database, user, password, ssl = false
 
     // 연결 오류 처리
     client.on('error', (err) => {
-        console.error(`❌ DB LISTEN 연결 오류 (${key}):`, err.message);
+        console.error(`❌ DB LISTEN connection error (${key}):`, err.message);
         dbListeners.delete(key);
         client.release();
     });
@@ -188,23 +188,23 @@ function broadcastToOthers(excludeClientId, eventName, data) {
 // 특정 데이터베이스에 연결된 다른 클라이언트 개수 조회 (요청한 클라이언트 제외)
 function getConnectedClientCount(dbKey, excludeClientId = null) {
     if (!dbKey) {
-        console.log(`[WebSocket] getConnectedClientCount: dbKey가 없습니다`);
+        console.log(`[WebSocket] getConnectedClientCount: dbKey is missing`);
         return 0;
     }
     
     // 등록된 모든 dbKey 출력 (디버깅)
     if (dbClientGroups.size > 0) {
         const allDbKeys = Array.from(dbClientGroups.keys());
-        console.log(`[WebSocket] 등록된 모든 dbKey:`, allDbKeys);
+        console.log(`[WebSocket] All registered dbKeys:`, allDbKeys);
     }
     
     const clientGroup = dbClientGroups.get(dbKey);
     if (!clientGroup || clientGroup.size === 0) {
-        console.log(`[WebSocket] getConnectedClientCount: dbKey(${dbKey})에 연결된 클라이언트 그룹이 없습니다. 등록된 dbKey와 일치하는지 확인하세요.`);
+        console.log(`[WebSocket] getConnectedClientCount: No client group found for dbKey(${dbKey}). Please check if it matches the registered dbKey.`);
         return 0;
     }
     
-    console.log(`[WebSocket] getConnectedClientCount: dbKey(${dbKey})에 ${clientGroup.size}개의 소켓이 등록되어 있습니다`);
+    console.log(`[WebSocket] getConnectedClientCount: ${clientGroup.size} sockets registered for dbKey(${dbKey})`);
     
     // excludeClientId가 제공된 경우 해당 클라이언트를 제외한 개수 계산
     if (excludeClientId) {
@@ -220,12 +220,12 @@ function getConnectedClientCount(dbKey, excludeClientId = null) {
                 }
             }
         });
-        console.log(`[WebSocket] getConnectedClientCount: excludeClientId(${excludeClientId}) 제외 후 ${count}개, 전체 소켓 정보:`, socketDetails);
+        console.log(`[WebSocket] getConnectedClientCount: ${count} clients after excluding excludeClientId(${excludeClientId}), all socket info:`, socketDetails);
         return count;
     }
     
     // excludeClientId가 없으면 전체 클라이언트 개수 반환
-    console.log(`[WebSocket] getConnectedClientCount: excludeClientId가 없어 전체 클라이언트 수 ${clientGroup.size} 반환`);
+    console.log(`[WebSocket] getConnectedClientCount: No excludeClientId, returning total client count ${clientGroup.size}`);
     return clientGroup.size;
 }
 

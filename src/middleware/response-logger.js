@@ -5,7 +5,7 @@ function responseLogger(req, res, next) {
     res.on('finish', () => {
         const statusCode = res.statusCode;
         const isSuccess = statusCode >= 200 && statusCode < 300;
-        const statusText = isSuccess ? '성공' : '실패';
+        const statusText = isSuccess ? 'Success' : 'Failed';
         
         // 라우터 정보 추출
         const path = req.originalUrl || req.path || req.url;
@@ -81,11 +81,11 @@ function extractRouterName(path) {
 
 function getOperationType(method) {
     const methodMap = {
-        'GET': '조회',
-        'POST': '생성',
-        'PUT': '수정',
-        'DELETE': '삭제',
-        'PATCH': '수정'
+        'GET': 'Read',
+        'POST': 'Create',
+        'PUT': 'Update',
+        'DELETE': 'Delete',
+        'PATCH': 'Update'
     };
     return methodMap[method] || method;
 }
