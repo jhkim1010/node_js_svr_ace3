@@ -63,17 +63,24 @@ async function notifyDbChange(req, Model, operation, data) {
         });
         
         // 동일한 데이터베이스에 연결된 다른 클라이언트 개수 조회
-        // clientId가 없어도 전체 클라이언트 수를 반환하도록 함
         const connectedClientCount = getConnectedClientCount(dbKey, clientId || null);
         
-        // 디버깅 로그
-        console.log(`[WebSocket] DB 변경 알림 - 테이블: ${tableName}, 작업: ${operation}, dbKey: ${dbKey}, clientId: ${clientId || '없음'}, 연결된 클라이언트 수: ${connectedClientCount}`);
+        // CRUD 작업 유형을 명확히 표시
+        const operationLabel = {
+            'create': 'CREATE',
+            'update': 'UPDATE', 
+            'delete': 'DELETE',
+            'read': 'READ'
+        }[operation] || operation.toUpperCase();
+        
+        // 디버깅 로그 - CRUD 작업 유형 표시
+        console.log(`[WebSocket] DB Change Notification - Table: ${tableName}, Operation: ${operationLabel}, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
         console.log(`[WebSocket] req.dbConfig:`, req.dbConfig);
         
         // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
         broadcastToDbClients(dbKey, clientId, 'db-change', {
             table: tableName,
-            operation: operation,
+            operation: operationLabel,
             data: plainData,
             connectedClients: connectedClientCount
         });
@@ -114,16 +121,15 @@ async function notifyBatchSync(req, Model, result) {
         
         if (successData.length > 0) {
             // 동일한 데이터베이스에 연결된 다른 클라이언트 개수 조회
-            // clientId가 없어도 전체 클라이언트 수를 반환하도록 함
             const connectedClientCount = getConnectedClientCount(dbKey, clientId || null);
             
-            // 디버깅 로그
-            console.log(`[WebSocket] BATCH_SYNC 알림 - 테이블: ${tableName}, dbKey: ${dbKey}, clientId: ${clientId || '없음'}, 연결된 클라이언트 수: ${connectedClientCount}`);
+            // 디버깅 로그 - BATCH_SYNC 작업 표시
+            console.log(`[WebSocket] BATCH_SYNC Notification - Table: ${tableName}, Operation: BATCH_SYNC, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
             
             // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
             broadcastToDbClients(dbKey, clientId, 'db-change', {
                 table: tableName,
-                operation: 'batch_sync',
+                operation: 'BATCH_SYNC',
                 data: successData,
                 connectedClients: connectedClientCount
             });
