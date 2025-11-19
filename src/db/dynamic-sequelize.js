@@ -9,6 +9,7 @@ function getConnectionKey(host, port, database, user) {
 }
 
 function getDynamicSequelize(host, port, database, user, password, ssl = false) {
+    host = process.env.DB_HOST || 'localhost';
     const key = getConnectionKey(host, port, database, user);
     
     // 이미 존재하는 연결이 있으면 재사용
