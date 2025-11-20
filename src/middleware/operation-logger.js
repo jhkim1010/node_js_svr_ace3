@@ -3,17 +3,85 @@
 function operationLogger(req, res, next) {
     // POST, PUT, DELETE 요청에 대해서만 operation 확인
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-        // operation 확인 (헤더, 쿼리, 본문 순서로 확인)
-        let operation = req.headers['x-operation'] || 
-                       req.headers['operation'] ||
-                       req.query.operation ||
-                       (req.body && req.body.operation) ||
-                       (req.body && req.body.trigger_operation) ||
-                       null;
+        // 🔍 디버깅: 요청 기본 정보 출력
+        const path = req.originalUrl || req.path || req.url;
+        const routerName = extractRouterName(path);
+        const contentType = req.headers['content-type'] || 'N/A';
+        
+        console.log('\n' + '='.repeat(80));
+        console.log(`🔍 [DEBUG] Request Debug Info`);
+        console.log(`   Method: ${req.method}`);
+        console.log(`   Path: ${path}`);
+        console.log(`   Router: ${routerName}`);
+        console.log(`   Content-Type: ${contentType}`);
+        
+        // 🔍 디버깅: operation 찾기 과정 추적
+        let operation = null;
+        let operationSource = 'N/A';
+        
+        // 1. 헤더에서 찾기
+        if (req.headers['x-operation']) {
+            operation = req.headers['x-operation'];
+            operationSource = 'header[x-operation]';
+        } else if (req.headers['operation']) {
+            operation = req.headers['operation'];
+            operationSource = 'header[operation]';
+        }
+        
+        // 2. 쿼리에서 찾기
+        if (!operation && req.query.operation) {
+            operation = req.query.operation;
+            operationSource = 'query.operation';
+        }
+        
+        // 3. 본문에서 찾기
+        if (!operation && req.body) {
+            if (req.body.operation) {
+                operation = req.body.operation;
+                operationSource = 'body.operation';
+            } else if (req.body.trigger_operation) {
+                operation = req.body.trigger_operation;
+                operationSource = 'body.trigger_operation';
+            }
+        }
+        
+        // 🔍 디버깅: 헤더 정보 출력 (operation 관련)
+        console.log(`   Headers (operation related):`);
+        console.log(`      x-operation: ${req.headers['x-operation'] || 'N/A'}`);
+        console.log(`      operation: ${req.headers['operation'] || 'N/A'}`);
+        console.log(`      x-client-id: ${req.headers['x-client-id'] || 'N/A'}`);
+        
+        // 🔍 디버깅: req.body 상태 확인
+        console.log(`   Body Status:`);
+        console.log(`      req.body exists: ${!!req.body}`);
+        console.log(`      req.body type: ${typeof req.body}`);
+        if (req.body) {
+            console.log(`      req.body keys: ${Object.keys(req.body).join(', ') || 'empty object'}`);
+            if (req.body.operation !== undefined) {
+                console.log(`      req.body.operation: ${req.body.operation} (type: ${typeof req.body.operation})`);
+            }
+            if (req.body.trigger_operation !== undefined) {
+                console.log(`      req.body.trigger_operation: ${req.body.trigger_operation} (type: ${typeof req.body.trigger_operation})`);
+            }
+            // 본문 일부 출력 (너무 크면 자르기)
+            try {
+                const bodyStr = JSON.stringify(req.body);
+                if (bodyStr.length > 500) {
+                    console.log(`      req.body preview: ${bodyStr.substring(0, 500)}... (truncated, total: ${bodyStr.length} chars)`);
+                } else {
+                    console.log(`      req.body: ${bodyStr}`);
+                }
+            } catch (e) {
+                console.log(`      req.body (stringify failed): ${e.message}`);
+            }
+        } else {
+            console.log(`      ⚠️  req.body is null/undefined - JSON parsing may have failed!`);
+        }
         
         // operation 정규화 (대문자로 변환)
         if (operation) {
             operation = operation.toUpperCase();
+            console.log(`   ✅ Operation found: "${operation}" from ${operationSource}`);
         } else {
             // operation이 없으면 HTTP 메서드 기반으로 추정
             const methodMap = {
@@ -23,11 +91,8 @@ function operationLogger(req, res, next) {
                 'DELETE': 'DELETE'
             };
             operation = methodMap[req.method] || req.method;
+            console.log(`   ⚠️  Operation not found, using method-based default: "${operation}"`);
         }
-        
-        // 라우터 이름 추출
-        const path = req.originalUrl || req.path || req.url;
-        const routerName = extractRouterName(path);
         
         // 데이터베이스 정보
         const dbInfo = req.dbConfig 
@@ -56,7 +121,8 @@ function operationLogger(req, res, next) {
         req._dataCount = dataCount;
         
         // operation을 먼저 로그로 출력
-        console.log(`\n📥 [Request Received] Operation: ${operation} | Table: ${routerName} | DB: ${dbInfo} | Client: ${clientId} | Data Count: ${dataCount}`);
+        console.log(`📥 [Request Received] Operation: ${operation} | Table: ${routerName} | DB: ${dbInfo} | Client: ${clientId} | Data Count: ${dataCount}`);
+        console.log('='.repeat(80) + '\n');
         
         // req에 operation 정보 저장 (다른 미들웨어나 핸들러에서 사용 가능)
         req._operation = operation;
