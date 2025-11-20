@@ -69,8 +69,15 @@ router.post('/', async (req, res) => {
         if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
             // Validation error인 경우 상세 정보 표시
             console.error(`ERROR: Gastos INSERT/UPDATE failed: ${errorMsg}`);
-            err.errors.forEach((validationError) => {
-                console.error(`   Column: ${validationError.path} | Value: ${validationError.value || 'null'} | Error: ${validationError.message}`);
+            err.errors.forEach((validationError, index) => {
+                console.error(`   [${index + 1}] Column: ${validationError.path}`);
+                console.error(`       Value: ${validationError.value !== undefined && validationError.value !== null ? JSON.stringify(validationError.value) : 'null'}`);
+                console.error(`       Error Type: ${validationError.type || 'N/A'}`);
+                console.error(`       Validator: ${validationError.validatorKey || validationError.validatorName || 'N/A'}`);
+                console.error(`       Message: ${validationError.message}`);
+                if (validationError.validatorArgs && validationError.validatorArgs.length > 0) {
+                    console.error(`       Validator Args: ${JSON.stringify(validationError.validatorArgs)}`);
+                }
             });
         } else {
             console.error(`ERROR: Gastos INSERT/UPDATE failed: ${errorMsg}`);
