@@ -8,6 +8,7 @@ const { parseDbHeader } = require('./middleware/db-header');
 const { responseLogger } = require('./middleware/response-logger');
 const { operationLogger } = require('./middleware/operation-logger');
 const { initializeWebSocket } = require('./services/websocket-service');
+const { displayBuildInfo } = require('./utils/build-info');
 
 const app = express();
 const server = http.createServer(app);
@@ -54,6 +55,9 @@ app.use((err, req, res, next) => {
 
 async function start() {
     try {
+        // 빌드 정보 표시
+        displayBuildInfo();
+        
         // WebSocket 서버 초기화
         initializeWebSocket(server);
         
