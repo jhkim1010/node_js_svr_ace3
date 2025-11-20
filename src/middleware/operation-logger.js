@@ -1,6 +1,17 @@
 // 요청이 들어올 때 operation을 먼저 확인하고 로그를 출력하는 미들웨어
 
 function operationLogger(req, res, next) {
+    // GET 요청에 대한 간단한 로그
+    if (req.method === 'GET') {
+        const path = req.originalUrl || req.path || req.url;
+        const routerName = extractRouterName(path);
+        const dbInfo = req.dbConfig 
+            ? `${req.dbConfig.database}@${req.dbConfig.host}:${req.dbConfig.port}`
+            : 'N/A';
+        const clientId = req.headers['x-client-id'] || req.headers['client-id'] || 'N/A';
+        console.log(`[Request Received] Method: GET | Operation: READ | Table: ${routerName} | DB: ${dbInfo} | Client: ${clientId}`);
+    }
+    
     // POST, PUT, DELETE 요청에 대해서만 operation 확인
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
         // 디버깅: 요청 기본 정보 출력
@@ -120,8 +131,8 @@ function operationLogger(req, res, next) {
         // req에 데이터 개수 저장 (다른 미들웨어나 핸들러에서 사용 가능)
         req._dataCount = dataCount;
         
-        // operation을 먼저 로그로 출력
-        console.log(`[Request Received] Operation: ${operation} | Table: ${routerName} | DB: ${dbInfo} | Client: ${clientId} | Data Count: ${dataCount}`);
+        // operation을 먼저 로그로 출력 (HTTP 메서드 포함)
+        console.log(`[Request Received] Method: ${req.method} | Operation: ${operation} | Table: ${routerName} | DB: ${dbInfo} | Client: ${clientId} | Data Count: ${dataCount}`);
         console.log('='.repeat(80) + '\n');
         
         // req에 operation 정보 저장 (다른 미들웨어나 핸들러에서 사용 가능)

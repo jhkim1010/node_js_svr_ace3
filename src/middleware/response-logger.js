@@ -27,13 +27,16 @@ function responseLogger(req, res, next) {
             ? `${req.dbConfig.database}@${req.dbConfig.host}:${req.dbConfig.port}`
             : 'N/A';
         
+        // HTTP 메서드 정보 추가
+        const httpMethod = req.method || 'UNKNOWN';
+        
         // 처리 통계 정보가 있으면 상세 출력
         if (req._processingStats) {
             const stats = req._processingStats;
-            console.log(`${statusText} | ${dbInfo} | ${routerName} | ${operation} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}`);
+            console.log(`${statusText} | ${httpMethod} | ${dbInfo} | ${routerName} | ${operation} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}`);
         } else {
             // 1줄로 출력
-            console.log(`${statusText} | ${dbInfo} | ${routerName} | ${operation} | ${dataCount}개`);
+            console.log(`${statusText} | ${httpMethod} | ${dbInfo} | ${routerName} | ${operation} | ${dataCount}개`);
         }
     });
     
