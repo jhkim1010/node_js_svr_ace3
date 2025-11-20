@@ -6,6 +6,7 @@ const config = require('./config');
 const routes = require('./routes');
 const { parseDbHeader } = require('./middleware/db-header');
 const { responseLogger } = require('./middleware/response-logger');
+const { operationLogger } = require('./middleware/operation-logger');
 const { initializeWebSocket } = require('./services/websocket-service');
 
 const app = express();
@@ -19,6 +20,10 @@ app.use(express.static(path.resolve('./') + '/public'));
 app.get('/api/health', (req, res) => {
     res.json({ ok: true, uptimeSec: process.uptime() });
 });
+
+// Operation 로깅 미들웨어 (요청 본문 파싱 후, DB 헤더 파싱 전에 적용)
+// POST, PUT, DELETE 요청의 operation을 먼저 확인하고 로그 출력
+app.use('/api', operationLogger);
 
 // 응답 로깅 미들웨어 (모든 요청에 적용)
 app.use(responseLogger);

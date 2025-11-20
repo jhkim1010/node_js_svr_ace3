@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
+const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
@@ -60,13 +61,11 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리
-        const cleanedData = removeSyncField(rawData);
-        const dataToCreate = filterModelFields(Codigos, cleanedData);
-        const created = await Codigos.create(dataToCreate);
+        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
+        const result = await handleSingleItem(req, res, Codigos, 'codigo', 'Codigos');
         // WebSocket 알림 전송
-        await notifyDbChange(req, Codigos, 'create', created);
-        res.status(201).json(created);
+        await notifyDbChange(req, Codigos, result.action === 'created' ? 'create' : 'update', result.data);
+        res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         console.error('\n❌ Codigos creation error:', err);
         res.status(400).json({ 
@@ -84,12 +83,25 @@ router.put('/:id', async (req, res) => {
         const Codigos = getModelForRequest(req, 'Codigos');
         const cleanedData = removeSyncField(req.body);
         const dataToUpdate = filterModelFields(Codigos, cleanedData);
-        const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
-        const updated = await Codigos.findByPk(id);
-        // WebSocket 알림 전송
-        await notifyDbChange(req, Codigos, 'update', updated);
-        res.json(updated);
+        
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Codigos.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
+            if (count === 0) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const updated = await Codigos.findByPk(id, { transaction });
+            await transaction.commit();
+            // WebSocket 알림 전송
+            await notifyDbChange(req, Codigos, 'update', updated);
+            res.json(updated);
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to update codigo', details: err.message });
@@ -101,13 +113,26 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Codigos = getModelForRequest(req, 'Codigos');
-        // 삭제 전에 데이터 가져오기
-        const toDelete = await Codigos.findByPk(id);
-        if (!toDelete) return res.status(404).json({ error: 'Not found' });
-        const count = await Codigos.destroy({ where: { id_codigo: id } });
-        // WebSocket 알림 전송
-        await notifyDbChange(req, Codigos, 'delete', toDelete);
-        res.status(204).end();
+        
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Codigos.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            // 삭제 전에 데이터 가져오기
+            const toDelete = await Codigos.findByPk(id, { transaction });
+            if (!toDelete) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const count = await Codigos.destroy({ where: { id_codigo: id }, transaction });
+            await transaction.commit();
+            // WebSocket 알림 전송
+            await notifyDbChange(req, Codigos, 'delete', toDelete);
+            res.status(204).end();
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to delete codigo', details: err.message });

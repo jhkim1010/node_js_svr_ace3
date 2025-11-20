@@ -36,6 +36,17 @@ function getTableNameFromPath(path) {
 // CRUD 작업 완료 후 WebSocket 알림 전송
 async function notifyDbChange(req, Model, operation, data) {
     try {
+        // 클라이언트가 WebSocket 알림을 요청했는지 확인
+        // 헤더나 본문에 enable_websocket_notify 또는 websocket_notify가 true인 경우에만 알림 전송
+        const enableWebSocket = req.headers['x-websocket-notify'] === 'true' ||
+                                req.headers['websocket-notify'] === 'true' ||
+                                (req.body && req.body.enable_websocket_notify === true) ||
+                                (req.body && req.body.websocket_notify === true);
+        
+        if (!enableWebSocket) {
+            return; // 클라이언트가 WebSocket 알림을 요청하지 않았으면 알림 전송 안 함
+        }
+        
         const clientId = getClientIdFromRequest(req);
         const tableName = getTableNameFromPath(req.path || req.originalUrl || req.url);
         
@@ -94,6 +105,17 @@ async function notifyDbChange(req, Model, operation, data) {
 // BATCH_SYNC 작업 완료 후 알림
 async function notifyBatchSync(req, Model, result) {
     try {
+        // 클라이언트가 WebSocket 알림을 요청했는지 확인
+        // 헤더나 본문에 enable_websocket_notify 또는 websocket_notify가 true인 경우에만 알림 전송
+        const enableWebSocket = req.headers['x-websocket-notify'] === 'true' ||
+                                req.headers['websocket-notify'] === 'true' ||
+                                (req.body && req.body.enable_websocket_notify === true) ||
+                                (req.body && req.body.websocket_notify === true);
+        
+        if (!enableWebSocket) {
+            return; // 클라이언트가 WebSocket 알림을 요청하지 않았으면 알림 전송 안 함
+        }
+        
         const clientId = getClientIdFromRequest(req);
         const tableName = getTableNameFromPath(req.path || req.originalUrl || req.url);
         

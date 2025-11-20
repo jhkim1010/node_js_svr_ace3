@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
+const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
@@ -46,13 +47,10 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리
-        const rawData = req.body.new_data || req.body;
-        const cleanedData = removeSyncField(rawData);
-        const dataToCreate = filterModelFields(Parametros, cleanedData);
-        const created = await Parametros.create(dataToCreate);
-        await notifyDbChange(req, Parametros, 'create', created);
-        res.status(201).json(created);
+        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
+        const result = await handleSingleItem(req, res, Parametros, ['progname', 'pname', 'opcion'], 'Parametros');
+        await notifyDbChange(req, Parametros, result.action === 'created' ? 'create' : 'update', result.data);
+        res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         console.error('\n❌ Parametros creation error:', err);
         res.status(400).json({ 
@@ -69,11 +67,24 @@ router.put('/:progname/:pname/:opcion', async (req, res) => {
         const Parametros = getModelForRequest(req, 'Parametros');
         const cleanedData = removeSyncField(req.body);
         const dataToUpdate = filterModelFields(Parametros, cleanedData);
-        const [count] = await Parametros.update(dataToUpdate, { where: { progname, pname, opcion } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
-        const updated = await Parametros.findOne({ where: { progname, pname, opcion } });
-        await notifyDbChange(req, Parametros, 'update', updated);
-        res.json(updated);
+        
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Parametros.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            const [count] = await Parametros.update(dataToUpdate, { where: { progname, pname, opcion }, transaction });
+            if (count === 0) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const updated = await Parametros.findOne({ where: { progname, pname, opcion }, transaction });
+            await transaction.commit();
+            await notifyDbChange(req, Parametros, 'update', updated);
+            res.json(updated);
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to update parametro', details: err.message });
@@ -84,11 +95,24 @@ router.delete('/:progname/:pname/:opcion', async (req, res) => {
     const { progname, pname, opcion } = req.params;
     try {
         const Parametros = getModelForRequest(req, 'Parametros');
-        const toDelete = await Parametros.findOne({ where: { progname, pname, opcion } });
-        if (!toDelete) return res.status(404).json({ error: 'Not found' });
-        const count = await Parametros.destroy({ where: { progname, pname, opcion } });
-        await notifyDbChange(req, Parametros, 'delete', toDelete);
-        res.status(204).end();
+        
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Parametros.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            const toDelete = await Parametros.findOne({ where: { progname, pname, opcion }, transaction });
+            if (!toDelete) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const count = await Parametros.destroy({ where: { progname, pname, opcion }, transaction });
+            await transaction.commit();
+            await notifyDbChange(req, Parametros, 'delete', toDelete);
+            res.status(204).end();
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to delete parametro', details: err.message });

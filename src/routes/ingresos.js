@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
+const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
@@ -47,13 +48,10 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리
-        const rawData = req.body.new_data || req.body;
-        const cleanedData = removeSyncField(rawData);
-        const dataToCreate = filterModelFields(Ingresos, cleanedData);
-        const created = await Ingresos.create(dataToCreate);
-        await notifyDbChange(req, Ingresos, 'create', created);
-        res.status(201).json(created);
+        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
+        const result = await handleSingleItem(req, res, Ingresos, 'ingreso_id', 'Ingresos');
+        await notifyDbChange(req, Ingresos, result.action === 'created' ? 'create' : 'update', result.data);
+        res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         console.error('\n❌ Ingresos creation error:', err);
         res.status(400).json({ 
@@ -71,11 +69,24 @@ router.put('/:id', async (req, res) => {
         const Ingresos = getModelForRequest(req, 'Ingresos');
         const cleanedData = removeSyncField(req.body);
         const dataToUpdate = filterModelFields(Ingresos, cleanedData);
-        const [count] = await Ingresos.update(dataToUpdate, { where: { ingreso_id: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
-        const updated = await Ingresos.findByPk(id);
-        await notifyDbChange(req, Ingresos, 'update', updated);
-        res.json(updated);
+        
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Ingresos.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            const [count] = await Ingresos.update(dataToUpdate, { where: { ingreso_id: id }, transaction });
+            if (count === 0) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const updated = await Ingresos.findByPk(id, { transaction });
+            await transaction.commit();
+            await notifyDbChange(req, Ingresos, 'update', updated);
+            res.json(updated);
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to update ingreso', details: err.message });
@@ -87,11 +98,24 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Ingresos = getModelForRequest(req, 'Ingresos');
-        const toDelete = await Ingresos.findByPk(id);
-        if (!toDelete) return res.status(404).json({ error: 'Not found' });
-        const count = await Ingresos.destroy({ where: { ingreso_id: id } });
-        await notifyDbChange(req, Ingresos, 'delete', toDelete);
-        res.status(204).end();
+        
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Ingresos.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            const toDelete = await Ingresos.findByPk(id, { transaction });
+            if (!toDelete) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const count = await Ingresos.destroy({ where: { ingreso_id: id }, transaction });
+            await transaction.commit();
+            await notifyDbChange(req, Ingresos, 'delete', toDelete);
+            res.status(204).end();
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to delete ingreso', details: err.message });

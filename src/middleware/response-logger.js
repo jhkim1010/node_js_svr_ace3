@@ -14,16 +14,27 @@ function responseLogger(req, res, next) {
         // CRUD 작업 종류
         const operation = getOperationType(req.method);
         
-        // 데이터 개수 (req에 저장된 정보 사용)
-        const dataCount = req._dataCount || 1;
+        // 데이터 개수 (req.body.count를 우선 사용, 없으면 req._dataCount 사용)
+        let dataCount = 1;
+        if (req.body && req.body.count !== undefined && req.body.count !== null) {
+            dataCount = parseInt(req.body.count, 10) || 1;
+        } else {
+            dataCount = req._dataCount || 1;
+        }
         
         // 데이터베이스 정보
         const dbInfo = req.dbConfig 
             ? `${req.dbConfig.database}@${req.dbConfig.host}:${req.dbConfig.port}`
             : 'N/A';
         
-        // 1줄로 출력
-        console.log(`${statusText} | ${dbInfo} | ${routerName} | ${operation} | ${dataCount}개`);
+        // 처리 통계 정보가 있으면 상세 출력
+        if (req._processingStats) {
+            const stats = req._processingStats;
+            console.log(`${statusText} | ${dbInfo} | ${routerName} | ${operation} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}`);
+        } else {
+            // 1줄로 출력
+            console.log(`${statusText} | ${dbInfo} | ${routerName} | ${operation} | ${dataCount}개`);
+        }
     });
     
     next();

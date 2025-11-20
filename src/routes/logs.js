@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
+const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
@@ -58,12 +59,10 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리
-        const cleanedData = removeSyncField(rawData);
-        const dataToCreate = filterModelFields(Logs, cleanedData);
-        const created = await Logs.create(dataToCreate);
-        await notifyDbChange(req, Logs, 'create', created);
-        res.status(201).json(created);
+        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
+        const result = await handleSingleItem(req, res, Logs, ['fecha', 'hora', 'evento', 'progname'], 'Logs');
+        await notifyDbChange(req, Logs, result.action === 'created' ? 'create' : 'update', result.data);
+        res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         console.error('\n❌ Logs creation error:', err);
         res.status(400).json({ 
@@ -79,31 +78,49 @@ router.put('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Logs = getModelForRequest(req, 'Logs');
-        // id_log로 먼저 찾기
-        const existing = await Logs.findOne({ where: { id_log: id } });
-        if (!existing) return res.status(404).json({ error: 'Not found' });
         
-        const cleanedData = removeSyncField(req.body);
-        const dataToUpdate = filterModelFields(Logs, cleanedData);
-        const [count] = await Logs.update(dataToUpdate, { 
-            where: { 
-                fecha: existing.fecha,
-                hora: existing.hora,
-                evento: existing.evento,
-                progname: existing.progname
-            } 
-        });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
-        const updated = await Logs.findOne({ 
-            where: { 
-                fecha: existing.fecha,
-                hora: existing.hora,
-                evento: existing.evento,
-                progname: existing.progname
-            } 
-        });
-        await notifyDbChange(req, Logs, 'update', updated);
-        res.json(updated);
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Logs.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            // id_log로 먼저 찾기
+            const existing = await Logs.findOne({ where: { id_log: id }, transaction });
+            if (!existing) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            
+            const cleanedData = removeSyncField(req.body);
+            const dataToUpdate = filterModelFields(Logs, cleanedData);
+            const [count] = await Logs.update(dataToUpdate, { 
+                where: { 
+                    fecha: existing.fecha,
+                    hora: existing.hora,
+                    evento: existing.evento,
+                    progname: existing.progname
+                },
+                transaction
+            });
+            if (count === 0) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const updated = await Logs.findOne({ 
+                where: { 
+                    fecha: existing.fecha,
+                    hora: existing.hora,
+                    evento: existing.evento,
+                    progname: existing.progname
+                },
+                transaction
+            });
+            await transaction.commit();
+            await notifyDbChange(req, Logs, 'update', updated);
+            res.json(updated);
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to update log', details: err.message });
@@ -115,21 +132,38 @@ router.delete('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Logs = getModelForRequest(req, 'Logs');
-        // id_log로 먼저 찾기
-        const existing = await Logs.findOne({ where: { id_log: id } });
-        if (!existing) return res.status(404).json({ error: 'Not found' });
         
-        const count = await Logs.destroy({ 
-            where: { 
-                fecha: existing.fecha,
-                hora: existing.hora,
-                evento: existing.evento,
-                progname: existing.progname
-            } 
-        });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
-        await notifyDbChange(req, Logs, 'delete', existing);
-        res.status(204).end();
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Logs.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            // id_log로 먼저 찾기
+            const existing = await Logs.findOne({ where: { id_log: id }, transaction });
+            if (!existing) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            
+            const count = await Logs.destroy({ 
+                where: { 
+                    fecha: existing.fecha,
+                    hora: existing.hora,
+                    evento: existing.evento,
+                    progname: existing.progname
+                },
+                transaction
+            });
+            if (count === 0) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            await transaction.commit();
+            await notifyDbChange(req, Logs, 'delete', existing);
+            res.status(204).end();
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to delete log', details: err.message });

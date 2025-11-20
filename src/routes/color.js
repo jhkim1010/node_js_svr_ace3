@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
+const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
@@ -58,12 +59,10 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리
-        const cleanedData = removeSyncField(rawData);
-        const dataToCreate = filterModelFields(Color, cleanedData);
-        const created = await Color.create(dataToCreate);
-        await notifyDbChange(req, Color, 'create', created);
-        res.status(201).json(created);
+        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
+        const result = await handleSingleItem(req, res, Color, 'idcolor', 'Color');
+        await notifyDbChange(req, Color, result.action === 'created' ? 'create' : 'update', result.data);
+        res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         console.error('\n❌ Color creation error:', err);
         res.status(400).json({ 
@@ -81,11 +80,24 @@ router.put('/:id', async (req, res) => {
         const Color = getModelForRequest(req, 'Color');
         const cleanedData = removeSyncField(req.body);
         const dataToUpdate = filterModelFields(Color, cleanedData);
-        const [count] = await Color.update(dataToUpdate, { where: { idcolor: id } });
-        if (count === 0) return res.status(404).json({ error: 'Not found' });
-        const updated = await Color.findByPk(id);
-        await notifyDbChange(req, Color, 'update', updated);
-        res.json(updated);
+        
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Color.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            const [count] = await Color.update(dataToUpdate, { where: { idcolor: id }, transaction });
+            if (count === 0) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const updated = await Color.findByPk(id, { transaction });
+            await transaction.commit();
+            await notifyDbChange(req, Color, 'update', updated);
+            res.json(updated);
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to update color', details: err.message });
@@ -97,11 +109,24 @@ router.delete('/:id', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Color = getModelForRequest(req, 'Color');
-        const toDelete = await Color.findByPk(id);
-        if (!toDelete) return res.status(404).json({ error: 'Not found' });
-        const count = await Color.destroy({ where: { idcolor: id } });
-        await notifyDbChange(req, Color, 'delete', toDelete);
-        res.status(204).end();
+        
+        // 트랜잭션 사용하여 원자성 보장
+        const sequelize = Color.sequelize;
+        const transaction = await sequelize.transaction();
+        try {
+            const toDelete = await Color.findByPk(id, { transaction });
+            if (!toDelete) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            const count = await Color.destroy({ where: { idcolor: id }, transaction });
+            await transaction.commit();
+            await notifyDbChange(req, Color, 'delete', toDelete);
+            res.status(204).end();
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to delete color', details: err.message });
