@@ -57,33 +57,6 @@ function operationLogger(req, res, next) {
             }
         }
         
-        // 디버깅: req.body 상태 확인
-        console.log(`   Body Status:`);
-        console.log(`      req.body exists: ${!!req.body}`);
-        console.log(`      req.body type: ${typeof req.body}`);
-        if (req.body) {
-            console.log(`      req.body keys: ${Object.keys(req.body).join(', ') || 'empty object'}`);
-            if (req.body.operation !== undefined) {
-                console.log(`      req.body.operation: ${req.body.operation} (type: ${typeof req.body.operation})`);
-            }
-            if (req.body.trigger_operation !== undefined) {
-                console.log(`      req.body.trigger_operation: ${req.body.trigger_operation} (type: ${typeof req.body.trigger_operation})`);
-            }
-            // 본문 일부 출력 (너무 크면 자르기)
-            try {
-                const bodyStr = JSON.stringify(req.body);
-                if (bodyStr.length > 500) {
-                    console.log(`      req.body preview: ${bodyStr.substring(0, 500)}... (truncated, total: ${bodyStr.length} chars)`);
-                } else {
-                    console.log(`      req.body: ${bodyStr}`);
-                }
-            } catch (e) {
-                console.log(`      req.body (stringify failed): ${e.message}`);
-            }
-        } else {
-            console.log(`      WARNING: req.body is null/undefined - JSON parsing may have failed!`);
-        }
-        
         // operation 정규화 (대문자로 변환)
         if (operation) {
             operation = operation.toUpperCase();
@@ -128,7 +101,6 @@ function operationLogger(req, res, next) {
         
         // operation을 먼저 로그로 출력 (HTTP 메서드 포함)
         console.log(`[Request Received] Method: ${req.method} | Operation: ${operation} | Table: ${routerName} | DB: ${dbInfo} | Client: ${clientId} | Data Count: ${dataCount}`);
-        console.log('='.repeat(80) + '\n');
         
         // req에 operation 정보 저장 (다른 미들웨어나 핸들러에서 사용 가능)
         req._operation = operation;
