@@ -177,5 +177,127 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
     };
 }
 
-module.exports = { removeSyncField, filterModelFields, handleBatchSync };
+// 배열 형태의 data를 처리하는 공통 함수 (operation 파라미터 기반)
+async function handleArrayData(req, res, Model, primaryKey, modelName) {
+    // operation에 따라 처리 방식 결정 (primary key 기반이 아닌 operation 값 기반)
+    const operation = (req.body.operation || req.body.trigger_operation || '').toUpperCase();
+    
+    const results = [];
+    const errors = [];
+    
+    // operation에 따라 각 항목 처리
+    for (let i = 0; i < req.body.data.length; i++) {
+        try {
+            const item = req.body.data[i];
+            const cleanedData = removeSyncField(item);
+            const filteredItem = filterModelFields(Model, cleanedData);
+            
+            if (operation === 'CREATE') {
+                // CREATE: 무조건 INSERT
+                const created = await Model.create(filteredItem);
+                results.push({ index: i, action: 'created', data: created });
+            } else if (operation === 'UPDATE') {
+                // UPDATE: primary key를 기반으로 업데이트
+                const whereCondition = Array.isArray(primaryKey)
+                    ? primaryKey.reduce((acc, key) => {
+                        if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                            acc[key] = filteredItem[key];
+                        }
+                        return acc;
+                    }, {})
+                    : { [primaryKey]: filteredItem[primaryKey] };
+                
+                // primary key가 모두 있는지 확인
+                const hasAllKeys = Array.isArray(primaryKey)
+                    ? primaryKey.every(key => filteredItem[key] !== undefined && filteredItem[key] !== null)
+                    : filteredItem[primaryKey] !== undefined && filteredItem[primaryKey] !== null;
+                
+                if (!hasAllKeys) {
+                    throw new Error(`Primary key(s) missing for UPDATE operation`);
+                }
+                
+                // primary key 필드를 업데이트 데이터에서 제거 (일부 DB에서는 primary key 업데이트 불가)
+                const updateData = { ...filteredItem };
+                if (Array.isArray(primaryKey)) {
+                    primaryKey.forEach(key => delete updateData[key]);
+                } else {
+                    delete updateData[primaryKey];
+                }
+                
+                const [count] = await Model.update(updateData, { where: whereCondition });
+                if (count > 0) {
+                    const updated = Array.isArray(primaryKey)
+                        ? await Model.findOne({ where: whereCondition })
+                        : await Model.findByPk(filteredItem[primaryKey]);
+                    results.push({ index: i, action: 'updated', data: updated });
+                } else {
+                    throw new Error(`Record not found for UPDATE operation`);
+                }
+            } else if (operation === 'DELETE') {
+                // DELETE: primary key를 기반으로 삭제
+                const whereCondition = Array.isArray(primaryKey)
+                    ? primaryKey.reduce((acc, key) => {
+                        if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                            acc[key] = filteredItem[key];
+                        }
+                        return acc;
+                    }, {})
+                    : { [primaryKey]: filteredItem[primaryKey] };
+                
+                // primary key가 모두 있는지 확인
+                const hasAllKeys = Array.isArray(primaryKey)
+                    ? primaryKey.every(key => filteredItem[key] !== undefined && filteredItem[key] !== null)
+                    : filteredItem[primaryKey] !== undefined && filteredItem[primaryKey] !== null;
+                
+                if (!hasAllKeys) {
+                    throw new Error(`Primary key(s) missing for DELETE operation`);
+                }
+                
+                // 삭제 전에 데이터 가져오기 (알림용)
+                const toDelete = Array.isArray(primaryKey)
+                    ? await Model.findOne({ where: whereCondition })
+                    : await Model.findByPk(filteredItem[primaryKey]);
+                
+                if (!toDelete) {
+                    throw new Error(`Record not found for DELETE operation`);
+                }
+                
+                const count = await Model.destroy({ where: whereCondition });
+                if (count > 0) {
+                    results.push({ index: i, action: 'deleted', data: toDelete });
+                } else {
+                    throw new Error(`Failed to delete record`);
+                }
+            } else {
+                // operation이 없거나 알 수 없는 경우 기본적으로 CREATE
+                const created = await Model.create(filteredItem);
+                results.push({ index: i, action: 'created', data: created });
+            }
+        } catch (itemErr) {
+            errors.push({ 
+                index: i, 
+                error: itemErr.message,
+                errorType: itemErr.constructor.name,
+                data: req.body.data[i] 
+            });
+        }
+    }
+    
+    if (results.length > 0 || errors.length > 0) {
+        const result = {
+            success: true,
+            message: `Processing complete: ${results.length} succeeded, ${errors.length} failed`,
+            processed: results.length,
+            failed: errors.length,
+            results: results,
+            errors: errors.length > 0 ? errors : undefined
+        };
+        await require('../utils/websocket-notifier').notifyBatchSync(req, Model, result);
+        return result;
+    } else {
+        throw new Error('All items failed to process');
+    }
+}
+
+module.exports = { removeSyncField, filterModelFields, handleBatchSync, handleArrayData };
 

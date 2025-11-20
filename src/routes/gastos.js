@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
@@ -50,6 +50,12 @@ router.post('/', async (req, res) => {
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             const result = await handleBatchSync(req, res, Gastos, 'id_ga', 'Gastos');
             await notifyBatchSync(req, Gastos, result);
+            return res.status(200).json(result);
+        }
+        
+        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
+        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
+            const result = await handleArrayData(req, res, Gastos, 'id_ga', 'Gastos');
             return res.status(200).json(result);
         }
         

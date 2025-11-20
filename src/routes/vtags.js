@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, filterModelFields, handleBatchSync } = require('../utils/batch-sync-handler');
+const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 
 const router = Router();
@@ -42,7 +42,13 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // 배열 형태의 데이터 처리
+        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
+        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
+            const result = await handleArrayData(req, res, Vtags, 'vtag_id', 'Vtags');
+            return res.status(200).json(result);
+        }
+        
+        // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우)
         const rawData = req.body.new_data || req.body;
         if (Array.isArray(rawData)) {
             // 배열인 경우 BATCH_SYNC와 동일하게 처리
