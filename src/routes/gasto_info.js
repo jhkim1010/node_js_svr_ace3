@@ -55,7 +55,15 @@ router.post('/', async (req, res) => {
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         const errorMsg = err.original ? err.original.message : err.message;
-        console.error(`ERROR: GastoInfo INSERT/UPDATE failed: ${errorMsg}`);
+        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+            // Validation error인 경우 상세 정보 표시
+            console.error(`ERROR: GastoInfo INSERT/UPDATE failed: ${errorMsg}`);
+            err.errors.forEach((validationError) => {
+                console.error(`   Column: ${validationError.path} | Value: ${validationError.value || 'null'} | Error: ${validationError.message}`);
+            });
+        } else {
+            console.error(`ERROR: GastoInfo INSERT/UPDATE failed: ${errorMsg}`);
+        }
         res.status(400).json({ 
             error: 'Failed to create gasto_info', 
             details: err.message,
