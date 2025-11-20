@@ -64,7 +64,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Logs, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        console.error('\n❌ Logs creation error:', err);
+        console.error('\nERROR: Logs creation error:', err);
         res.status(400).json({ 
             error: 'Failed to create log', 
             details: err.message,

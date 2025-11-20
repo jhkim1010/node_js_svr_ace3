@@ -54,7 +54,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Vcode, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        console.error('\n❌ Vcode creation error:');
+        console.error('\nERROR: Vcode creation error:');
         console.error('   Error type:', err.constructor.name);
         console.error('   Error message:', err.message);
         console.error('   Full error:', err);

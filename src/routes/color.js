@@ -64,7 +64,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Color, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        console.error('\n❌ Color creation error:', err);
+        console.error('\nERROR: Color creation error:', err);
         res.status(400).json({ 
             error: 'Failed to create color', 
             details: err.message,

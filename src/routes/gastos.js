@@ -12,7 +12,7 @@ router.get('/', async (req, res) => {
         const records = await Gastos.findAll({ limit: 100, order: [['id_ga', 'DESC']] });
         res.json(records);
     } catch (err) {
-        console.error('\n❌ Gastos fetch error:');
+        console.error('\nERROR: Gastos fetch error:');
         console.error('   Error type:', err.constructor.name);
         console.error('   Error message:', err.message);
         console.error('   Full error:', err);
@@ -65,7 +65,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Gastos, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        console.error('\n❌ Gastos creation error:');
+        console.error('\nERROR: Gastos creation error:');
         console.error('   Error type:', err.constructor.name);
         console.error('   Error message:', err.message);
         console.error('   Full error:', err);

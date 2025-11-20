@@ -38,7 +38,7 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
     if (err.type === 'entity.too.large') {
-        console.error('\n❌ Request body size exceeded:');
+        console.error('\nERROR: Request body size exceeded:');
         console.error(`   Request size: ${(err.length / 1024 / 1024).toFixed(2)}MB`);
         console.error(`   Size limit: ${(err.limit / 1024 / 1024).toFixed(2)}MB`);
         console.error('');

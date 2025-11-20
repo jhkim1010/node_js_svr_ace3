@@ -41,8 +41,6 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                 
                 if (availableUniqueKey) {
                     const whereCondition = buildWhereCondition(filteredItem, availableUniqueKey);
-                    const keyInfo = Array.isArray(availableUniqueKey) ? availableUniqueKey.join(', ') : availableUniqueKey;
-                    console.log(`\n📋 [Vcodes] Item ${i}: Found unique key (${keyInfo}) - Searching for existing record...`);
                     
                     // 먼저 기존 레코드 조회
                     const existingRecord = Array.isArray(availableUniqueKey)
@@ -50,9 +48,6 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                         : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
                     
                     if (existingRecord) {
-                        console.log(`   🔍 [Vcodes] Item ${i}: Found existing record:`, JSON.stringify(existingRecord.toJSON(), null, 2));
-                        console.log(`   📝 [Vcodes] Item ${i}: Attempting UPDATE...`);
-                        
                         const updateData = { ...filteredItem };
                         const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
                         keysToRemove.forEach(key => delete updateData[key]);
@@ -63,25 +58,20 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                             const updated = Array.isArray(availableUniqueKey)
                                 ? await Model.findOne({ where: whereCondition, transaction })
                                 : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                            console.log(`   ✅ [Vcodes] Item ${i}: UPDATE successful`);
                             results.push({ index: i, action: 'updated', data: updated });
                             updatedCount++;
                         } else {
-                            console.log(`   ⚠️  [Vcodes] Item ${i}: UPDATE failed - Switching to INSERT`);
                             const created = await Model.create(filteredItem, { transaction });
                             results.push({ index: i, action: 'created', data: created });
                             createdCount++;
                         }
                     } else {
-                        console.log(`   ⚠️  [Vcodes] Item ${i}: No existing record found - Switching to INSERT`);
                         const created = await Model.create(filteredItem, { transaction });
                         results.push({ index: i, action: 'created', data: created });
                         createdCount++;
                     }
                 } else {
-                    console.log(`\n📋 [Vcodes] Item ${i}: No unique key found - Performing INSERT`);
                     const created = await Model.create(filteredItem, { transaction });
-                    console.log(`   ✅ [Vcodes] Item ${i}: INSERT successful`);
                     results.push({ index: i, action: 'created', data: created });
                     createdCount++;
                 }
@@ -96,7 +86,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                     // SAVEPOINT가 없거나 이미 롤백된 경우 무시
                 }
                 
-                console.error(`❌ Vcodes item ${i} processing failed:`, err.message);
+                console.error(`ERROR: Vcodes item ${i} processing failed:`, err.message);
                 errors.push({ 
                     index: i, 
                     error: err.message,
@@ -126,7 +116,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
         };
         
         if (errors.length === 0) {
-            console.log(`\n✅ [Vcodes] Processing Summary: Total ${totalCount} items | Created: ${createdCount} | Updated: ${updatedCount} | Failed: ${errors.length}`);
+            console.log(`\n[Vcodes] Processing Summary: Total ${totalCount} items | Created: ${createdCount} | Updated: ${updatedCount} | Failed: ${errors.length}`);
             req._processingStats = {
                 total: totalCount,
                 created: createdCount,
@@ -184,8 +174,6 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
                     
                     if (availableUniqueKey) {
                         const whereCondition = buildWhereCondition(filteredItem, availableUniqueKey);
-                        const keyInfo = Array.isArray(availableUniqueKey) ? availableUniqueKey.join(', ') : availableUniqueKey;
-                        console.log(`\n📋 [Vcodes] Item ${i} (${operation}): Found unique key (${keyInfo}) - Searching for existing record...`);
                         
                         // 먼저 기존 레코드 조회
                         const existingRecord = Array.isArray(availableUniqueKey)
@@ -193,9 +181,6 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
                             : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
                         
                         if (existingRecord) {
-                            console.log(`   🔍 [Vcodes] Item ${i}: Found existing record:`, JSON.stringify(existingRecord.toJSON(), null, 2));
-                            console.log(`   📝 [Vcodes] Item ${i}: Attempting UPDATE...`);
-                            
                             const updateData = { ...filteredItem };
                             const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
                             keysToRemove.forEach(key => delete updateData[key]);
@@ -205,25 +190,20 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
                                 const updated = Array.isArray(availableUniqueKey)
                                     ? await Model.findOne({ where: whereCondition, transaction })
                                     : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                console.log(`   ✅ [Vcodes] Item ${i}: UPDATE successful`);
                                 results.push({ index: i, action: 'updated', data: updated });
                                 updatedCount++;
                             } else {
-                                console.log(`   ⚠️  [Vcodes] Item ${i}: UPDATE failed - Switching to INSERT`);
                                 const created = await Model.create(filteredItem, { transaction });
                                 results.push({ index: i, action: 'created', data: created });
                                 createdCount++;
                             }
                         } else {
-                            console.log(`   ⚠️  [Vcodes] Item ${i}: No existing record found - Switching to INSERT`);
                             const created = await Model.create(filteredItem, { transaction });
                             results.push({ index: i, action: 'created', data: created });
                             createdCount++;
                         }
                     } else {
-                        console.log(`\n📋 [Vcodes] Item ${i} (${operation}): No unique key found - Performing INSERT`);
                         const created = await Model.create(filteredItem, { transaction });
-                        console.log(`   ✅ [Vcodes] Item ${i}: INSERT successful`);
                         results.push({ index: i, action: 'created', data: created });
                         createdCount++;
                     }
@@ -261,7 +241,7 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
                     // SAVEPOINT가 없거나 이미 롤백된 경우 무시
                 }
                 
-                console.error(`❌ Vcodes item ${i} processing failed:`, err.message);
+                console.error(`ERROR: Vcodes item ${i} processing failed:`, err.message);
                 errors.push({ 
                     index: i, 
                     error: err.message,
@@ -291,7 +271,7 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
             errors: errors.length > 0 ? errors : undefined
         };
         
-        console.log(`\n✅ [Vcodes] Processing Summary: Total ${totalCount} items | Created: ${createdCount} | Updated: ${updatedCount} | Deleted: ${deletedCount} | Failed: ${errors.length}`);
+        console.log(`\n[Vcodes] Processing Summary: Total ${totalCount} items | Created: ${createdCount} | Updated: ${updatedCount} | Deleted: ${deletedCount} | Failed: ${errors.length}`);
         
         req._processingStats = {
             total: totalCount,
