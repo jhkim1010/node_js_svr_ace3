@@ -125,14 +125,50 @@ async function setupDbListener(host, port, database, user, password, ssl = false
     // NOTIFY 이벤트 리스너
     client.on('notification', (msg) => {
         if (io) {
-            // 동일한 데이터베이스에 연결된 클라이언트들에게만 브로드캐스트
-            broadcastToDbClients(key, null, 'db_change', {
-                channel: msg.channel,
-                payload: msg.payload,
-                database: database,
-                host: host,
-                port: port
-            });
+            // 채널 이름에서 테이블명과 operation 추출
+            // 형식: db_change_{table}_{operation}
+            // 예: db_change_gastos_insert, db_change_gastos_update, db_change_gastos_delete
+            const channelParts = msg.channel.split('_');
+            let tableName = null;
+            let operation = null;
+            
+            if (channelParts.length >= 4 && channelParts[0] === 'db' && channelParts[1] === 'change') {
+                // 마지막 부분이 operation (insert, update, delete)
+                operation = channelParts[channelParts.length - 1].toLowerCase();
+                // 중간 부분이 테이블명 (언더스코어로 연결된 경우도 처리)
+                tableName = channelParts.slice(2, -1).join('_');
+                
+                // operation을 표준화 (insert -> CREATE, update -> UPDATE, delete -> DELETE)
+                const operationMap = {
+                    'insert': 'CREATE',
+                    'update': 'UPDATE',
+                    'delete': 'DELETE'
+                };
+                const normalizedOperation = operationMap[operation] || operation.toUpperCase();
+                
+                console.log(`[WebSocket] DB Trigger Notification - Channel: ${msg.channel}, Table: ${tableName}, Operation: ${normalizedOperation}, dbKey: ${key}`);
+                
+                // 동일한 데이터베이스에 연결된 클라이언트들에게만 브로드캐스트
+                broadcastToDbClients(key, null, 'db_change', {
+                    channel: msg.channel,
+                    table: tableName,
+                    operation: normalizedOperation,
+                    payload: msg.payload,
+                    database: database,
+                    host: host,
+                    port: port
+                });
+            } else {
+                // 채널 형식이 예상과 다를 경우 원본 정보만 전달
+                console.warn(`[WebSocket] Unexpected channel format: ${msg.channel}`);
+                broadcastToDbClients(key, null, 'db_change', {
+                    channel: msg.channel,
+                    payload: msg.payload,
+                    database: database,
+                    host: host,
+                    port: port
+                });
+            }
         }
     });
 

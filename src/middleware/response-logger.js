@@ -80,6 +80,8 @@ function extractRouterName(path) {
 }
 
 function getOperationType(method) {
+    // HTTP 메서드를 대문자로 정규화하여 대소문자 구분 문제 방지
+    const normalizedMethod = (method || '').toUpperCase();
     const methodMap = {
         'GET': 'Read',
         'POST': 'Create',
@@ -87,7 +89,7 @@ function getOperationType(method) {
         'DELETE': 'Delete',
         'PATCH': 'Update'
     };
-    return methodMap[method] || method;
+    return methodMap[normalizedMethod] || normalizedMethod;
 }
 
 module.exports = { responseLogger };

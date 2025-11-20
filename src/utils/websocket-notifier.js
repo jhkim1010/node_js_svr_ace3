@@ -65,13 +65,14 @@ async function notifyDbChange(req, Model, operation, data) {
         // 동일한 데이터베이스에 연결된 다른 클라이언트 개수 조회
         const connectedClientCount = getConnectedClientCount(dbKey, clientId || null);
         
-        // CRUD 작업 유형을 명확히 표시
+        // CRUD 작업 유형을 명확히 표시 (대소문자 구분 없이 처리)
+        const normalizedOperation = (operation || '').toLowerCase();
         const operationLabel = {
             'create': 'CREATE',
             'update': 'UPDATE', 
             'delete': 'DELETE',
             'read': 'READ'
-        }[operation] || operation.toUpperCase();
+        }[normalizedOperation] || (operation ? operation.toUpperCase() : 'UNKNOWN');
         
         // 디버깅 로그 - CRUD 작업 유형 표시
         console.log(`[WebSocket] DB Change Notification - Table: ${tableName}, Operation: ${operationLabel}, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
