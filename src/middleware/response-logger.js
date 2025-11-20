@@ -9,6 +9,17 @@ function responseLogger(req, res, next) {
         
         // 라우터 정보 추출
         const path = req.originalUrl || req.path || req.url;
+        
+        // path가 http:// 또는 https://로 시작하는지 확인
+        if (path && (path.toLowerCase().startsWith('http://') || path.toLowerCase().startsWith('https://'))) {
+            console.error(`\nERROR: Invalid path detected in response - path should not start with http:// or https://`);
+            console.error(`   Received path: ${path}`);
+            console.error(`   Method: ${req.method}`);
+            console.error(`   Status Code: ${statusCode}`);
+            console.error(`   This is likely a configuration error in the client application.`);
+            console.error('');
+        }
+        
         const routerName = extractRouterName(path);
         
         // CRUD 작업 종류

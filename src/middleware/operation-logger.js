@@ -1,9 +1,18 @@
 // 요청이 들어올 때 operation을 먼저 확인하고 로그를 출력하는 미들웨어
 
 function operationLogger(req, res, next) {
+    // path가 http:// 또는 https://로 시작하는지 확인
+    const path = req.originalUrl || req.path || req.url;
+    if (path && (path.toLowerCase().startsWith('http://') || path.toLowerCase().startsWith('https://'))) {
+        console.error(`\nERROR: Invalid path detected - path should not start with http:// or https://`);
+        console.error(`   Received path: ${path}`);
+        console.error(`   Method: ${req.method}`);
+        console.error(`   This is likely a configuration error in the client application.`);
+        console.error('');
+    }
+    
     // GET 요청에 대한 간단한 로그
     if (req.method === 'GET') {
-        const path = req.originalUrl || req.path || req.url;
         const routerName = extractRouterName(path);
         const dbInfo = req.dbConfig 
             ? `${req.dbConfig.database}@${req.dbConfig.host}:${req.dbConfig.port}`
@@ -15,16 +24,8 @@ function operationLogger(req, res, next) {
     // POST, PUT, DELETE 요청에 대해서만 operation 확인
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
         // 디버깅: 요청 기본 정보 출력
-        const path = req.originalUrl || req.path || req.url;
         const routerName = extractRouterName(path);
         const contentType = req.headers['content-type'] || 'N/A';
-        
-        console.log('\n' + '='.repeat(80));
-        console.log(`[DEBUG] Request Debug Info`);
-        console.log(`   Method: ${req.method}`);
-        console.log(`   Path: ${path}`);
-        console.log(`   Router: ${routerName}`);
-        console.log(`   Content-Type: ${contentType}`);
         
         // 디버깅: operation 찾기 과정 추적
         let operation = null;
@@ -55,12 +56,6 @@ function operationLogger(req, res, next) {
                 operationSource = 'body.trigger_operation';
             }
         }
-        
-        // 디버깅: 헤더 정보 출력 (operation 관련)
-        console.log(`   Headers (operation related):`);
-        console.log(`      x-operation: ${req.headers['x-operation'] || 'N/A'}`);
-        console.log(`      operation: ${req.headers['operation'] || 'N/A'}`);
-        console.log(`      x-client-id: ${req.headers['x-client-id'] || 'N/A'}`);
         
         // 디버깅: req.body 상태 확인
         console.log(`   Body Status:`);
