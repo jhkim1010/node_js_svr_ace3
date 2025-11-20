@@ -54,20 +54,12 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Vdetalle, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        console.error('\nERROR: Vdetalle creation error:');
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        console.error('   Full error:', err);
-        if (err.errors && Array.isArray(err.errors)) {
-            console.error('   Validation errors:');
-            err.errors.forEach((validationError) => {
-                console.error(`     - Field: ${validationError.path}, Value: ${validationError.value}, Message: ${validationError.message}`);
-            });
-        }
-        if (err.original) {
-            console.error('   Original error:', err.original);
-        }
-        console.error('');
+        const errorMsg = err.original ? err.original.message : err.message;
+        const validationMsg = err.errors && Array.isArray(err.errors) 
+            ? err.errors.map(e => `${e.path}: ${e.message}`).join(', ')
+            : '';
+        const finalMsg = validationMsg ? `${errorMsg} (${validationMsg})` : errorMsg;
+        console.error(`ERROR: Vdetalle INSERT/UPDATE failed: ${finalMsg}`);
         res.status(400).json({ 
             error: 'Failed to create vdetalle', 
             details: err.message,

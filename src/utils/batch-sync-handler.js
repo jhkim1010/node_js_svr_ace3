@@ -163,7 +163,7 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                     createdCount++;
                 }
             } catch (err) {
-                console.error(`❌ Item ${i} processing failed (${modelName}):`, err.message);
+                console.error(`ERROR: ${modelName} INSERT/UPDATE failed (item ${i}): ${err.message}`);
                 errors.push({ 
                     index: i, 
                     error: err.message,

@@ -64,7 +64,8 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Creditoventas, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        console.error('\nERROR: Creditoventas creation error:', err);
+        const errorMsg = err.original ? err.original.message : err.message;
+        console.error(`ERROR: Creditoventas INSERT/UPDATE failed: ${errorMsg}`);
         res.status(400).json({ 
             error: 'Failed to create creditoventa', 
             details: err.message,

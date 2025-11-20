@@ -65,14 +65,8 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Gastos, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        console.error('\nERROR: Gastos creation error:');
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        console.error('   Full error:', err);
-        if (err.original) {
-            console.error('   Original error:', err.original);
-        }
-        console.error('');
+        const errorMsg = err.original ? err.original.message : err.message;
+        console.error(`ERROR: Gastos INSERT/UPDATE failed: ${errorMsg}`);
         res.status(400).json({ 
             error: 'Failed to create gasto', 
             details: err.message,

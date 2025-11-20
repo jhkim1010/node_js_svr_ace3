@@ -86,7 +86,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                     // SAVEPOINT가 없거나 이미 롤백된 경우 무시
                 }
                 
-                console.error(`ERROR: Vcodes item ${i} processing failed:`, err.message);
+                console.error(`ERROR: Vcodes INSERT/UPDATE failed (item ${i}): ${err.message}`);
                 errors.push({ 
                     index: i, 
                     error: err.message,
@@ -241,7 +241,7 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
                     // SAVEPOINT가 없거나 이미 롤백된 경우 무시
                 }
                 
-                console.error(`ERROR: Vcodes item ${i} processing failed:`, err.message);
+                console.error(`ERROR: Vcodes INSERT/UPDATE failed (item ${i}): ${err.message}`);
                 errors.push({ 
                     index: i, 
                     error: err.message,
