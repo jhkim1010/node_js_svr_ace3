@@ -3,6 +3,7 @@ const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
+const { classifyError } = require('../utils/error-classifier');
 
 const router = Router();
 
@@ -65,9 +66,13 @@ router.post('/', async (req, res) => {
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         const errorMsg = err.original ? err.original.message : err.message;
+        const errorClassification = classifyError(err);
+        
         if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
             // Validation error인 경우 상세 정보 표시
-            console.error(`ERROR: Color INSERT/UPDATE failed: ${errorMsg}`);
+            console.error(`ERROR: Color INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
+            console.error(`   Problem Source: ${errorClassification.description}`);
+            console.error(`   Reason: ${errorClassification.reason}`);
             err.errors.forEach((validationError, index) => {
                 console.error(`   [${index + 1}] Column: ${validationError.path}`);
                 console.error(`       Value: ${validationError.value !== undefined && validationError.value !== null ? JSON.stringify(validationError.value) : 'null'}`);
@@ -79,7 +84,9 @@ router.post('/', async (req, res) => {
                 }
             });
         } else {
-            console.error(`ERROR: Color INSERT/UPDATE failed: ${errorMsg}`);
+            console.error(`ERROR: Color INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
+            console.error(`   Problem Source: ${errorClassification.description}`);
+            console.error(`   Reason: ${errorClassification.reason}`);
         }
         res.status(400).json({ 
             error: 'Failed to create color', 

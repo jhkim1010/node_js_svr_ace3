@@ -1,5 +1,6 @@
 // Vcodes 테이블 전용 핸들러
 const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKey, buildWhereCondition } = require('./batch-sync-handler');
+const { classifyError } = require('./error-classifier');
 
 async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
     // 데이터 개수를 req에 저장 (로깅용)
@@ -86,7 +87,10 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                     // SAVEPOINT가 없거나 이미 롤백된 경우 무시
                 }
                 
-                console.error(`ERROR: Vcodes INSERT/UPDATE failed (item ${i}): ${err.message}`);
+                const errorClassification = classifyError(err);
+                console.error(`ERROR: Vcodes INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${err.message}`);
+                console.error(`   Problem Source: ${errorClassification.description}`);
+                console.error(`   Reason: ${errorClassification.reason}`);
                 errors.push({ 
                     index: i, 
                     error: err.message,
@@ -240,7 +244,10 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
                     // SAVEPOINT가 없거나 이미 롤백된 경우 무시
                 }
                 
-                console.error(`ERROR: Vcodes INSERT/UPDATE failed (item ${i}): ${err.message}`);
+                const errorClassification = classifyError(err);
+                console.error(`ERROR: Vcodes INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${err.message}`);
+                console.error(`   Problem Source: ${errorClassification.description}`);
+                console.error(`   Reason: ${errorClassification.reason}`);
                 errors.push({ 
                     index: i, 
                     error: err.message,

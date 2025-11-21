@@ -92,6 +92,8 @@ function buildWhereCondition(data, uniqueKey) {
 }
 
 // BATCH_SYNC 처리를 위한 공통 함수
+const { classifyError } = require('./error-classifier');
+
 async function handleBatchSync(req, res, Model, primaryKey, modelName) {
     // 데이터 개수를 req에 저장 (로깅용)
     // req.body.count를 우선 사용, 없으면 배열 길이 계산
@@ -163,7 +165,10 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                     createdCount++;
                 }
             } catch (err) {
-                console.error(`ERROR: ${modelName} INSERT/UPDATE failed (item ${i}): ${err.message}`);
+                const errorClassification = classifyError(err);
+                console.error(`ERROR: ${modelName} INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${err.message}`);
+                console.error(`   Problem Source: ${errorClassification.description}`);
+                console.error(`   Reason: ${errorClassification.reason}`);
                 errors.push({ 
                     index: i, 
                     error: err.message,
