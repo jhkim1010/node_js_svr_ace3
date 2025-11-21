@@ -14,6 +14,7 @@ const tiposRouter = require('./tipos');
 const vtagsRouter = require('./vtags');
 const onlineVentasRouter = require('./online_ventas');
 const logsRouter = require('./logs');
+const vendedoresRouter = require('./vendedores');
 
 const router = Router();
 
@@ -33,6 +34,7 @@ router.use('/tipos', tiposRouter);
 router.use('/vtags', vtagsRouter);
 router.use('/online_ventas', onlineVentasRouter);
 router.use('/logs', logsRouter);
+router.use('/vendedores', vendedoresRouter);
 
 module.exports = router;
 

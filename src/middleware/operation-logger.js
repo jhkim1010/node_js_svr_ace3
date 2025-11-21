@@ -117,6 +117,7 @@ function extractRouterName(path) {
             'vtags': 'vtags',
             'online_ventas': 'online_ventas',
             'logs': 'logs',
+            'vendedores': 'vendedores',
             'health': 'health'
         };
         return routerMap[router] || router;

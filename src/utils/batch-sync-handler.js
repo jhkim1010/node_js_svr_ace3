@@ -135,25 +135,28 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                 const availableUniqueKey = findAvailableUniqueKey(filteredItem, uniqueKeys);
                 
                 if (availableUniqueKey) {
-                    // unique key가 있으면 실제 DB에서 존재하는지 확인
+                    // unique key가 있으면 먼저 레코드 존재 여부 확인
                     const whereCondition = buildWhereCondition(filteredItem, availableUniqueKey);
                     
-                    // unique key 필드를 업데이트 데이터에서 제거
-                    const updateData = { ...filteredItem };
-                    const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
-                    keysToRemove.forEach(key => delete updateData[key]);
+                    // 레코드 조회
+                    const existingRecord = Array.isArray(availableUniqueKey)
+                        ? await Model.findOne({ where: whereCondition, transaction })
+                        : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
                     
-                    const [count] = await Model.update(updateData, { where: whereCondition, transaction });
-                    
-                    if (count > 0) {
-                        // 레코드가 존재하면 UPDATE 성공
+                    if (existingRecord) {
+                        // 레코드가 존재하면 UPDATE
+                        const updateData = { ...filteredItem };
+                        const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                        keysToRemove.forEach(key => delete updateData[key]);
+                        
+                        await Model.update(updateData, { where: whereCondition, transaction });
                         const updated = Array.isArray(availableUniqueKey)
                             ? await Model.findOne({ where: whereCondition, transaction })
                             : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
                         results.push({ index: i, action: 'updated', data: updated });
                         updatedCount++;
                     } else {
-                        // unique key가 있지만 레코드가 없으면 INSERT
+                        // 레코드가 없으면 INSERT
                         const created = await Model.create(filteredItem, { transaction });
                         results.push({ index: i, action: 'created', data: created });
                         createdCount++;
@@ -267,16 +270,21 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
                 const availableUniqueKey = findAvailableUniqueKey(filteredItem, uniqueKeys);
                 
                 if (availableUniqueKey) {
-                    // unique key가 있으면 UPDATE 시도
+                    // unique key가 있으면 먼저 레코드 존재 여부 확인
                     const whereCondition = buildWhereCondition(filteredItem, availableUniqueKey);
                     
-                    // unique key 필드를 업데이트 데이터에서 제거 (일부 DB에서는 unique key 업데이트 불가)
-                    const updateData = { ...filteredItem };
-                    const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
-                    keysToRemove.forEach(key => delete updateData[key]);
+                    // 레코드 조회
+                    const existingRecord = Array.isArray(availableUniqueKey)
+                        ? await Model.findOne({ where: whereCondition, transaction })
+                        : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
                     
-                    const [count] = await Model.update(updateData, { where: whereCondition, transaction });
-                    if (count > 0) {
+                    if (existingRecord) {
+                        // 레코드가 존재하면 UPDATE
+                        const updateData = { ...filteredItem };
+                        const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                        keysToRemove.forEach(key => delete updateData[key]);
+                        
+                        await Model.update(updateData, { where: whereCondition, transaction });
                         const updated = Array.isArray(availableUniqueKey)
                             ? await Model.findOne({ where: whereCondition, transaction })
                             : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
