@@ -116,7 +116,6 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
         };
         
         if (errors.length === 0) {
-            console.log(`\n[Vdetalle] Processing Summary: Total ${totalCount} items | Created: ${createdCount} | Updated: ${updatedCount} | Failed: ${errors.length}`);
             req._processingStats = {
                 total: totalCount,
                 created: createdCount,
@@ -270,8 +269,6 @@ async function handleVdetalleArrayData(req, res, Model, primaryKey, modelName) {
             results: results,
             errors: errors.length > 0 ? errors : undefined
         };
-        
-        console.log(`\n[Vdetalle] Processing Summary: Total ${totalCount} items | Created: ${createdCount} | Updated: ${updatedCount} | Deleted: ${deletedCount} | Failed: ${errors.length}`);
         
         req._processingStats = {
             total: totalCount,

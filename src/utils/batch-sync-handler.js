@@ -198,11 +198,8 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
             errors: errors.length > 0 ? errors : undefined
         };
         
-        // 로그 출력: 총 몇 개의 데이터 중에서 몇 개는 insert, 몇 개는 update 했는지
+        // req에 통계 정보 저장 (response-logger에서 사용)
         if (errors.length === 0) {
-            console.log(`\n✅ [${modelName}] Processing Summary: Total ${totalCount} items | Created: ${createdCount} | Updated: ${updatedCount} | Failed: ${errors.length}`);
-            
-            // req에 통계 정보 저장 (response-logger에서 사용)
             req._processingStats = {
                 total: totalCount,
                 created: createdCount,
@@ -364,9 +361,6 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
                 results: results,
                 errors: errors.length > 0 ? errors : undefined
             };
-            
-            // 로그 출력: 총 몇 개의 데이터 중에서 몇 개는 insert, 몇 개는 update 했는지
-            console.log(`\n✅ [${modelName}] Processing Summary: Total ${totalCount} items | Created: ${createdCount} | Updated: ${updatedCount} | Deleted: ${deletedCount} | Failed: ${errors.length}`);
             
             // req에 통계 정보 저장 (response-logger에서 사용)
             req._processingStats = {
