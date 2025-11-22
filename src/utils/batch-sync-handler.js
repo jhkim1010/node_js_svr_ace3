@@ -162,28 +162,53 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                             results.push({ index: i, action: 'created', data: created });
                             createdCount++;
                         } catch (createErr) {
-                            // unique constraint 에러가 발생하면 UPDATE로 재시도
+                            // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
                             if (isUniqueConstraintError(createErr)) {
-                                // 레코드가 실제로 존재하는지 다시 확인 (동시성 문제 대비)
-                                const retryRecord = Array.isArray(availableUniqueKey)
-                                    ? await Model.findOne({ where: whereCondition, transaction })
-                                    : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                // SAVEPOINT 생성
+                                const savepointName = `sp_batch_${i}_${Date.now()}`;
+                                try {
+                                    await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (spErr) {
+                                    // SAVEPOINT 생성 실패는 무시 (이미 abort된 경우)
+                                }
                                 
-                                if (retryRecord) {
-                                    // 레코드가 존재하면 UPDATE
-                                    const updateData = { ...filteredItem };
-                                    const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
-                                    keysToRemove.forEach(key => delete updateData[key]);
+                                try {
+                                    // SAVEPOINT로 롤백
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                                     
-                                    await Model.update(updateData, { where: whereCondition, transaction });
-                                    const updated = Array.isArray(availableUniqueKey)
+                                    // 레코드가 실제로 존재하는지 다시 확인 (동시성 문제 대비)
+                                    const retryRecord = Array.isArray(availableUniqueKey)
                                         ? await Model.findOne({ where: whereCondition, transaction })
                                         : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                    results.push({ index: i, action: 'updated', data: updated });
-                                    updatedCount++;
-                                } else {
-                                    // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
-                                    throw createErr;
+                                    
+                                    if (retryRecord) {
+                                        // 레코드가 존재하면 UPDATE
+                                        const updateData = { ...filteredItem };
+                                        const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                        keysToRemove.forEach(key => delete updateData[key]);
+                                        
+                                        await Model.update(updateData, { where: whereCondition, transaction });
+                                        const updated = Array.isArray(availableUniqueKey)
+                                            ? await Model.findOne({ where: whereCondition, transaction })
+                                            : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                        results.push({ index: i, action: 'updated', data: updated });
+                                        updatedCount++;
+                                        
+                                        // SAVEPOINT 해제
+                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                    } else {
+                                        // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
+                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        throw createErr;
+                                    }
+                                } catch (retryErr) {
+                                    // 재시도 실패 시 SAVEPOINT 롤백
+                                    try {
+                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (rollbackErr) {
+                                        // 무시
+                                    }
+                                    throw retryErr;
                                 }
                             } else {
                                 // unique constraint 에러가 아니면 원래 에러를 다시 던짐
@@ -327,28 +352,53 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
                             results.push({ index: i, action: 'created', data: created });
                             createdCount++;
                         } catch (createErr) {
-                            // unique constraint 에러가 발생하면 UPDATE로 재시도
+                            // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
                             if (isUniqueConstraintError(createErr)) {
-                                // 레코드가 실제로 존재하는지 다시 확인 (동시성 문제 대비)
-                                const retryRecord = Array.isArray(availableUniqueKey)
-                                    ? await Model.findOne({ where: whereCondition, transaction })
-                                    : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                // SAVEPOINT 생성
+                                const savepointName = `sp_array_${i}_${Date.now()}`;
+                                try {
+                                    await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (spErr) {
+                                    // SAVEPOINT 생성 실패는 무시 (이미 abort된 경우)
+                                }
                                 
-                                if (retryRecord) {
-                                    // 레코드가 존재하면 UPDATE
-                                    const updateData = { ...filteredItem };
-                                    const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
-                                    keysToRemove.forEach(key => delete updateData[key]);
+                                try {
+                                    // SAVEPOINT로 롤백
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                                     
-                                    await Model.update(updateData, { where: whereCondition, transaction });
-                                    const updated = Array.isArray(availableUniqueKey)
+                                    // 레코드가 실제로 존재하는지 다시 확인 (동시성 문제 대비)
+                                    const retryRecord = Array.isArray(availableUniqueKey)
                                         ? await Model.findOne({ where: whereCondition, transaction })
                                         : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                    results.push({ index: i, action: 'updated', data: updated });
-                                    updatedCount++;
-                                } else {
-                                    // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
-                                    throw createErr;
+                                    
+                                    if (retryRecord) {
+                                        // 레코드가 존재하면 UPDATE
+                                        const updateData = { ...filteredItem };
+                                        const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                        keysToRemove.forEach(key => delete updateData[key]);
+                                        
+                                        await Model.update(updateData, { where: whereCondition, transaction });
+                                        const updated = Array.isArray(availableUniqueKey)
+                                            ? await Model.findOne({ where: whereCondition, transaction })
+                                            : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                        results.push({ index: i, action: 'updated', data: updated });
+                                        updatedCount++;
+                                        
+                                        // SAVEPOINT 해제
+                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                    } else {
+                                        // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
+                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        throw createErr;
+                                    }
+                                } catch (retryErr) {
+                                    // 재시도 실패 시 SAVEPOINT 롤백
+                                    try {
+                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (rollbackErr) {
+                                        // 무시
+                                    }
+                                    throw retryErr;
                                 }
                             } else {
                                 // unique constraint 에러가 아니면 원래 에러를 다시 던짐
