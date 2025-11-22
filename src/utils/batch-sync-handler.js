@@ -157,21 +157,27 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                         updatedCount++;
                     } else {
                         // 레코드가 없으면 INSERT 시도
+                        // INSERT 전에 SAVEPOINT 생성 (에러 발생 시 롤백용)
+                        const savepointName = `sp_batch_${i}_${Date.now()}`;
+                        try {
+                            await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
+                        } catch (spErr) {
+                            // SAVEPOINT 생성 실패는 무시하고 계속 진행
+                        }
+                        
                         try {
                             const created = await Model.create(filteredItem, { transaction });
+                            // 성공 시 SAVEPOINT 해제
+                            try {
+                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                            } catch (releaseErr) {
+                                // 무시
+                            }
                             results.push({ index: i, action: 'created', data: created });
                             createdCount++;
                         } catch (createErr) {
                             // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
                             if (isUniqueConstraintError(createErr)) {
-                                // SAVEPOINT 생성
-                                const savepointName = `sp_batch_${i}_${Date.now()}`;
-                                try {
-                                    await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
-                                } catch (spErr) {
-                                    // SAVEPOINT 생성 실패는 무시 (이미 abort된 경우)
-                                }
-                                
                                 try {
                                     // SAVEPOINT로 롤백
                                     await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
@@ -195,14 +201,22 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                                         updatedCount++;
                                         
                                         // SAVEPOINT 해제
-                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        try {
+                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (releaseErr) {
+                                            // 무시
+                                        }
                                     } else {
                                         // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
-                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        try {
+                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (releaseErr) {
+                                            // 무시
+                                        }
                                         throw createErr;
                                     }
                                 } catch (retryErr) {
-                                    // 재시도 실패 시 SAVEPOINT 롤백
+                                    // 재시도 실패 시 SAVEPOINT 롤백 시도
                                     try {
                                         await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                                     } catch (rollbackErr) {
@@ -211,7 +225,12 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                                     throw retryErr;
                                 }
                             } else {
-                                // unique constraint 에러가 아니면 원래 에러를 다시 던짐
+                                // unique constraint 에러가 아니면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                try {
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (rollbackErr) {
+                                    // 무시
+                                }
                                 throw createErr;
                             }
                         }
@@ -347,21 +366,27 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
                         updatedCount++;
                     } else {
                         // 레코드가 없으면 INSERT 시도
+                        // INSERT 전에 SAVEPOINT 생성 (에러 발생 시 롤백용)
+                        const savepointName = `sp_array_${i}_${Date.now()}`;
+                        try {
+                            await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
+                        } catch (spErr) {
+                            // SAVEPOINT 생성 실패는 무시하고 계속 진행
+                        }
+                        
                         try {
                             const created = await Model.create(filteredItem, { transaction });
+                            // 성공 시 SAVEPOINT 해제
+                            try {
+                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                            } catch (releaseErr) {
+                                // 무시
+                            }
                             results.push({ index: i, action: 'created', data: created });
                             createdCount++;
                         } catch (createErr) {
                             // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
                             if (isUniqueConstraintError(createErr)) {
-                                // SAVEPOINT 생성
-                                const savepointName = `sp_array_${i}_${Date.now()}`;
-                                try {
-                                    await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
-                                } catch (spErr) {
-                                    // SAVEPOINT 생성 실패는 무시 (이미 abort된 경우)
-                                }
-                                
                                 try {
                                     // SAVEPOINT로 롤백
                                     await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
@@ -385,14 +410,22 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
                                         updatedCount++;
                                         
                                         // SAVEPOINT 해제
-                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        try {
+                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (releaseErr) {
+                                            // 무시
+                                        }
                                     } else {
                                         // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
-                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        try {
+                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (releaseErr) {
+                                            // 무시
+                                        }
                                         throw createErr;
                                     }
                                 } catch (retryErr) {
-                                    // 재시도 실패 시 SAVEPOINT 롤백
+                                    // 재시도 실패 시 SAVEPOINT 롤백 시도
                                     try {
                                         await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                                     } catch (rollbackErr) {
@@ -401,7 +434,12 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
                                     throw retryErr;
                                 }
                             } else {
-                                // unique constraint 에러가 아니면 원래 에러를 다시 던짐
+                                // unique constraint 에러가 아니면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                try {
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (rollbackErr) {
+                                    // 무시
+                                }
                                 throw createErr;
                             }
                         }
