@@ -69,7 +69,33 @@ router.post('/', async (req, res) => {
         const errorMsg = err.original ? err.original.message : err.message;
         const errorClassification = classifyError(err);
         
-        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+        // Primary key 또는 unique constraint 위반인 경우 더 명확한 메시지 표시
+        const isConstraintError = err.constructor.name.includes('UniqueConstraintError') || 
+                                   errorMsg.includes('duplicate key') || 
+                                   errorMsg.includes('unique constraint');
+        
+        if (isConstraintError) {
+            // constraint 이름에서 실제 위반된 컬럼 파악
+            const constraintMatch = errorMsg.match(/constraint "([^"]+)"/);
+            const constraintName = constraintMatch ? constraintMatch[1] : null;
+            
+            // primary key 제약 조건인 경우
+            if (constraintName === 'gastos.pr' || errorMsg.includes('gastos.pr')) {
+                console.error(`ERROR: Gastos INSERT/UPDATE failed [${errorClassification.source}]: Primary key (id_ga) duplicate`);
+                console.error(`   Problem Source: ${errorClassification.description}`);
+                console.error(`   Reason: The id_ga value already exists in the database. Use UPDATE instead of INSERT, or use a different id_ga value.`);
+                if (req.body && req.body.id_ga !== undefined) {
+                    console.error(`   Attempted id_ga value: ${req.body.id_ga}`);
+                }
+            } else {
+                console.error(`ERROR: Gastos INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
+                console.error(`   Problem Source: ${errorClassification.description}`);
+                console.error(`   Reason: ${errorClassification.reason}`);
+                if (constraintName) {
+                    console.error(`   Constraint Name: ${constraintName}`);
+                }
+            }
+        } else if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
             // Validation error인 경우 상세 정보 표시
             console.error(`ERROR: Gastos INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
             console.error(`   Problem Source: ${errorClassification.description}`);
