@@ -1,5 +1,5 @@
 // Vdetalle 테이블 전용 핸들러
-const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKey, buildWhereCondition } = require('./batch-sync-handler');
+const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKey, buildWhereCondition, isUniqueConstraintError } = require('./batch-sync-handler');
 const { classifyError } = require('./error-classifier');
 
 async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
@@ -67,14 +67,71 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
                             createdCount++;
                         }
                     } else {
+                        // 레코드가 없으면 INSERT 시도
+                        try {
+                            const created = await Model.create(filteredItem, { transaction });
+                            results.push({ index: i, action: 'created', data: created });
+                            createdCount++;
+                        } catch (createErr) {
+                            // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
+                            if (isUniqueConstraintError(createErr)) {
+                                try {
+                                    // SAVEPOINT로 롤백
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    
+                                    // 레코드가 실제로 존재하는지 다시 확인 (동시성 문제 대비)
+                                    const retryRecord = Array.isArray(availableUniqueKey)
+                                        ? await Model.findOne({ where: whereCondition, transaction })
+                                        : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                    
+                                    if (retryRecord) {
+                                        // 레코드가 존재하면 UPDATE
+                                        const updateData = { ...filteredItem };
+                                        const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                        keysToRemove.forEach(key => delete updateData[key]);
+                                        
+                                        await Model.update(updateData, { where: whereCondition, transaction });
+                                        const updated = Array.isArray(availableUniqueKey)
+                                            ? await Model.findOne({ where: whereCondition, transaction })
+                                            : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                        results.push({ index: i, action: 'updated', data: updated });
+                                        updatedCount++;
+                                    } else {
+                                        // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
+                                        throw createErr;
+                                    }
+                                } catch (retryErr) {
+                                    // 재시도 실패 시 원래 에러를 다시 던짐
+                                    throw retryErr;
+                                }
+                            } else {
+                                // unique constraint 에러가 아니면 원래 에러를 다시 던짐
+                                throw createErr;
+                            }
+                        }
+                    }
+                } else {
+                    // unique key가 없으면 INSERT 시도
+                    try {
                         const created = await Model.create(filteredItem, { transaction });
                         results.push({ index: i, action: 'created', data: created });
                         createdCount++;
+                    } catch (createErr) {
+                        // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 재시도
+                        if (isUniqueConstraintError(createErr)) {
+                            try {
+                                // SAVEPOINT로 롤백
+                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                // unique key가 없으므로 재시도 불가, 에러를 다시 던짐
+                                throw createErr;
+                            } catch (retryErr) {
+                                throw retryErr;
+                            }
+                        } else {
+                            // unique constraint 에러가 아니면 원래 에러를 다시 던짐
+                            throw createErr;
+                        }
                     }
-                } else {
-                    const created = await Model.create(filteredItem, { transaction });
-                    results.push({ index: i, action: 'created', data: created });
-                    createdCount++;
                 }
                 
                 // 성공 시 SAVEPOINT 해제
@@ -196,19 +253,80 @@ async function handleVdetalleArrayData(req, res, Model, primaryKey, modelName) {
                                 results.push({ index: i, action: 'updated', data: updated });
                                 updatedCount++;
                             } else {
+                                // UPDATE count가 0이면 INSERT 시도
+                                try {
+                                    const created = await Model.create(filteredItem, { transaction });
+                                    results.push({ index: i, action: 'created', data: created });
+                                    createdCount++;
+                                } catch (createErr) {
+                                    // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
+                                    if (isUniqueConstraintError(createErr)) {
+                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                        const retryRecord = Array.isArray(availableUniqueKey)
+                                            ? await Model.findOne({ where: whereCondition, transaction })
+                                            : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                        if (retryRecord) {
+                                            const updateData = { ...filteredItem };
+                                            const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                            keysToRemove.forEach(key => delete updateData[key]);
+                                            await Model.update(updateData, { where: whereCondition, transaction });
+                                            const updated = Array.isArray(availableUniqueKey)
+                                                ? await Model.findOne({ where: whereCondition, transaction })
+                                                : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                            results.push({ index: i, action: 'updated', data: updated });
+                                            updatedCount++;
+                                        } else {
+                                            throw createErr;
+                                        }
+                                    } else {
+                                        throw createErr;
+                                    }
+                                }
+                            }
+                        } else {
+                            // 레코드가 없으면 INSERT 시도
+                            try {
                                 const created = await Model.create(filteredItem, { transaction });
                                 results.push({ index: i, action: 'created', data: created });
                                 createdCount++;
+                            } catch (createErr) {
+                                // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
+                                if (isUniqueConstraintError(createErr)) {
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    const retryRecord = Array.isArray(availableUniqueKey)
+                                        ? await Model.findOne({ where: whereCondition, transaction })
+                                        : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                    if (retryRecord) {
+                                        const updateData = { ...filteredItem };
+                                        const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                        keysToRemove.forEach(key => delete updateData[key]);
+                                        await Model.update(updateData, { where: whereCondition, transaction });
+                                        const updated = Array.isArray(availableUniqueKey)
+                                            ? await Model.findOne({ where: whereCondition, transaction })
+                                            : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                        results.push({ index: i, action: 'updated', data: updated });
+                                        updatedCount++;
+                                    } else {
+                                        throw createErr;
+                                    }
+                                } else {
+                                    throw createErr;
+                                }
                             }
-                        } else {
+                        }
+                    } else {
+                        // unique key가 없으면 INSERT 시도
+                        try {
                             const created = await Model.create(filteredItem, { transaction });
                             results.push({ index: i, action: 'created', data: created });
                             createdCount++;
+                        } catch (createErr) {
+                            // unique constraint 에러가 발생하면 SAVEPOINT로 롤백
+                            if (isUniqueConstraintError(createErr)) {
+                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                            }
+                            throw createErr;
                         }
-                    } else {
-                        const created = await Model.create(filteredItem, { transaction });
-                        results.push({ index: i, action: 'created', data: created });
-                        createdCount++;
                     }
                 } else if (operation === 'DELETE') {
                     const whereCondition = Array.isArray(primaryKey)
