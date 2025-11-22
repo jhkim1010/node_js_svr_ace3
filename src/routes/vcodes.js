@@ -4,7 +4,7 @@ const { removeSyncField, filterModelFields } = require('../utils/batch-sync-hand
 const { handleVcodesBatchSync, handleVcodesArrayData } = require('../utils/vcodes-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { classifyError } = require('../utils/error-classifier');
+const { handleInsertUpdateError } = require('../utils/error-handler');
 
 const router = Router();
 
@@ -55,29 +55,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Vcode, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        const errorMsg = err.original ? err.original.message : err.message;
-        const errorClassification = classifyError(err);
-        
-        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
-            // Validation error인 경우 상세 정보 표시
-            console.error(`ERROR: Vcode INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
-            console.error(`   Problem Source: ${errorClassification.description}`);
-            console.error(`   Reason: ${errorClassification.reason}`);
-            err.errors.forEach((validationError, index) => {
-                console.error(`   [${index + 1}] Column: ${validationError.path}`);
-                console.error(`       Value: ${validationError.value !== undefined && validationError.value !== null ? JSON.stringify(validationError.value) : 'null'}`);
-                console.error(`       Error Type: ${validationError.type || 'N/A'}`);
-                console.error(`       Validator: ${validationError.validatorKey || validationError.validatorName || 'N/A'}`);
-                console.error(`       Message: ${validationError.message}`);
-                if (validationError.validatorArgs && validationError.validatorArgs.length > 0) {
-                    console.error(`       Validator Args: ${JSON.stringify(validationError.validatorArgs)}`);
-                }
-            });
-        } else {
-            console.error(`ERROR: Vcode INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
-            console.error(`   Problem Source: ${errorClassification.description}`);
-            console.error(`   Reason: ${errorClassification.reason}`);
-        }
+        handleInsertUpdateError(err, req, 'Vcode', 'vcode_id', 'vcodes');
         res.status(400).json({ 
             error: 'Failed to create vcode', 
             details: err.message,

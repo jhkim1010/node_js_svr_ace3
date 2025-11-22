@@ -3,7 +3,7 @@ const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { classifyError } = require('../utils/error-classifier');
+const { handleInsertUpdateError } = require('../utils/error-handler');
 
 const router = Router();
 
@@ -66,55 +66,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Gastos, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        const errorMsg = err.original ? err.original.message : err.message;
-        const errorClassification = classifyError(err);
-        
-        // Primary key 또는 unique constraint 위반인 경우 더 명확한 메시지 표시
-        const isConstraintError = err.constructor.name.includes('UniqueConstraintError') || 
-                                   errorMsg.includes('duplicate key') || 
-                                   errorMsg.includes('unique constraint');
-        
-        if (isConstraintError) {
-            // constraint 이름에서 실제 위반된 컬럼 파악
-            const constraintMatch = errorMsg.match(/constraint "([^"]+)"/);
-            const constraintName = constraintMatch ? constraintMatch[1] : null;
-            
-            // primary key 제약 조건인 경우
-            if (constraintName === 'gastos.pr' || errorMsg.includes('gastos.pr')) {
-                console.error(`ERROR: Gastos INSERT/UPDATE failed [${errorClassification.source}]: Primary key (id_ga) duplicate`);
-                console.error(`   Problem Source: ${errorClassification.description}`);
-                console.error(`   Reason: The id_ga value already exists in the database. Use UPDATE instead of INSERT, or use a different id_ga value.`);
-                if (req.body && req.body.id_ga !== undefined) {
-                    console.error(`   Attempted id_ga value: ${req.body.id_ga}`);
-                }
-            } else {
-                console.error(`ERROR: Gastos INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
-                console.error(`   Problem Source: ${errorClassification.description}`);
-                console.error(`   Reason: ${errorClassification.reason}`);
-                if (constraintName) {
-                    console.error(`   Constraint Name: ${constraintName}`);
-                }
-            }
-        } else if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
-            // Validation error인 경우 상세 정보 표시
-            console.error(`ERROR: Gastos INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
-            console.error(`   Problem Source: ${errorClassification.description}`);
-            console.error(`   Reason: ${errorClassification.reason}`);
-            err.errors.forEach((validationError, index) => {
-                console.error(`   [${index + 1}] Column: ${validationError.path}`);
-                console.error(`       Value: ${validationError.value !== undefined && validationError.value !== null ? JSON.stringify(validationError.value) : 'null'}`);
-                console.error(`       Error Type: ${validationError.type || 'N/A'}`);
-                console.error(`       Validator: ${validationError.validatorKey || validationError.validatorName || 'N/A'}`);
-                console.error(`       Message: ${validationError.message}`);
-                if (validationError.validatorArgs && validationError.validatorArgs.length > 0) {
-                    console.error(`       Validator Args: ${JSON.stringify(validationError.validatorArgs)}`);
-                }
-            });
-        } else {
-            console.error(`ERROR: Gastos INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
-            console.error(`   Problem Source: ${errorClassification.description}`);
-            console.error(`   Reason: ${errorClassification.reason}`);
-        }
+        handleInsertUpdateError(err, req, 'Gastos', 'id_ga', 'gastos');
         res.status(400).json({ 
             error: 'Failed to create gasto', 
             details: err.message,
