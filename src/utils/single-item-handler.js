@@ -76,9 +76,16 @@ async function handleSingleItem(req, res, Model, primaryKey, modelName) {
                                 await retryTransaction.commit();
                                 return { action: 'updated', data: updated };
                             } else {
-                                // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
-                                await retryTransaction.rollback();
-                                throw createErr;
+                                // 레코드를 찾을 수 없으면 다시 INSERT 시도 (동시성 문제로 인해 발생할 수 있음)
+                                try {
+                                    const created = await Model.create(filteredItem, { transaction: retryTransaction });
+                                    await retryTransaction.commit();
+                                    return { action: 'created', data: created };
+                                } catch (retryCreateErr) {
+                                    // 재시도 INSERT도 실패하면 원래 에러를 다시 던짐
+                                    await retryTransaction.rollback();
+                                    throw createErr;
+                                }
                             }
                         } catch (retryErr) {
                             await retryTransaction.rollback();

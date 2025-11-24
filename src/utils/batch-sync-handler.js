@@ -207,13 +207,25 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
                                             // 무시
                                         }
                                     } else {
-                                        // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
+                                        // 레코드를 찾을 수 없으면 다시 INSERT 시도 (동시성 문제로 인해 발생할 수 있음)
                                         try {
-                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                                        } catch (releaseErr) {
-                                            // 무시
+                                            const created = await Model.create(filteredItem, { transaction });
+                                            results.push({ index: i, action: 'created', data: created });
+                                            createdCount++;
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
+                                        } catch (retryCreateErr) {
+                                            // 재시도 INSERT도 실패하면 원래 에러를 다시 던짐
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
+                                            throw createErr;
                                         }
-                                        throw createErr;
                                     }
                                 } catch (retryErr) {
                                     // 재시도 실패 시 SAVEPOINT 롤백 시도
@@ -416,13 +428,25 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
                                             // 무시
                                         }
                                     } else {
-                                        // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
+                                        // 레코드를 찾을 수 없으면 다시 INSERT 시도 (동시성 문제로 인해 발생할 수 있음)
                                         try {
-                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                                        } catch (releaseErr) {
-                                            // 무시
+                                            const created = await Model.create(filteredItem, { transaction });
+                                            results.push({ index: i, action: 'created', data: created });
+                                            createdCount++;
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
+                                        } catch (retryCreateErr) {
+                                            // 재시도 INSERT도 실패하면 원래 에러를 다시 던짐
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
+                                            throw createErr;
                                         }
-                                        throw createErr;
                                     }
                                 } catch (retryErr) {
                                     // 재시도 실패 시 SAVEPOINT 롤백 시도

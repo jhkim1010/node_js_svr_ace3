@@ -97,8 +97,15 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
                                         results.push({ index: i, action: 'updated', data: updated });
                                         updatedCount++;
                                     } else {
-                                        // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
-                                        throw createErr;
+                                        // 레코드를 찾을 수 없으면 다시 INSERT 시도 (동시성 문제로 인해 발생할 수 있음)
+                                        try {
+                                            const created = await Model.create(filteredItem, { transaction });
+                                            results.push({ index: i, action: 'created', data: created });
+                                            createdCount++;
+                                        } catch (retryCreateErr) {
+                                            // 재시도 INSERT도 실패하면 원래 에러를 다시 던짐
+                                            throw createErr;
+                                        }
                                     }
                                 } catch (retryErr) {
                                     // 재시도 실패 시 원래 에러를 다시 던짐
