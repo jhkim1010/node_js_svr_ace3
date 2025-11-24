@@ -19,7 +19,91 @@ app.use(express.static(path.resolve('./') + '/public'));
 
 // Health 체크는 헤더 필요 없음
 app.get('/api/health', (req, res) => {
-    res.json({ ok: true, uptimeSec: process.uptime() });
+    const { getBuildDate } = require('./utils/build-info');
+    const buildDate = getBuildDate();
+    
+    res.json({ 
+        ok: true, 
+        status: 'online',
+        uptimeSec: Math.floor(process.uptime()),
+        serverTime: new Date().toISOString(),
+        buildDate: buildDate,
+        version: require('../package.json').version || '1.0.0'
+    });
+});
+
+// POST /api/health: 데이터베이스 연결 테스트
+app.post('/api/health', async (req, res) => {
+    try {
+        const { databaseName, username, password, port, host } = req.body;
+        
+        // 필수 파라미터 확인
+        if (!databaseName || !username || !password || !port) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Missing required parameters',
+                required: ['databaseName', 'username', 'password', 'port']
+            });
+        }
+        
+        // Sequelize를 사용하여 연결 테스트
+        const { Sequelize } = require('sequelize');
+        const dbHost = host || process.env.DB_HOST || 'localhost';
+        const dbPort = parseInt(port, 10);
+        
+        if (isNaN(dbPort)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Invalid port number',
+                received: port
+            });
+        }
+        
+        // 테스트용 Sequelize 인스턴스 생성 (연결 풀에 저장하지 않음)
+        const testSequelize = new Sequelize(databaseName, username, password, {
+            host: dbHost,
+            port: dbPort,
+            dialect: 'postgres',
+            logging: false,
+            pool: {
+                max: 1,
+                min: 0,
+                idle: 1000,
+                acquire: 5000,  // 5초 타임아웃
+                evict: 1000
+            },
+            retry: {
+                max: 1  // 재시도 1번만
+            }
+        });
+        
+        // 연결 테스트
+        await testSequelize.authenticate();
+        
+        // 연결 성공 시 인스턴스 종료
+        await testSequelize.close();
+        
+        res.status(200).json({
+            ok: true,
+            status: 'connected',
+            message: 'Database connection successful',
+            database: databaseName,
+            host: dbHost,
+            port: dbPort,
+            username: username
+        });
+    } catch (err) {
+        // 연결 실패
+        const errorMessage = err.original ? err.original.message : err.message;
+        
+        res.status(400).json({
+            ok: false,
+            status: 'connection_failed',
+            error: 'Database connection failed',
+            message: errorMessage,
+            errorType: err.constructor.name
+        });
+    }
 });
 
 // Operation 로깅 미들웨어 (요청 본문 파싱 후, DB 헤더 파싱 전에 적용)

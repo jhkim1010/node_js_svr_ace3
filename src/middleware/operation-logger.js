@@ -118,6 +118,7 @@ function extractRouterName(path) {
             'online_ventas': 'online_ventas',
             'logs': 'logs',
             'vendedores': 'vendedores',
+            'resumen_del_dia': 'resumen_del_dia',
             'health': 'health'
         };
         return routerMap[router] || router;
