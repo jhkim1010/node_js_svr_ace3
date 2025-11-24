@@ -93,15 +93,44 @@ app.post('/api/health', async (req, res) => {
             username: username
         });
     } catch (err) {
-        // 연결 실패
+        // 연결 실패 - 상세 오류 정보 출력
         const errorMessage = err.original ? err.original.message : err.message;
+        const errorCode = err.original ? err.original.code : err.code;
+        const errorName = err.original ? err.original.name : err.name;
+        
+        console.error('\nERROR: Database connection test failed');
+        console.error('   Connection details:');
+        console.error('      Host:', host || process.env.DB_HOST || 'localhost');
+        console.error('      Port:', port);
+        console.error('      Database:', databaseName);
+        console.error('      Username:', username);
+        console.error('   Error information:');
+        console.error('      Error Type:', err.constructor.name);
+        console.error('      Error Name:', errorName || 'N/A');
+        console.error('      Error Code:', errorCode || 'N/A');
+        console.error('      Error Message:', errorMessage);
+        if (err.original) {
+            console.error('      Original Error:', err.original);
+        }
+        if (err.stack) {
+            console.error('      Stack Trace:', err.stack);
+        }
+        console.error('');
         
         res.status(400).json({
             ok: false,
             status: 'connection_failed',
             error: 'Database connection failed',
             message: errorMessage,
-            errorType: err.constructor.name
+            errorType: err.constructor.name,
+            errorCode: errorCode,
+            errorName: errorName,
+            connectionInfo: {
+                host: host || process.env.DB_HOST || 'localhost',
+                port: port,
+                database: databaseName,
+                username: username
+            }
         });
     }
 });

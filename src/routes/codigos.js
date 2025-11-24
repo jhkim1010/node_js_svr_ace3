@@ -10,7 +10,7 @@ const router = Router();
 router.get('/', async (req, res) => {
     try {
         const Codigos = getModelForRequest(req, 'Codigos');
-        const records = await Codigos.findAll({ limit: 100, order: [['id_codigo', 'DESC']] });
+        const records = await Codigos.findAll();
         res.json(records);
     } catch (err) {
         console.error(err);

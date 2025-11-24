@@ -11,6 +11,15 @@ function operationLogger(req, res, next) {
         console.error('');
     }
     
+    // HTTPS로 요청이 들어왔는데 서버가 HTTP만 지원하는 경우 경고
+    if (req.secure || req.protocol === 'https') {
+        console.error(`\nWARNING: HTTPS request received but server only supports HTTP`);
+        console.error(`   Request URL: ${req.protocol}://${req.get('host')}${path}`);
+        console.error(`   Please use HTTP (http://) instead of HTTPS (https://)`);
+        console.error(`   Correct URL: http://${req.get('host')}${path}`);
+        console.error('');
+    }
+    
     // POST, PUT, DELETE 요청에 대해서만 operation 확인
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
         // operation 찾기
