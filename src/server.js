@@ -20,16 +20,10 @@ app.use(express.static(path.resolve('./') + '/public'));
 // Health 체크는 헤더 필요 없음
 app.get('/api/health', (req, res) => {
     try {
-        // 헤더 정보 출력
-        console.log('\n[GET /api/health] Request received');
-        console.log('   Headers:');
-        Object.keys(req.headers).forEach(key => {
-            console.log(`      ${key}: ${req.headers[key]}`);
-        });
-        console.log('   Body:', req.body || 'N/A');
-        
         const { getBuildDate } = require('./utils/build-info');
         const buildDate = getBuildDate();
+        
+        console.log(`GET /api/health - Server health check: SUCCESS`);
         
         res.json({ 
             ok: true, 
@@ -40,13 +34,7 @@ app.get('/api/health', (req, res) => {
             version: require('../package.json').version || '1.0.0'
         });
     } catch (err) {
-        console.error('\nERROR: GET /api/health failed');
-        console.error('   Error Type:', err.constructor.name);
-        console.error('   Error Message:', err.message);
-        if (err.stack) {
-            console.error('   Stack Trace:', err.stack);
-        }
-        console.error('');
+        console.log(`GET /api/health - Server health check: FAILED - ${err.message}`);
         
         res.status(500).json({
             ok: false,
@@ -59,14 +47,6 @@ app.get('/api/health', (req, res) => {
 // POST /api/health: 데이터베이스 연결 테스트
 app.post('/api/health', async (req, res) => {
     try {
-        // 헤더 정보 출력
-        console.log('\n[POST /api/health] Request received');
-        console.log('   Headers:');
-        Object.keys(req.headers).forEach(key => {
-            console.log(`      ${key}: ${req.headers[key]}`);
-        });
-        console.log('   Body:', JSON.stringify(req.body, null, 2));
-        
         const { databaseName, username, password, port, host } = req.body;
         
         // 필수 파라미터 확인
@@ -117,6 +97,8 @@ app.post('/api/health', async (req, res) => {
         // 연결 성공 시 인스턴스 종료
         await testSequelize.close();
         
+        console.log(`POST /api/health - Database: ${databaseName}, User: ${username}, Status: SUCCESS`);
+        
         res.status(200).json({
             ok: true,
             status: 'connected',
@@ -127,34 +109,12 @@ app.post('/api/health', async (req, res) => {
             username: username
         });
     } catch (err) {
-        // 연결 실패 - 상세 오류 정보 출력
+        // 연결 실패 - 간단한 메시지 출력
         const errorMessage = err.original ? err.original.message : err.message;
         const errorCode = err.original ? err.original.code : err.code;
         const errorName = err.original ? err.original.name : err.name;
         
-        console.error('\nERROR: POST /api/health - Database connection test failed');
-        console.error('   Request Headers:');
-        Object.keys(req.headers).forEach(key => {
-            console.error(`      ${key}: ${req.headers[key]}`);
-        });
-        console.error('   Request Body:', JSON.stringify(req.body, null, 2));
-        console.error('   Connection details:');
-        console.error('      Host:', host || process.env.DB_HOST || 'localhost');
-        console.error('      Port:', port);
-        console.error('      Database:', databaseName);
-        console.error('      Username:', username);
-        console.error('   Error information:');
-        console.error('      Error Type:', err.constructor.name);
-        console.error('      Error Name:', errorName || 'N/A');
-        console.error('      Error Code:', errorCode || 'N/A');
-        console.error('      Error Message:', errorMessage);
-        if (err.original) {
-            console.error('      Original Error:', JSON.stringify(err.original, Object.getOwnPropertyNames(err.original)));
-        }
-        if (err.stack) {
-            console.error('      Stack Trace:', err.stack);
-        }
-        console.error('');
+        console.log(`POST /api/health - Database: ${databaseName}, User: ${username}, Status: FAILED - ${errorMessage}`);
         
         res.status(400).json({
             ok: false,
