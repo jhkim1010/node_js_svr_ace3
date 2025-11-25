@@ -19,22 +19,54 @@ app.use(express.static(path.resolve('./') + '/public'));
 
 // Health 체크는 헤더 필요 없음
 app.get('/api/health', (req, res) => {
-    const { getBuildDate } = require('./utils/build-info');
-    const buildDate = getBuildDate();
-    
-    res.json({ 
-        ok: true, 
-        status: 'online',
-        uptimeSec: Math.floor(process.uptime()),
-        serverTime: new Date().toISOString(),
-        buildDate: buildDate,
-        version: require('../package.json').version || '1.0.0'
-    });
+    try {
+        // 헤더 정보 출력
+        console.log('\n[GET /api/health] Request received');
+        console.log('   Headers:');
+        Object.keys(req.headers).forEach(key => {
+            console.log(`      ${key}: ${req.headers[key]}`);
+        });
+        console.log('   Body:', req.body || 'N/A');
+        
+        const { getBuildDate } = require('./utils/build-info');
+        const buildDate = getBuildDate();
+        
+        res.json({ 
+            ok: true, 
+            status: 'online',
+            uptimeSec: Math.floor(process.uptime()),
+            serverTime: new Date().toISOString(),
+            buildDate: buildDate,
+            version: require('../package.json').version || '1.0.0'
+        });
+    } catch (err) {
+        console.error('\nERROR: GET /api/health failed');
+        console.error('   Error Type:', err.constructor.name);
+        console.error('   Error Message:', err.message);
+        if (err.stack) {
+            console.error('   Stack Trace:', err.stack);
+        }
+        console.error('');
+        
+        res.status(500).json({
+            ok: false,
+            error: 'Internal server error',
+            message: err.message
+        });
+    }
 });
 
 // POST /api/health: 데이터베이스 연결 테스트
 app.post('/api/health', async (req, res) => {
     try {
+        // 헤더 정보 출력
+        console.log('\n[POST /api/health] Request received');
+        console.log('   Headers:');
+        Object.keys(req.headers).forEach(key => {
+            console.log(`      ${key}: ${req.headers[key]}`);
+        });
+        console.log('   Body:', JSON.stringify(req.body, null, 2));
+        
         const { databaseName, username, password, port, host } = req.body;
         
         // 필수 파라미터 확인
@@ -98,7 +130,12 @@ app.post('/api/health', async (req, res) => {
         const errorCode = err.original ? err.original.code : err.code;
         const errorName = err.original ? err.original.name : err.name;
         
-        console.error('\nERROR: Database connection test failed');
+        console.error('\nERROR: POST /api/health - Database connection test failed');
+        console.error('   Request Headers:');
+        Object.keys(req.headers).forEach(key => {
+            console.error(`      ${key}: ${req.headers[key]}`);
+        });
+        console.error('   Request Body:', JSON.stringify(req.body, null, 2));
         console.error('   Connection details:');
         console.error('      Host:', host || process.env.DB_HOST || 'localhost');
         console.error('      Port:', port);
@@ -110,7 +147,7 @@ app.post('/api/health', async (req, res) => {
         console.error('      Error Code:', errorCode || 'N/A');
         console.error('      Error Message:', errorMessage);
         if (err.original) {
-            console.error('      Original Error:', err.original);
+            console.error('      Original Error:', JSON.stringify(err.original, Object.getOwnPropertyNames(err.original)));
         }
         if (err.stack) {
             console.error('      Stack Trace:', err.stack);

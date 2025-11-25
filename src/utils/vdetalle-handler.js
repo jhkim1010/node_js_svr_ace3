@@ -56,10 +56,17 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
                         const [count] = await Model.update(updateData, { where: whereCondition, transaction });
                         
                         if (count > 0) {
-                            const updated = Array.isArray(availableUniqueKey)
-                                ? await Model.findOne({ where: whereCondition, transaction })
-                                : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                            results.push({ index: i, action: 'updated', data: updated });
+                            // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
+                            try {
+                                const updated = Array.isArray(availableUniqueKey)
+                                    ? await Model.findOne({ where: whereCondition, transaction })
+                                    : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                results.push({ index: i, action: 'updated', data: updated });
+                            } catch (postUpdateErr) {
+                                // UPDATE는 성공했지만 후속 작업 실패 - UPDATE 성공으로 간주
+                                console.log(`Vdetalle UPDATE (item ${i}) succeeded, but failed to retrieve updated record: ${postUpdateErr.message}`);
+                                results.push({ index: i, action: 'updated', data: null });
+                            }
                             updatedCount++;
                         } else {
                             const created = await Model.create(filteredItem, { transaction });
@@ -91,10 +98,17 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
                                         keysToRemove.forEach(key => delete updateData[key]);
                                         
                                         await Model.update(updateData, { where: whereCondition, transaction });
-                                        const updated = Array.isArray(availableUniqueKey)
-                                            ? await Model.findOne({ where: whereCondition, transaction })
-                                            : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                        results.push({ index: i, action: 'updated', data: updated });
+                                        // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
+                                        try {
+                                            const updated = Array.isArray(availableUniqueKey)
+                                                ? await Model.findOne({ where: whereCondition, transaction })
+                                                : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                            results.push({ index: i, action: 'updated', data: updated });
+                                        } catch (postUpdateErr) {
+                                            // UPDATE는 성공했지만 후속 작업 실패 - UPDATE 성공으로 간주
+                                            console.log(`Vdetalle UPDATE (item ${i}) succeeded, but failed to retrieve updated record: ${postUpdateErr.message}`);
+                                            results.push({ index: i, action: 'updated', data: null });
+                                        }
                                         updatedCount++;
                                     } else {
                                         // 레코드를 찾을 수 없으면 다시 INSERT 시도 (동시성 문제로 인해 발생할 수 있음)
@@ -119,24 +133,98 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
                     }
                 } else {
                     // unique key가 없으면 INSERT 시도
-                    try {
-                        const created = await Model.create(filteredItem, { transaction });
-                        results.push({ index: i, action: 'created', data: created });
-                        createdCount++;
-                    } catch (createErr) {
-                        // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 재시도
-                        if (isUniqueConstraintError(createErr)) {
+                    // 하지만 primary key가 있으면 먼저 확인
+                    if (filteredItem[primaryKey] !== undefined && filteredItem[primaryKey] !== null) {
+                        // Primary key로 기존 레코드 확인
+                        const existingByPk = await Model.findByPk(filteredItem[primaryKey], { transaction });
+                        if (existingByPk) {
+                            // 레코드가 존재하면 UPDATE
+                            const updateData = { ...filteredItem };
+                            delete updateData[primaryKey];
+                            
+                            await Model.update(updateData, { where: { [primaryKey]: filteredItem[primaryKey] }, transaction });
+                            // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
                             try {
-                                // SAVEPOINT로 롤백
-                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
-                                // unique key가 없으므로 재시도 불가, 에러를 다시 던짐
-                                throw createErr;
-                            } catch (retryErr) {
-                                throw retryErr;
+                                const updated = await Model.findByPk(filteredItem[primaryKey], { transaction });
+                                results.push({ index: i, action: 'updated', data: updated });
+                            } catch (postUpdateErr) {
+                                // UPDATE는 성공했지만 후속 작업 실패 - UPDATE 성공으로 간주
+                                console.log(`Vdetalle UPDATE (item ${i}) succeeded, but failed to retrieve updated record: ${postUpdateErr.message}`);
+                                results.push({ index: i, action: 'updated', data: null });
                             }
+                            updatedCount++;
                         } else {
-                            // unique constraint 에러가 아니면 원래 에러를 다시 던짐
-                            throw createErr;
+                            // 레코드가 없으면 INSERT 시도
+                            try {
+                                const created = await Model.create(filteredItem, { transaction });
+                                results.push({ index: i, action: 'created', data: created });
+                                createdCount++;
+                            } catch (createErr) {
+                                // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 재시도
+                                if (isUniqueConstraintError(createErr)) {
+                                    try {
+                                        // SAVEPOINT로 롤백
+                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                        
+                                        // Primary key로 다시 확인
+                                        const retryByPk = await Model.findByPk(filteredItem[primaryKey], { transaction });
+                                        if (retryByPk) {
+                                            // 레코드가 존재하면 UPDATE
+                                            const updateData = { ...filteredItem };
+                                            delete updateData[primaryKey];
+                                            
+                                            await Model.update(updateData, { where: { [primaryKey]: filteredItem[primaryKey] }, transaction });
+                                            // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
+                                            try {
+                                                const updated = await Model.findByPk(filteredItem[primaryKey], { transaction });
+                                                results.push({ index: i, action: 'updated', data: updated });
+                                            } catch (postUpdateErr) {
+                                                // UPDATE는 성공했지만 후속 작업 실패 - UPDATE 성공으로 간주
+                                                console.log(`Vdetalle UPDATE (item ${i}) succeeded, but failed to retrieve updated record: ${postUpdateErr.message}`);
+                                                results.push({ index: i, action: 'updated', data: null });
+                                            }
+                                            updatedCount++;
+                                        } else {
+                                            // 레코드를 찾을 수 없으면 다시 INSERT 시도
+                                            try {
+                                                const created = await Model.create(filteredItem, { transaction });
+                                                results.push({ index: i, action: 'created', data: created });
+                                                createdCount++;
+                                            } catch (retryCreateErr) {
+                                                // 재시도 INSERT도 실패하면 원래 에러를 다시 던짐
+                                                throw createErr;
+                                            }
+                                        }
+                                    } catch (retryErr) {
+                                        throw retryErr;
+                                    }
+                                } else {
+                                    // unique constraint 에러가 아니면 원래 에러를 다시 던짐
+                                    throw createErr;
+                                }
+                            }
+                        }
+                    } else {
+                        // Primary key도 없으면 INSERT 시도
+                        try {
+                            const created = await Model.create(filteredItem, { transaction });
+                            results.push({ index: i, action: 'created', data: created });
+                            createdCount++;
+                        } catch (createErr) {
+                            // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 재시도
+                            if (isUniqueConstraintError(createErr)) {
+                                try {
+                                    // SAVEPOINT로 롤백
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    // unique key가 없으므로 재시도 불가, 에러를 다시 던짐
+                                    throw createErr;
+                                } catch (retryErr) {
+                                    throw retryErr;
+                                }
+                            } else {
+                                // unique constraint 에러가 아니면 원래 에러를 다시 던짐
+                                throw createErr;
+                            }
                         }
                     }
                 }
@@ -152,9 +240,56 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
                 }
                 
                 const errorClassification = classifyError(err);
-                console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${err.message}`);
-                console.error(`   Problem Source: ${errorClassification.description}`);
-                console.error(`   Reason: ${errorClassification.reason}`);
+                const errorMsg = err.original ? err.original.message : err.message;
+                
+                // Primary key 또는 unique constraint 위반인 경우 더 명확한 메시지 표시
+                const isConstraintError = err.constructor.name.includes('UniqueConstraintError') || 
+                                       errorMsg.includes('duplicate key') || 
+                                       errorMsg.includes('unique constraint');
+                
+                if (isConstraintError) {
+                    // constraint 이름에서 실제 위반된 컬럼 파악
+                    const constraintMatch = errorMsg.match(/constraint "([^"]+)"/);
+                    const constraintName = constraintMatch ? constraintMatch[1] : null;
+                    
+                    // primary key 제약 조건인 경우 (vdetalle.pr 또는 vdetalle1.pr 패턴)
+                    const primaryKeyConstraintPattern = /vdetalle\d*\.pr/;
+                    if (constraintName && primaryKeyConstraintPattern.test(constraintName)) {
+                        const keyDisplay = Array.isArray(primaryKey) ? primaryKey.join(', ') : primaryKey;
+                        console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: Primary key (${keyDisplay}) duplicate`);
+                        console.error(`   Problem Source: ${errorClassification.description}`);
+                        console.error(`   Reason: The ${keyDisplay} value already exists in the database. Use UPDATE instead of INSERT, or use a different ${keyDisplay} value.`);
+                        if (item && item[primaryKey] !== undefined) {
+                            console.error(`   Attempted ${primaryKey} value: ${item[primaryKey]}`);
+                        }
+                    } else {
+                        console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${errorMsg}`);
+                        console.error(`   Problem Source: ${errorClassification.description}`);
+                        console.error(`   Reason: ${errorClassification.reason}`);
+                        if (constraintName) {
+                            console.error(`   Constraint Name: ${constraintName}`);
+                        }
+                    }
+                } else if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+                    // Validation error인 경우 상세 정보 표시
+                    console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${errorMsg}`);
+                    console.error(`   Problem Source: ${errorClassification.description}`);
+                    console.error(`   Reason: ${errorClassification.reason}`);
+                    err.errors.forEach((validationError, index) => {
+                        console.error(`   [${index + 1}] Column: ${validationError.path}`);
+                        console.error(`       Value: ${validationError.value !== undefined && validationError.value !== null ? JSON.stringify(validationError.value) : 'null'}`);
+                        console.error(`       Error Type: ${validationError.type || 'N/A'}`);
+                        console.error(`       Validator: ${validationError.validatorKey || validationError.validatorName || 'N/A'}`);
+                        console.error(`       Message: ${validationError.message}`);
+                        if (validationError.validatorArgs && validationError.validatorArgs.length > 0) {
+                            console.error(`       Validator Args: ${JSON.stringify(validationError.validatorArgs)}`);
+                        }
+                    });
+                } else {
+                    console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${errorMsg}`);
+                    console.error(`   Problem Source: ${errorClassification.description}`);
+                    console.error(`   Reason: ${errorClassification.reason}`);
+                }
                 errors.push({ 
                     index: i, 
                     error: err.message,
@@ -254,10 +389,17 @@ async function handleVdetalleArrayData(req, res, Model, primaryKey, modelName) {
                             
                             const [count] = await Model.update(updateData, { where: whereCondition, transaction });
                             if (count > 0) {
-                                const updated = Array.isArray(availableUniqueKey)
-                                    ? await Model.findOne({ where: whereCondition, transaction })
-                                    : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                results.push({ index: i, action: 'updated', data: updated });
+                                // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
+                                try {
+                                    const updated = Array.isArray(availableUniqueKey)
+                                        ? await Model.findOne({ where: whereCondition, transaction })
+                                        : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                    results.push({ index: i, action: 'updated', data: updated });
+                                } catch (postUpdateErr) {
+                                    // UPDATE는 성공했지만 후속 작업 실패 - UPDATE 성공으로 간주
+                                    console.log(`Vdetalle UPDATE (item ${i}) succeeded, but failed to retrieve updated record: ${postUpdateErr.message}`);
+                                    results.push({ index: i, action: 'updated', data: null });
+                                }
                                 updatedCount++;
                             } else {
                                 // UPDATE count가 0이면 INSERT 시도
@@ -276,11 +418,19 @@ async function handleVdetalleArrayData(req, res, Model, primaryKey, modelName) {
                                             const updateData = { ...filteredItem };
                                             const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
                                             keysToRemove.forEach(key => delete updateData[key]);
+                                            
                                             await Model.update(updateData, { where: whereCondition, transaction });
-                                            const updated = Array.isArray(availableUniqueKey)
-                                                ? await Model.findOne({ where: whereCondition, transaction })
-                                                : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                            results.push({ index: i, action: 'updated', data: updated });
+                                            // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
+                                            try {
+                                                const updated = Array.isArray(availableUniqueKey)
+                                                    ? await Model.findOne({ where: whereCondition, transaction })
+                                                    : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                                results.push({ index: i, action: 'updated', data: updated });
+                                            } catch (postUpdateErr) {
+                                                // UPDATE는 성공했지만 후속 작업 실패 - UPDATE 성공으로 간주
+                                                console.log(`Vdetalle UPDATE (item ${i}) succeeded, but failed to retrieve updated record: ${postUpdateErr.message}`);
+                                                results.push({ index: i, action: 'updated', data: null });
+                                            }
                                             updatedCount++;
                                         } else {
                                             throw createErr;
@@ -307,6 +457,7 @@ async function handleVdetalleArrayData(req, res, Model, primaryKey, modelName) {
                                         const updateData = { ...filteredItem };
                                         const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
                                         keysToRemove.forEach(key => delete updateData[key]);
+                                        
                                         await Model.update(updateData, { where: whereCondition, transaction });
                                         const updated = Array.isArray(availableUniqueKey)
                                             ? await Model.findOne({ where: whereCondition, transaction })
@@ -323,16 +474,90 @@ async function handleVdetalleArrayData(req, res, Model, primaryKey, modelName) {
                         }
                     } else {
                         // unique key가 없으면 INSERT 시도
-                        try {
-                            const created = await Model.create(filteredItem, { transaction });
-                            results.push({ index: i, action: 'created', data: created });
-                            createdCount++;
-                        } catch (createErr) {
-                            // unique constraint 에러가 발생하면 SAVEPOINT로 롤백
-                            if (isUniqueConstraintError(createErr)) {
-                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                        // 하지만 primary key가 있으면 먼저 확인
+                        if (filteredItem[primaryKey] !== undefined && filteredItem[primaryKey] !== null) {
+                            // Primary key로 기존 레코드 확인
+                            const existingByPk = await Model.findByPk(filteredItem[primaryKey], { transaction });
+                            if (existingByPk) {
+                                // 레코드가 존재하면 UPDATE
+                                const updateData = { ...filteredItem };
+                                delete updateData[primaryKey];
+                                
+                                await Model.update(updateData, { where: { [primaryKey]: filteredItem[primaryKey] }, transaction });
+                                // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
+                                try {
+                                    const updated = await Model.findByPk(filteredItem[primaryKey], { transaction });
+                                    results.push({ index: i, action: 'updated', data: updated });
+                                } catch (postUpdateErr) {
+                                    // UPDATE는 성공했지만 후속 작업 실패 - UPDATE 성공으로 간주
+                                    console.log(`Vdetalle UPDATE (item ${i}) succeeded, but failed to retrieve updated record: ${postUpdateErr.message}`);
+                                    results.push({ index: i, action: 'updated', data: null });
+                                }
+                                updatedCount++;
+                            } else {
+                                // 레코드가 없으면 INSERT 시도
+                                try {
+                                    const created = await Model.create(filteredItem, { transaction });
+                                    results.push({ index: i, action: 'created', data: created });
+                                    createdCount++;
+                                } catch (createErr) {
+                                    // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 재시도
+                                    if (isUniqueConstraintError(createErr)) {
+                                        try {
+                                            // SAVEPOINT로 롤백
+                                            await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                            
+                                            // Primary key로 다시 확인
+                                            const retryByPk = await Model.findByPk(filteredItem[primaryKey], { transaction });
+                                            if (retryByPk) {
+                                                // 레코드가 존재하면 UPDATE
+                                                const updateData = { ...filteredItem };
+                                                delete updateData[primaryKey];
+                                                
+                                                await Model.update(updateData, { where: { [primaryKey]: filteredItem[primaryKey] }, transaction });
+                                                // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
+                                                try {
+                                                    const updated = await Model.findByPk(filteredItem[primaryKey], { transaction });
+                                                    results.push({ index: i, action: 'updated', data: updated });
+                                                } catch (postUpdateErr) {
+                                                    // UPDATE는 성공했지만 후속 작업 실패 - UPDATE 성공으로 간주
+                                                    console.log(`Vdetalle UPDATE (item ${i}) succeeded, but failed to retrieve updated record: ${postUpdateErr.message}`);
+                                                    results.push({ index: i, action: 'updated', data: null });
+                                                }
+                                                updatedCount++;
+                                            } else {
+                                                // 레코드를 찾을 수 없으면 다시 INSERT 시도
+                                                try {
+                                                    const created = await Model.create(filteredItem, { transaction });
+                                                    results.push({ index: i, action: 'created', data: created });
+                                                    createdCount++;
+                                                } catch (retryCreateErr) {
+                                                    // 재시도 INSERT도 실패하면 원래 에러를 다시 던짐
+                                                    throw createErr;
+                                                }
+                                            }
+                                        } catch (retryErr) {
+                                            throw retryErr;
+                                        }
+                                    } else {
+                                        // unique constraint 에러가 아니면 원래 에러를 다시 던짐
+                                        throw createErr;
+                                    }
+                                }
                             }
-                            throw createErr;
+                        } else {
+                            // Primary key도 없으면 INSERT 시도
+                            try {
+                                const created = await Model.create(filteredItem, { transaction });
+                                results.push({ index: i, action: 'created', data: created });
+                                createdCount++;
+                            } catch (createErr) {
+                                // unique constraint 에러가 발생하면 SAVEPOINT로 롤백
+                                if (isUniqueConstraintError(createErr)) {
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                }
+                                throw createErr;
+                            }
                         }
                     }
                 } else if (operation === 'DELETE') {
@@ -370,9 +595,56 @@ async function handleVdetalleArrayData(req, res, Model, primaryKey, modelName) {
                 }
                 
                 const errorClassification = classifyError(err);
-                console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${err.message}`);
-                console.error(`   Problem Source: ${errorClassification.description}`);
-                console.error(`   Reason: ${errorClassification.reason}`);
+                const errorMsg = err.original ? err.original.message : err.message;
+                
+                // Primary key 또는 unique constraint 위반인 경우 더 명확한 메시지 표시
+                const isConstraintError = err.constructor.name.includes('UniqueConstraintError') || 
+                                       errorMsg.includes('duplicate key') || 
+                                       errorMsg.includes('unique constraint');
+                
+                if (isConstraintError) {
+                    // constraint 이름에서 실제 위반된 컬럼 파악
+                    const constraintMatch = errorMsg.match(/constraint "([^"]+)"/);
+                    const constraintName = constraintMatch ? constraintMatch[1] : null;
+                    
+                    // primary key 제약 조건인 경우 (vdetalle.pr 또는 vdetalle1.pr 패턴)
+                    const primaryKeyConstraintPattern = /vdetalle\d*\.pr/;
+                    if (constraintName && primaryKeyConstraintPattern.test(constraintName)) {
+                        const keyDisplay = Array.isArray(primaryKey) ? primaryKey.join(', ') : primaryKey;
+                        console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: Primary key (${keyDisplay}) duplicate`);
+                        console.error(`   Problem Source: ${errorClassification.description}`);
+                        console.error(`   Reason: The ${keyDisplay} value already exists in the database. Use UPDATE instead of INSERT, or use a different ${keyDisplay} value.`);
+                        if (item && item[primaryKey] !== undefined) {
+                            console.error(`   Attempted ${primaryKey} value: ${item[primaryKey]}`);
+                        }
+                    } else {
+                        console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${errorMsg}`);
+                        console.error(`   Problem Source: ${errorClassification.description}`);
+                        console.error(`   Reason: ${errorClassification.reason}`);
+                        if (constraintName) {
+                            console.error(`   Constraint Name: ${constraintName}`);
+                        }
+                    }
+                } else if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+                    // Validation error인 경우 상세 정보 표시
+                    console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${errorMsg}`);
+                    console.error(`   Problem Source: ${errorClassification.description}`);
+                    console.error(`   Reason: ${errorClassification.reason}`);
+                    err.errors.forEach((validationError, index) => {
+                        console.error(`   [${index + 1}] Column: ${validationError.path}`);
+                        console.error(`       Value: ${validationError.value !== undefined && validationError.value !== null ? JSON.stringify(validationError.value) : 'null'}`);
+                        console.error(`       Error Type: ${validationError.type || 'N/A'}`);
+                        console.error(`       Validator: ${validationError.validatorKey || validationError.validatorName || 'N/A'}`);
+                        console.error(`       Message: ${validationError.message}`);
+                        if (validationError.validatorArgs && validationError.validatorArgs.length > 0) {
+                            console.error(`       Validator Args: ${JSON.stringify(validationError.validatorArgs)}`);
+                        }
+                    });
+                } else {
+                    console.error(`ERROR: Vdetalle INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${errorMsg}`);
+                    console.error(`   Problem Source: ${errorClassification.description}`);
+                    console.error(`   Reason: ${errorClassification.reason}`);
+                }
                 errors.push({ 
                     index: i, 
                     error: err.message,
