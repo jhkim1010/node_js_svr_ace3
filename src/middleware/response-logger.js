@@ -25,11 +25,18 @@ function responseLogger(req, res, next) {
         // CRUD 작업 종류
         const operation = getOperationType(req.method);
         
-        // 데이터 개수 (req.body.count를 우선 사용, 없으면 req._dataCount 사용)
+        // 데이터 개수 확인
+        // GET 요청의 경우 응답 데이터 개수를 우선 사용 (req._responseDataCount)
+        // POST/PUT/DELETE의 경우 요청 데이터 개수 사용
         let dataCount = 1;
-        if (req.body && req.body.count !== undefined && req.body.count !== null) {
+        if (req.method === 'GET' && req._responseDataCount !== undefined) {
+            // GET 요청: 실제 응답 데이터 개수 사용
+            dataCount = req._responseDataCount;
+        } else if (req.body && req.body.count !== undefined && req.body.count !== null) {
+            // POST/PUT/DELETE 요청: 요청 바디의 count 사용
             dataCount = parseInt(req.body.count, 10) || 1;
         } else {
+            // 기본값: req._dataCount 또는 1
             dataCount = req._dataCount || 1;
         }
         

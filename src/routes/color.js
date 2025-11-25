@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { Op } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
@@ -10,8 +11,54 @@ const router = Router();
 router.get('/', async (req, res) => {
     try {
         const Color = getModelForRequest(req, 'Color');
-        const records = await Color.findAll({ limit: 100, order: [['id_color', 'DESC']] });
-        res.json(records);
+        
+        // max_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
+        const maxUtime = req.body?.max_utime || req.query?.max_utime;
+        
+        let whereCondition = {};
+        if (maxUtime) {
+            // utime이 max_utime보다 큰 데이터만 조회
+            whereCondition.utime = {
+                [Op.gt]: new Date(maxUtime)
+            };
+        }
+        
+        // 총 데이터 개수 조회
+        const totalCount = await Color.count({ where: whereCondition });
+        
+        // 100개 단위로 제한
+        const limit = 100;
+        const records = await Color.findAll({
+            where: whereCondition,
+            limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
+            order: [['utime', 'ASC']]
+        });
+        
+        // 다음 배치가 있는지 확인
+        const hasMore = records.length > limit;
+        const data = hasMore ? records.slice(0, limit) : records;
+        
+        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 utime)
+        let nextMaxUtime = null;
+        if (data.length > 0 && data[data.length - 1].utime) {
+            nextMaxUtime = data[data.length - 1].utime.toISOString();
+        }
+        
+        // 페이지네이션 정보와 함께 응답
+        const responseData = {
+            data: data,
+            pagination: {
+                count: data.length,
+                total: totalCount,
+                hasMore: hasMore,
+                nextMaxUtime: nextMaxUtime
+            }
+        };
+        
+        // 응답 로거에서 사용할 데이터 개수 저장
+        req._responseDataCount = data.length;
+        
+        res.json(responseData);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to list colors', details: err.message });

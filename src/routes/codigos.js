@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { Op, Sequelize } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
@@ -10,8 +11,68 @@ const router = Router();
 router.get('/', async (req, res) => {
     try {
         const Codigos = getModelForRequest(req, 'Codigos');
-        const records = await Codigos.findAll();
-        res.json(records);
+        
+        // max_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
+        // 실제로는 id_codigo 값을 받음 (호환성을 위해 max_utime 이름 유지)
+        const maxUtime = req.body?.max_utime || req.query?.max_utime;
+        
+        let whereCondition = {};
+        let maxIdCodigo = null;
+        
+        if (maxUtime) {
+            // max_utime 값이 실제로는 id_codigo 값임
+            maxIdCodigo = parseInt(maxUtime, 10);
+            if (isNaN(maxIdCodigo)) {
+                console.error(`ERROR: Invalid id_codigo format: ${maxUtime}`);
+            } else {
+                // id_codigo가 maxIdCodigo보다 큰 레코드만 조회
+                whereCondition.id_codigo = {
+                    [Op.gt]: maxIdCodigo
+                };
+            }
+        }
+        
+        // 총 데이터 개수 조회
+        const totalCount = await Codigos.count({ where: whereCondition });
+        
+        // 100개 단위로 제한
+        const limit = 100;
+        // id_codigo로 정렬 (일관된 정렬 보장)
+        const records = await Codigos.findAll({
+            where: whereCondition,
+            limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
+            order: [['id_codigo', 'ASC']]
+        });
+        
+        // 다음 배치가 있는지 확인
+        const hasMore = records.length > limit;
+        const data = hasMore ? records.slice(0, limit) : records;
+        
+        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id_codigo)
+        let nextMaxUtime = null;
+        if (data.length > 0) {
+            const lastRecord = data[data.length - 1];
+            if (lastRecord.id_codigo !== null && lastRecord.id_codigo !== undefined) {
+                // id_codigo 값을 문자열로 변환하여 반환
+                nextMaxUtime = String(lastRecord.id_codigo);
+            }
+        }
+        
+        // 페이지네이션 정보와 함께 응답
+        const responseData = {
+            data: data,
+            pagination: {
+                count: data.length,
+                total: totalCount,
+                hasMore: hasMore,
+                nextMaxUtime: nextMaxUtime
+            }
+        };
+        
+        // 응답 로거에서 사용할 데이터 개수 저장
+        req._responseDataCount = data.length;
+        
+        res.json(responseData);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to list codigos', details: err.message });
