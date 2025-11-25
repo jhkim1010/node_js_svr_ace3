@@ -70,18 +70,20 @@ app.post('/api/health', async (req, res) => {
         const { databaseName, username, password, port, host } = req.body;
         
         // 필수 파라미터 확인
-        if (!databaseName || !username || !password || !port) {
+        if (!databaseName || !username || !password) {
             return res.status(400).json({
                 ok: false,
                 error: 'Missing required parameters',
-                required: ['databaseName', 'username', 'password', 'port']
+                required: ['databaseName', 'username', 'password'],
+                optional: ['port', 'host']
             });
         }
         
         // Sequelize를 사용하여 연결 테스트
         const { Sequelize } = require('sequelize');
         const dbHost = host || process.env.DB_HOST || 'localhost';
-        const dbPort = parseInt(port, 10);
+        // port가 없으면 기본값 5432 사용 (PostgreSQL 기본 포트)
+        const dbPort = port ? parseInt(port, 10) : 5432;
         
         if (isNaN(dbPort)) {
             return res.status(400).json({
