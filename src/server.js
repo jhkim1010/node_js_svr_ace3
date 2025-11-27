@@ -17,46 +17,147 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));  // BATCH_SYNC 대용량 데이터 처리를 위해 10MB로 증가
 app.use(express.static(path.resolve('./') + '/public'));
 
+// 요청 정보를 상세히 출력하는 함수
+function logRequestInfo(req, routeName) {
+    console.log(`\n=== ${routeName} 요청 정보 ===`);
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Method:', req.method);
+    console.log('Original URL:', req.originalUrl);
+    console.log('Path:', req.path);
+    console.log('URL:', req.url);
+    console.log('Query Parameters:', JSON.stringify(req.query, null, 2));
+    
+    // 모든 헤더 출력
+    console.log('\n--- 모든 헤더 ---');
+    const allHeaders = {};
+    Object.keys(req.headers).forEach(key => {
+        if (key.toLowerCase().includes('password')) {
+            allHeaders[key] = '***';
+        } else {
+            allHeaders[key] = req.headers[key];
+        }
+    });
+    console.log(JSON.stringify(allHeaders, null, 2));
+    
+    // DB 관련 헤더만 별도로 출력
+    console.log('\n--- DB 관련 헤더 ---');
+    const dbHeaders = {
+        'x-db-host': req.headers['x-db-host'] || req.headers['db-host'] || '없음',
+        'x-db-port': req.headers['x-db-port'] || req.headers['db-port'] || '없음',
+        'x-db-name': req.headers['x-db-name'] || req.headers['db-name'] || '없음',
+        'x-db-user': req.headers['x-db-user'] || req.headers['db-user'] || '없음',
+        'x-db-password': req.headers['x-db-password'] || req.headers['db-password'] ? '***' : '없음',
+        'x-db-ssl': req.headers['x-db-ssl'] || req.headers['db-ssl'] || '없음'
+    };
+    console.log(JSON.stringify(dbHeaders, null, 2));
+    
+    // Body 정보 출력
+    console.log('\n--- Body 정보 ---');
+    if (req.body && Object.keys(req.body).length > 0) {
+        const bodyCopy = JSON.parse(JSON.stringify(req.body));
+        // 비밀번호 필드 마스킹
+        if (bodyCopy.password) bodyCopy.password = '***';
+        if (bodyCopy.db_password) bodyCopy.db_password = '***';
+        if (bodyCopy['x-db-password']) bodyCopy['x-db-password'] = '***';
+        console.log(JSON.stringify(bodyCopy, null, 2));
+    } else {
+        console.log('없음 (GET 요청이거나 Body가 비어있음)');
+    }
+    
+    // DB Config 정보 출력
+    console.log('\n--- DB Config (req.dbConfig) ---');
+    if (req.dbConfig) {
+        console.log(JSON.stringify({
+            host: req.dbConfig.host,
+            port: req.dbConfig.port,
+            database: req.dbConfig.database,
+            user: req.dbConfig.user,
+            password: '***',
+            ssl: req.dbConfig.ssl
+        }, null, 2));
+    } else {
+        console.log('없음 (아직 parseDbHeader 미들웨어를 통과하지 않았거나 설정되지 않음)');
+    }
+    
+    console.log('===================================\n');
+}
+
 // Health 체크는 헤더 필요 없음
 app.get('/api/health', (req, res) => {
+    // 요청 정보 출력
+    logRequestInfo(req, 'GET /api/health');
+    
     try {
         const { getBuildDate } = require('./utils/build-info');
         const buildDate = getBuildDate();
         
-        console.log(`GET /api/health - Server health check: SUCCESS`);
-        
-        res.json({ 
+        const responseData = { 
             ok: true, 
             status: 'online',
             uptimeSec: Math.floor(process.uptime()),
             serverTime: new Date().toISOString(),
             buildDate: buildDate,
             version: require('../package.json').version || '1.0.0'
-        });
-    } catch (err) {
-        console.log(`GET /api/health - Server health check: FAILED - ${err.message}`);
+        };
         
-        res.status(500).json({
+        console.log('✅ 성공: GET /api/health 응답 데이터');
+        console.log('==========================================');
+        console.log(JSON.stringify(responseData, null, 2));
+        console.log('==========================================\n');
+        
+        res.json(responseData);
+    } catch (err) {
+        console.error('\n❌ 실패: GET /api/health 처리 중 오류 발생');
+        console.error('==========================================');
+        console.error('Error Type:', err.constructor.name);
+        console.error('Error Message:', err.message);
+        console.error('Error Stack:', err.stack);
+        console.error('==========================================\n');
+        
+        const errorResponse = {
             ok: false,
             error: 'Internal server error',
             message: err.message
-        });
+        };
+        
+        res.status(500).json(errorResponse);
     }
 });
 
 // POST /api/health: 데이터베이스 연결 테스트
 app.post('/api/health', async (req, res) => {
+    // 요청 정보 출력
+    logRequestInfo(req, 'POST /api/health');
+    
     try {
         const { databaseName, username, password, port, host } = req.body;
         
         // 필수 파라미터 확인
         if (!databaseName || !username || !password) {
-            return res.status(400).json({
+            const errorResponse = {
                 ok: false,
                 error: 'Missing required parameters',
                 required: ['databaseName', 'username', 'password'],
-                optional: ['port', 'host']
-            });
+                optional: ['port', 'host'],
+                received: {
+                    databaseName: databaseName || '없음',
+                    username: username || '없음',
+                    password: password ? '***' : '없음',
+                    port: port || '없음',
+                    host: host || '없음'
+                }
+            };
+            
+            console.error('\n❌ 실패: POST /api/health - 필수 파라미터 부족');
+            console.error('==========================================');
+            console.error('부족한 정보:');
+            if (!databaseName) console.error('   - databaseName: 없음');
+            if (!username) console.error('   - username: 없음');
+            if (!password) console.error('   - password: 없음');
+            console.error('받은 정보:', JSON.stringify(errorResponse.received, null, 2));
+            console.error('==========================================\n');
+            
+            return res.status(400).json(errorResponse);
         }
         
         // Sequelize를 사용하여 연결 테스트
@@ -66,11 +167,20 @@ app.post('/api/health', async (req, res) => {
         const dbPort = port ? parseInt(port, 10) : 5432;
         
         if (isNaN(dbPort)) {
-            return res.status(400).json({
+            const errorResponse = {
                 ok: false,
                 error: 'Invalid port number',
-                received: port
-            });
+                received: port,
+                expected: '1-65535 범위의 숫자'
+            };
+            
+            console.error('\n❌ 실패: POST /api/health - 잘못된 포트 번호');
+            console.error('==========================================');
+            console.error('받은 포트:', port);
+            console.error('예상 형식: 1-65535 범위의 숫자');
+            console.error('==========================================\n');
+            
+            return res.status(400).json(errorResponse);
         }
         
         // 테스트용 Sequelize 인스턴스 생성 (연결 풀에 저장하지 않음)
@@ -97,9 +207,7 @@ app.post('/api/health', async (req, res) => {
         // 연결 성공 시 인스턴스 종료
         await testSequelize.close();
         
-        console.log(`POST /api/health - Database: ${databaseName}, User: ${username}, Status: SUCCESS`);
-        
-        res.status(200).json({
+        const responseData = {
             ok: true,
             status: 'connected',
             message: 'Database connection successful',
@@ -107,16 +215,21 @@ app.post('/api/health', async (req, res) => {
             host: dbHost,
             port: dbPort,
             username: username
-        });
+        };
+        
+        console.log('✅ 성공: POST /api/health 응답 데이터');
+        console.log('==========================================');
+        console.log(JSON.stringify(responseData, null, 2));
+        console.log('==========================================\n');
+        
+        res.status(200).json(responseData);
     } catch (err) {
-        // 연결 실패 - 간단한 메시지 출력
+        // 연결 실패 - 상세 메시지 출력
         const errorMessage = err.original ? err.original.message : err.message;
         const errorCode = err.original ? err.original.code : err.code;
         const errorName = err.original ? err.original.name : err.name;
         
-        console.log(`POST /api/health - Database: ${databaseName}, User: ${username}, Status: FAILED - ${errorMessage}`);
-        
-        res.status(400).json({
+        const errorResponse = {
             ok: false,
             status: 'connection_failed',
             error: 'Database connection failed',
@@ -130,7 +243,50 @@ app.post('/api/health', async (req, res) => {
                 database: databaseName,
                 username: username
             }
-        });
+        };
+        
+        console.error('\n❌ 실패: POST /api/health - 데이터베이스 연결 실패');
+        console.error('==========================================');
+        console.error('Error Type:', err.constructor.name);
+        console.error('Error Message:', errorMessage);
+        console.error('Error Code:', errorCode);
+        console.error('Error Name:', errorName);
+        if (err.stack) {
+            console.error('Error Stack:', err.stack);
+        }
+        if (err.original) {
+            console.error('Original Error:', err.original);
+        }
+        console.error('\n연결 정보:');
+        console.error(JSON.stringify(errorResponse.connectionInfo, null, 2));
+        
+        // 부족한 정보 분석
+        const missingInfo = [];
+        if (!databaseName) missingInfo.push('databaseName이 필요합니다');
+        if (!username) missingInfo.push('username이 필요합니다');
+        if (!password) missingInfo.push('password가 필요합니다');
+        
+        // 데이터베이스 연결 오류 분석
+        if (err.name === 'SequelizeConnectionError' || errorCode === 'ECONNREFUSED') {
+            missingInfo.push('데이터베이스 연결 실패 - 호스트, 포트, 인증 정보를 확인하세요');
+        }
+        if (err.name === 'SequelizeAccessDeniedError' || errorCode === '28P01') {
+            missingInfo.push('데이터베이스 인증 실패 - 사용자 이름과 비밀번호를 확인하세요');
+        }
+        if (err.name === 'SequelizeDatabaseError' || errorCode === '3D000') {
+            missingInfo.push('데이터베이스가 존재하지 않습니다 - 데이터베이스 이름을 확인하세요');
+        }
+        
+        if (missingInfo.length > 0) {
+            console.error('\n부족한 정보:');
+            missingInfo.forEach((info, idx) => {
+                console.error(`   ${idx + 1}. ${info}`);
+            });
+        }
+        
+        console.error('==========================================\n');
+        
+        res.status(400).json(errorResponse);
     }
 });
 

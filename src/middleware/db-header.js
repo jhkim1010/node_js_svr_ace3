@@ -60,8 +60,9 @@ function parseDbHeader(req, res, next) {
     }
     
     // 헤더에서 DB 정보 추출 (공백 제거)
-    const dbHost = (req.headers['x-db-host'] || req.headers['db-host'] || '').trim();
-    const dbPort = (req.headers['x-db-port'] || req.headers['db-port'] || '').trim();
+    // host와 port는 기본값 사용 (없어도 오류 발생 안 함)
+    const dbHost = (req.headers['x-db-host'] || req.headers['db-host'] || 'localhost').trim();
+    const dbPort = (req.headers['x-db-port'] || req.headers['db-port'] || '5432').trim();
     const dbName = (req.headers['x-db-name'] || req.headers['db-name'] || '').trim();
     const dbUser = (req.headers['x-db-user'] || req.headers['db-user'] || '').trim();
     const dbPassword = (req.headers['x-db-password'] || req.headers['db-password'] || '').trim();
@@ -71,38 +72,19 @@ function parseDbHeader(req, res, next) {
     const errors = [];
     const receivedValues = {};
     
-    // x-db-host 검증
-    if (!dbHost) {
-        errors.push({
-            header: 'x-db-host (or db-host)',
-            issue: '누락됨 (Missing)',
-            received: null,
-            expected: 'PostgreSQL 서버 주소 (예: localhost, 192.168.1.1)'
-        });
-    } else {
-        receivedValues['x-db-host'] = dbHost;
-    }
+    // x-db-host는 기본값 사용 (오류 없음)
+    receivedValues['x-db-host'] = dbHost;
     
-    // x-db-port 검증
-    if (!dbPort) {
+    // x-db-port 검증 (기본값 사용하지만 유효성은 확인)
+    receivedValues['x-db-port'] = dbPort;
+    const portNum = parseInt(dbPort, 10);
+    if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
         errors.push({
             header: 'x-db-port (or db-port)',
-            issue: '누락됨 (Missing)',
-            received: null,
-            expected: 'PostgreSQL 포트 번호 (예: 5432)'
+            issue: '잘못된 포트 번호 (Invalid port number)',
+            received: dbPort,
+            expected: '1-65535 범위의 숫자'
         });
-    } else {
-        receivedValues['x-db-port'] = dbPort;
-        // 포트 번호가 숫자인지 확인
-        const portNum = parseInt(dbPort, 10);
-        if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
-            errors.push({
-                header: 'x-db-port (or db-port)',
-                issue: '잘못된 포트 번호 (Invalid port number)',
-                received: dbPort,
-                expected: '1-65535 범위의 숫자'
-            });
-        }
     }
     
     // x-db-name 검증
