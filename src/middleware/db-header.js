@@ -1,4 +1,64 @@
 function parseDbHeader(req, res, next) {
+    // DB Trigger 요청 또는 내부 요청 확인
+    // trigger_operation이 있거나 x-internal-request 헤더/쿼리가 있으면 내부 요청으로 간주
+    const isInternalRequest = req.body?.trigger_operation || 
+                             req.body?.operation === 'BATCH_SYNC' ||
+                             req.query?.trigger_operation ||
+                             req.query?.operation === 'BATCH_SYNC' ||
+                             req.headers['x-internal-request'] === 'true' ||
+                             req.query['x-internal-request'] === 'true' ||
+                             req.headers['x-db-trigger'] === 'true' ||
+                             req.query['x-db-trigger'] === 'true';
+    
+    // 내부 요청인 경우 요청 본문, 쿼리 파라미터, 환경 변수에서 DB 정보 찾기
+    if (isInternalRequest) {
+        // 요청 본문에서 DB 정보 추출 시도
+        const bodyDbHost = req.body?.db_host || req.body?.host;
+        const bodyDbPort = req.body?.db_port || req.body?.port;
+        const bodyDbName = req.body?.db_name || req.body?.database || req.body?.db;
+        const bodyDbUser = req.body?.db_user || req.body?.user;
+        const bodyDbPassword = req.body?.db_password || req.body?.password;
+        const bodyDbSsl = req.body?.db_ssl || req.body?.ssl;
+        
+        // 쿼리 파라미터에서 DB 정보 추출 시도 (GET 요청용)
+        const queryDbHost = req.query?.db_host || req.query?.host;
+        const queryDbPort = req.query?.db_port || req.query?.port;
+        const queryDbName = req.query?.db_name || req.query?.database || req.query?.db;
+        const queryDbUser = req.query?.db_user || req.query?.user;
+        const queryDbPassword = req.query?.db_password || req.query?.password;
+        const queryDbSsl = req.query?.db_ssl || req.query?.ssl;
+        
+        // 환경 변수에서 기본 DB 설정 가져오기
+        const defaultHost = process.env.DB_HOST || 'localhost';
+        const defaultPort = process.env.DB_PORT || '5432';
+        const defaultDatabase = process.env.DB_NAME || '';
+        const defaultUser = process.env.DB_USER || '';
+        const defaultPassword = process.env.DB_PASSWORD || '';
+        const defaultSsl = process.env.DB_SSL === 'true' || process.env.DB_SSL === '1';
+        
+        // 우선순위: 헤더 > 쿼리 파라미터 > 요청 본문 > 환경 변수
+        const dbHost = (req.headers['x-db-host'] || req.headers['db-host'] || queryDbHost || bodyDbHost || defaultHost).toString().trim();
+        const dbPort = (req.headers['x-db-port'] || req.headers['db-port'] || queryDbPort || bodyDbPort || defaultPort).toString().trim();
+        const dbName = (req.headers['x-db-name'] || req.headers['db-name'] || queryDbName || bodyDbName || defaultDatabase).toString().trim();
+        const dbUser = (req.headers['x-db-user'] || req.headers['db-user'] || queryDbUser || bodyDbUser || defaultUser).toString().trim();
+        const dbPassword = (req.headers['x-db-password'] || req.headers['db-password'] || queryDbPassword || bodyDbPassword || defaultPassword).toString().trim();
+        const dbSsl = (req.headers['x-db-ssl'] || req.headers['db-ssl'] || queryDbSsl || bodyDbSsl || (defaultSsl ? 'true' : 'false')).toString().trim();
+        
+        // 내부 요청인 경우 DB 정보가 하나라도 있으면 사용
+        if (dbHost && dbPort && dbName && dbUser && dbPassword) {
+            req.dbConfig = {
+                host: dbHost,
+                port: parseInt(dbPort, 10),
+                database: dbName,
+                user: dbUser,
+                password: dbPassword,
+                ssl: dbSsl === 'true' || dbSsl === '1'
+            };
+            return next();
+        }
+        // DB 정보가 없으면 일반 헤더 검증으로 진행
+    }
+    
     // 헤더에서 DB 정보 추출 (공백 제거)
     const dbHost = (req.headers['x-db-host'] || req.headers['db-host'] || '').trim();
     const dbPort = (req.headers['x-db-port'] || req.headers['db-port'] || '').trim();
