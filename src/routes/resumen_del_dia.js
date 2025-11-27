@@ -107,7 +107,7 @@ router.get('/', async (req, res) => {
             otherDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
         }
         
-        // 쿼리 1: vcodes 데이터 집계 (b_mercadopago is false)
+        // 쿼리 1: vcodes 데이터 집계 (b_mercadopago is false) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is false
         const vcodeResult = await Vcode.findAll({
             attributes: [
@@ -117,7 +117,8 @@ router.get('/', async (req, res) => {
                 [sequelize.fn('SUM', sequelize.col('tcredito')), 'total_credito_day'],
                 [sequelize.fn('SUM', sequelize.col('tbanco')), 'total_banco_day'],
                 [sequelize.fn('SUM', sequelize.col('tfavor')), 'total_favor_day'],
-                [sequelize.fn('SUM', sequelize.col('cntropas')), 'total_count_ropas']
+                [sequelize.fn('SUM', sequelize.col('cntropas')), 'total_count_ropas'],
+                'sucursal'
             ],
             where: {
                 [Sequelize.Op.and]: [
@@ -130,15 +131,18 @@ router.get('/', async (req, res) => {
                     { b_mercadopago: false }
                 ]
             },
+            group: ['sucursal'],
+            order: [['sucursal', 'ASC']],
             raw: true
         });
         
-        // 쿼리 2: gastos 데이터 집계
+        // 쿼리 2: gastos 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha = target_date AND borrado is false
         const gastosResult = await Gastos.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'gasto_count'],
-                [sequelize.fn('SUM', sequelize.col('costo')), 'total_gasto_day']
+                [sequelize.fn('SUM', sequelize.col('costo')), 'total_gasto_day'],
+                'sucursal'
             ],
             where: {
                 [Sequelize.Op.and]: [
@@ -149,15 +153,18 @@ router.get('/', async (req, res) => {
                     { borrado: false }
                 ]
             },
+            group: ['sucursal'],
+            order: [['sucursal', 'ASC']],
             raw: true
         });
         
-        // 쿼리 3: vdetalle 데이터 집계
+        // 쿼리 3: vdetalle 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha1 = target_date AND borrado is false
         const vdetalleResult = await Vdetalle.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_discount_event'],
-                [sequelize.fn('SUM', sequelize.col('precio')), 'total_discount_day']
+                [sequelize.fn('SUM', sequelize.col('precio')), 'total_discount_day'],
+                'sucursal'
             ],
             where: {
                 [Sequelize.Op.and]: [
@@ -168,15 +175,18 @@ router.get('/', async (req, res) => {
                     { borrado: false }
                 ]
             },
+            group: ['sucursal'],
+            order: [['sucursal', 'ASC']],
             raw: true
         });
         
-        // 쿼리 4: vcodes 데이터 집계 (MercadoPago)
+        // 쿼리 4: vcodes 데이터 집계 (MercadoPago) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is true
         const vcodeMpagoResult = await Vcode.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_mpago_total'],
-                [sequelize.fn('SUM', sequelize.col('tpago')), 'total_mpago_day']
+                [sequelize.fn('SUM', sequelize.col('tpago')), 'total_mpago_day'],
+                'sucursal'
             ],
             where: {
                 [Sequelize.Op.and]: [
@@ -189,13 +199,40 @@ router.get('/', async (req, res) => {
                     { b_mercadopago: true }
                 ]
             },
+            group: ['sucursal'],
+            order: [['sucursal', 'ASC']],
             raw: true
         });
         
-        const vcodeSummary = vcodeResult && vcodeResult.length > 0 ? vcodeResult[0] : null;
-        const gastosSummary = gastosResult && gastosResult.length > 0 ? gastosResult[0] : null;
-        const vdetalleSummary = vdetalleResult && vdetalleResult.length > 0 ? vdetalleResult[0] : null;
-        const vcodeMpagoSummary = vcodeMpagoResult && vcodeMpagoResult.length > 0 ? vcodeMpagoResult[0] : null;
+        // Sucursal별로 그룹화된 결과를 배열로 변환
+        const vcodeSummary = (vcodeResult || []).map(item => ({
+            sucursal: item.sucursal || null,
+            operation_count: parseInt(item.operation_count || 0, 10),
+            total_venta_day: parseFloat(item.total_venta_day || 0),
+            total_efectivo_day: parseFloat(item.total_efectivo_day || 0),
+            total_credito_day: parseFloat(item.total_credito_day || 0),
+            total_banco_day: parseFloat(item.total_banco_day || 0),
+            total_favor_day: parseFloat(item.total_favor_day || 0),
+            total_count_ropas: parseFloat(item.total_count_ropas || 0)
+        }));
+        
+        const gastosSummary = (gastosResult || []).map(item => ({
+            sucursal: item.sucursal || null,
+            gasto_count: parseInt(item.gasto_count || 0, 10),
+            total_gasto_day: parseFloat(item.total_gasto_day || 0)
+        }));
+        
+        const vdetalleSummary = (vdetalleResult || []).map(item => ({
+            sucursal: item.sucursal || null,
+            count_discount_event: parseInt(item.count_discount_event || 0, 10),
+            total_discount_day: parseFloat(item.total_discount_day || 0)
+        }));
+        
+        const vcodeMpagoSummary = (vcodeMpagoResult || []).map(item => ({
+            sucursal: item.sucursal || null,
+            count_mpago_total: parseInt(item.count_mpago_total || 0, 10),
+            total_mpago_day: parseFloat(item.total_mpago_day || 0)
+        }));
         
         // 스크립트 실행
         let scriptPaths = [];
@@ -238,27 +275,10 @@ router.get('/', async (req, res) => {
             fecha: targetDate || otherDate, // 요청된 날짜 또는 오늘 날짜 (YYYY-MM-DD)
             fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
             fecha_otros: otherDate, // 다른 쿼리에 사용된 날짜
-            vcodes: {
-                operation_count: parseInt(vcodeSummary?.operation_count || 0, 10),
-                total_venta_day: parseFloat(vcodeSummary?.total_venta_day || 0),
-                total_efectivo_day: parseFloat(vcodeSummary?.total_efectivo_day || 0),
-                total_credito_day: parseFloat(vcodeSummary?.total_credito_day || 0),
-                total_banco_day: parseFloat(vcodeSummary?.total_banco_day || 0),
-                total_favor_day: parseFloat(vcodeSummary?.total_favor_day || 0),
-                total_count_ropas: parseFloat(vcodeSummary?.total_count_ropas || 0)
-            },
-            gastos: {
-                gasto_count: parseInt(gastosSummary?.gasto_count || 0, 10),
-                total_gasto_day: parseFloat(gastosSummary?.total_gasto_day || 0)
-            },
-            vdetalle: {
-                count_discount_event: parseInt(vdetalleSummary?.count_discount_event || 0, 10),
-                total_discount_day: parseFloat(vdetalleSummary?.total_discount_day || 0)
-            },
-            vcodes_mpago: {
-                count_mpago_total: parseInt(vcodeMpagoSummary?.count_mpago_total || 0, 10),
-                total_mpago_day: parseFloat(vcodeMpagoSummary?.total_mpago_day || 0)
-            },
+            vcodes: vcodeSummary, // Sucursal별 배열
+            gastos: gastosSummary, // Sucursal별 배열
+            vdetalle: vdetalleSummary, // Sucursal별 배열
+            vcodes_mpago: vcodeMpagoSummary, // Sucursal별 배열
             scripts: {
                 executed: scriptPaths.length,
                 results: scriptResults.map(result => ({
