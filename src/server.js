@@ -162,25 +162,31 @@ app.post('/api/health', async (req, res) => {
         
         // Sequelize를 사용하여 연결 테스트
         const { Sequelize } = require('sequelize');
-        const dbHost = host || process.env.DB_HOST || 'localhost';
-        // port가 없으면 기본값 5432 사용 (PostgreSQL 기본 포트)
-        const dbPort = port ? parseInt(port, 10) : 5432;
-        
-        if (isNaN(dbPort)) {
-            const errorResponse = {
-                ok: false,
-                error: 'Invalid port number',
-                received: port,
-                expected: '1-65535 범위의 숫자'
-            };
-            
-            console.error('\n❌ 실패: POST /api/health - 잘못된 포트 번호');
-            console.error('==========================================');
-            console.error('받은 포트:', port);
-            console.error('예상 형식: 1-65535 범위의 숫자');
-            console.error('==========================================\n');
-            
-            return res.status(400).json(errorResponse);
+        // host가 없으면 기본값 'localhost' 사용 (오류 없이)
+        const dbHost = (host || process.env.DB_HOST || 'localhost').toString().trim();
+        // port가 없거나 빈 값이면 기본값 5432 사용 (PostgreSQL 기본 포트, 오류 없이)
+        let dbPort = 5432; // 기본값
+        if (port && port.toString().trim() !== '') {
+            const parsedPort = parseInt(port.toString().trim(), 10);
+            if (!isNaN(parsedPort) && parsedPort >= 1 && parsedPort <= 65535) {
+                dbPort = parsedPort;
+            } else {
+                // port가 제공되었지만 유효하지 않은 경우에만 오류
+                const errorResponse = {
+                    ok: false,
+                    error: 'Invalid port number',
+                    received: port,
+                    expected: '1-65535 범위의 숫자'
+                };
+                
+                console.error('\n❌ 실패: POST /api/health - 잘못된 포트 번호');
+                console.error('==========================================');
+                console.error('받은 포트:', port);
+                console.error('예상 형식: 1-65535 범위의 숫자');
+                console.error('==========================================\n');
+                
+                return res.status(400).json(errorResponse);
+            }
         }
         
         // 테스트용 Sequelize 인스턴스 생성 (연결 풀에 저장하지 않음)
