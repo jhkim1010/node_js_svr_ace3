@@ -58,21 +58,47 @@ async function handleSingleItem(req, res, Model, primaryKey, modelName) {
                         // 새로운 트랜잭션으로 재시도
                         const retryTransaction = await sequelize.transaction();
                         try {
-                            // 레코드가 실제로 존재하는지 다시 확인 (동시성 문제 대비)
-                            const retryRecord = Array.isArray(availableUniqueKey)
+                            // 모든 unique key를 시도하여 레코드 찾기
+                            let retryRecord = null;
+                            let retryUniqueKey = null;
+                            let retryWhereCondition = null;
+                            
+                            // 먼저 원래 사용한 unique key로 시도
+                            retryRecord = Array.isArray(availableUniqueKey)
                                 ? await Model.findOne({ where: whereCondition, transaction: retryTransaction })
                                 : await Model.findByPk(filteredItem[availableUniqueKey], { transaction: retryTransaction });
                             
                             if (retryRecord) {
+                                retryUniqueKey = availableUniqueKey;
+                                retryWhereCondition = whereCondition;
+                            } else {
+                                // 원래 unique key로 찾지 못하면 다른 unique key로 시도
+                                for (const uniqueKey of uniqueKeys) {
+                                    const testWhereCondition = buildWhereCondition(filteredItem, uniqueKey);
+                                    if (Object.keys(testWhereCondition).length > 0) {
+                                        retryRecord = Array.isArray(uniqueKey)
+                                            ? await Model.findOne({ where: testWhereCondition, transaction: retryTransaction })
+                                            : await Model.findByPk(filteredItem[uniqueKey], { transaction: retryTransaction });
+                                        
+                                        if (retryRecord) {
+                                            retryUniqueKey = uniqueKey;
+                                            retryWhereCondition = testWhereCondition;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (retryRecord) {
                                 // 레코드가 존재하면 UPDATE
                                 const updateData = { ...filteredItem };
-                                const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                const keysToRemove = Array.isArray(retryUniqueKey) ? retryUniqueKey : [retryUniqueKey];
                                 keysToRemove.forEach(key => delete updateData[key]);
                                 
-                                await Model.update(updateData, { where: whereCondition, transaction: retryTransaction });
-                                const updated = Array.isArray(availableUniqueKey)
-                                    ? await Model.findOne({ where: whereCondition, transaction: retryTransaction })
-                                    : await Model.findByPk(filteredItem[availableUniqueKey], { transaction: retryTransaction });
+                                await Model.update(updateData, { where: retryWhereCondition, transaction: retryTransaction });
+                                const updated = Array.isArray(retryUniqueKey)
+                                    ? await Model.findOne({ where: retryWhereCondition, transaction: retryTransaction })
+                                    : await Model.findByPk(filteredItem[retryUniqueKey], { transaction: retryTransaction });
                                 await retryTransaction.commit();
                                 return { action: 'updated', data: updated };
                             } else {
