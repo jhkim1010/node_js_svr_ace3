@@ -8,22 +8,35 @@ function parseDbHeader(req, res, next) {
     const dbSsl = (req.headers['x-db-ssl'] || req.headers['db-ssl'] || '').trim();
     
     // 필수 헤더 확인
-    if (!dbHost || !dbPort || !dbName || !dbUser || !dbPassword) {
+    const missingHeaders = [];
+    if (!dbHost) missingHeaders.push('x-db-host (or db-host)');
+    if (!dbPort) missingHeaders.push('x-db-port (or db-port)');
+    if (!dbName) missingHeaders.push('x-db-name (or db-name)');
+    if (!dbUser) missingHeaders.push('x-db-user (or db-user)');
+    if (!dbPassword) missingHeaders.push('x-db-password (or db-password)');
+    
+    if (missingHeaders.length > 0) {
         const path = req.originalUrl || req.path || req.url;
-        console.error(`\nERROR: Missing required database headers`);
+        console.error(`\nERROR: 헤더 정보 오류 (Missing required database headers)`);
         console.error(`   Method: ${req.method}`);
         console.error(`   Path: ${path}`);
-        console.error(`   Missing headers:`);
-        if (!dbHost) console.error(`      - x-db-host or db-host`);
-        if (!dbPort) console.error(`      - x-db-port or db-port`);
-        if (!dbName) console.error(`      - x-db-name or db-name`);
-        if (!dbUser) console.error(`      - x-db-user or db-user`);
-        if (!dbPassword) console.error(`      - x-db-password or db-password`);
+        console.error(`   누락된 헤더 (Missing headers):`);
+        missingHeaders.forEach(header => {
+            console.error(`      - ${header}`);
+        });
         console.error('');
         
         return res.status(400).json({
-            error: 'Missing required database headers',
-            required: ['x-db-host (or db-host)', 'x-db-port (or db-port)', 'x-db-name (or db-name)', 'x-db-user (or db-user)', 'x-db-password (or db-password)'],
+            error: '헤더 정보 오류',
+            message: 'Missing required database headers',
+            required: [
+                'x-db-host (or db-host)',
+                'x-db-port (or db-port)',
+                'x-db-name (or db-name)',
+                'x-db-user (or db-user)',
+                'x-db-password (or db-password)'
+            ],
+            missing: missingHeaders,
             received: {
                 'x-db-host': dbHost ? 'present' : 'missing',
                 'x-db-port': dbPort ? 'present' : 'missing',
