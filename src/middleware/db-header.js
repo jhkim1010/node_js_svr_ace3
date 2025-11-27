@@ -1,4 +1,29 @@
 function parseDbHeader(req, res, next) {
+    // PUT, GET, POST 요청의 경우 host 헤더를 무조건 localhost로 강제 설정
+    if (req.method === 'PUT' || req.method === 'GET' || req.method === 'POST') {
+        // 요청 헤더의 host 관련 값들을 localhost로 강제 설정
+        if (req.headers['x-db-host']) {
+            req.headers['x-db-host'] = 'localhost';
+        }
+        if (req.headers['db-host']) {
+            req.headers['db-host'] = 'localhost';
+        }
+        // 쿼리 파라미터도 localhost로 강제 설정
+        if (req.query?.db_host) {
+            req.query.db_host = 'localhost';
+        }
+        if (req.query?.host) {
+            req.query.host = 'localhost';
+        }
+        // 요청 본문도 localhost로 강제 설정
+        if (req.body?.db_host) {
+            req.body.db_host = 'localhost';
+        }
+        if (req.body?.host) {
+            req.body.host = 'localhost';
+        }
+    }
+    
     // DB Trigger 요청 또는 내부 요청 확인
     // trigger_operation이 있거나 x-internal-request 헤더/쿼리가 있으면 내부 요청으로 간주
     const isInternalRequest = req.body?.trigger_operation || 
@@ -12,24 +37,24 @@ function parseDbHeader(req, res, next) {
     
     // 내부 요청인 경우 요청 본문, 쿼리 파라미터, 환경 변수에서 DB 정보 찾기
     if (isInternalRequest) {
-        // 요청 본문에서 DB 정보 추출 시도
-        const bodyDbHost = req.body?.db_host || req.body?.host;
+        // 요청 본문에서 DB 정보 추출 시도 (host는 무조건 localhost로 강제)
+        const bodyDbHost = 'localhost'; // 무조건 localhost 사용
         const bodyDbPort = req.body?.db_port || req.body?.port;
         const bodyDbName = req.body?.db_name || req.body?.database || req.body?.db;
         const bodyDbUser = req.body?.db_user || req.body?.user;
         const bodyDbPassword = req.body?.db_password || req.body?.password;
         const bodyDbSsl = req.body?.db_ssl || req.body?.ssl;
         
-        // 쿼리 파라미터에서 DB 정보 추출 시도 (GET 요청용)
-        const queryDbHost = req.query?.db_host || req.query?.host;
+        // 쿼리 파라미터에서 DB 정보 추출 시도 (GET 요청용, host는 무조건 localhost로 강제)
+        const queryDbHost = 'localhost'; // 무조건 localhost 사용
         const queryDbPort = req.query?.db_port || req.query?.port;
         const queryDbName = req.query?.db_name || req.query?.database || req.query?.db;
         const queryDbUser = req.query?.db_user || req.query?.user;
         const queryDbPassword = req.query?.db_password || req.query?.password;
         const queryDbSsl = req.query?.db_ssl || req.query?.ssl;
         
-        // 환경 변수에서 기본 DB 설정 가져오기
-        const defaultHost = process.env.DB_HOST || 'localhost';
+        // 환경 변수에서 기본 DB 설정 가져오기 (host는 무조건 localhost로 강제)
+        const defaultHost = 'localhost'; // 무조건 localhost 사용 (환경 변수 무시)
         const defaultPort = process.env.DB_PORT || '5432';
         const defaultDatabase = process.env.DB_NAME || '';
         const defaultUser = process.env.DB_USER || '';

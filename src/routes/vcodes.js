@@ -5,6 +5,7 @@ const { handleVcodesBatchSync, handleVcodesArrayData } = require('../utils/vcode
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError } = require('../utils/error-handler');
+const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
 
@@ -75,7 +76,17 @@ router.put('/:id', async (req, res) => {
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Vcode = getModelForRequest(req, 'Vcode');
-        // b_sincronizado_node_svr 필드 제거
+        
+        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우) - Vcodes 전용 핸들러 사용
+        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
+            req.body.operation = req.body.operation || 'UPDATE';
+            // 50개를 넘으면 배치로 나눠서 처리
+            const result = await processBatchedArray(req, res, handleVcodesArrayData, Vcode, 'vcode_id', 'Vcode');
+            await notifyBatchSync(req, Vcode, result);
+            return res.status(200).json(result);
+        }
+        
+        // 단일 항목 처리 (기존 로직)
         const cleanedData = removeSyncField(req.body);
         const dataToUpdate = filterModelFields(Vcode, cleanedData);
         

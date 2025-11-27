@@ -4,6 +4,8 @@ const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } =
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError } = require('../utils/error-handler');
+const { processBatchedArray } = require('../utils/batch-processor');
+const { validateTableAndSchema, logTableAndSchema } = require('../utils/table-schema-validator');
 
 const router = Router();
 
@@ -38,6 +40,17 @@ router.post('/', async (req, res) => {
         
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
+            // table과 schema 검증 및 로깅
+            const validation = validateTableAndSchema(req, 'clientes', 'Clientes');
+            logTableAndSchema(req, 'clientes', 'Clientes');
+            
+            // 경고가 있으면 로그 출력
+            if (validation.warnings.length > 0) {
+                validation.warnings.forEach(warning => {
+                    console.warn(`[WARNING] ${warning.field}: ${warning.message}`);
+                });
+            }
+            
             // clientes는 dni만 기본 키로 사용
             const result = await handleBatchSync(req, res, Clientes, 'dni', 'Clientes');
             await notifyBatchSync(req, Clientes, result);
@@ -84,6 +97,17 @@ router.put('/:id', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Invalid id' });
     try {
         const Clientes = getModelForRequest(req, 'Clientes');
+        
+        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
+        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
+            req.body.operation = req.body.operation || 'UPDATE';
+            // 50개를 넘으면 배치로 나눠서 처리
+            const result = await processBatchedArray(req, res, handleArrayData, Clientes, 'dni', 'Clientes');
+            await notifyBatchSync(req, Clientes, result);
+            return res.status(200).json(result);
+        }
+        
+        // 단일 항목 처리 (기존 로직)
         const cleanedData = removeSyncField(req.body);
         const dataToUpdate = filterModelFields(Clientes, cleanedData);
         
