@@ -37,7 +37,8 @@ function parseDbHeader(req, res, next) {
         const defaultSsl = process.env.DB_SSL === 'true' || process.env.DB_SSL === '1';
         
         // 우선순위: 헤더 > 쿼리 파라미터 > 요청 본문 > 환경 변수
-        const dbHost = (req.headers['x-db-host'] || req.headers['db-host'] || queryDbHost || bodyDbHost || defaultHost).toString().trim();
+        // host는 무조건 'localhost'로 설정 (헤더 값 무시)
+        const dbHost = 'localhost';
         const dbPort = (req.headers['x-db-port'] || req.headers['db-port'] || queryDbPort || bodyDbPort || defaultPort).toString().trim();
         const dbName = (req.headers['x-db-name'] || req.headers['db-name'] || queryDbName || bodyDbName || defaultDatabase).toString().trim();
         const dbUser = (req.headers['x-db-user'] || req.headers['db-user'] || queryDbUser || bodyDbUser || defaultUser).toString().trim();
@@ -47,7 +48,7 @@ function parseDbHeader(req, res, next) {
         // 내부 요청인 경우 DB 정보가 하나라도 있으면 사용
         if (dbHost && dbPort && dbName && dbUser && dbPassword) {
             req.dbConfig = {
-                host: dbHost,
+                host: 'localhost', // 무조건 localhost 사용
                 port: parseInt(dbPort, 10),
                 database: dbName,
                 user: dbUser,
@@ -60,8 +61,9 @@ function parseDbHeader(req, res, next) {
     }
     
     // 헤더에서 DB 정보 추출 (공백 제거)
-    // host와 port는 기본값 사용 (없어도 오류 발생 안 함)
-    const dbHost = (req.headers['x-db-host'] || req.headers['db-host'] || 'localhost').trim();
+    // host는 무조건 'localhost'로 설정 (헤더 값 무시)
+    // port는 기본값 사용 (없어도 오류 발생 안 함)
+    const dbHost = 'localhost'; // 헤더 값 무시하고 항상 localhost 사용
     const dbPort = (req.headers['x-db-port'] || req.headers['db-port'] || '5432').trim();
     const dbName = (req.headers['x-db-name'] || req.headers['db-name'] || '').trim();
     const dbUser = (req.headers['x-db-user'] || req.headers['db-user'] || '').trim();
@@ -72,8 +74,8 @@ function parseDbHeader(req, res, next) {
     const errors = [];
     const receivedValues = {};
     
-    // x-db-host는 기본값 사용 (오류 없음)
-    receivedValues['x-db-host'] = dbHost;
+    // x-db-host는 무조건 'localhost' 사용 (헤더 값 무시)
+    receivedValues['x-db-host'] = 'localhost';
     
     // x-db-port 검증 (기본값 사용하지만 유효성은 확인)
     receivedValues['x-db-port'] = dbPort;
@@ -169,7 +171,7 @@ function parseDbHeader(req, res, next) {
     
     // req 객체에 DB 정보 저장
     req.dbConfig = {
-        host: dbHost,
+        host: 'localhost', // 무조건 localhost 사용 (헤더 값 무시)
         port: parseInt(dbPort, 10),
         database: dbName,
         user: dbUser,
