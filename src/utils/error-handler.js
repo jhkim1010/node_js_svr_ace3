@@ -102,9 +102,99 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
             }
         });
     } else {
-        console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
-        console.error(`   Problem Source: ${errorClassification.description}`);
-        console.error(`   Reason: ${errorClassification.reason}`);
+        // 컬럼 길이 제한 오류 감지 및 분석
+        const isLengthError = errorMsg.includes('value too long for type') || 
+                             errorMsg.includes('character varying') ||
+                             errorMsg.includes('too long');
+        
+        if (isLengthError) {
+            // 에러 메시지에서 컬럼 정보 추출
+            // PostgreSQL 형식: "value too long for type character varying(50) of column 'column_name'"
+            const columnMatch = errorMsg.match(/column ['"]([^'"]+)['"]/i) || 
+                               errorMsg.match(/of column ['"]([^'"]+)['"]/i);
+            const lengthMatch = errorMsg.match(/character varying\((\d+)\)/i) || 
+                               errorMsg.match(/varchar\((\d+)\)/i);
+            
+            const columnName = columnMatch ? columnMatch[1] : null;
+            const maxLength = lengthMatch ? parseInt(lengthMatch[1], 10) : null;
+            
+            console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: Column length exceeded`);
+            console.error(`   Problem Source: ${errorClassification.description}`);
+            console.error(`   Reason: ${errorClassification.reason}`);
+            console.error(`   Error Message: ${errorMsg}`);
+            
+            if (columnName) {
+                console.error(`   Problematic Column: ${columnName}`);
+                if (maxLength) {
+                    console.error(`   Maximum Length: ${maxLength} characters`);
+                }
+                
+                // 요청 본문에서 해당 컬럼의 값 확인
+                const bodyData = req.body.new_data || req.body.data || req.body;
+                if (bodyData) {
+                    if (Array.isArray(bodyData)) {
+                        // 배열인 경우 첫 번째 항목 확인
+                        const firstItem = bodyData[0];
+                        if (firstItem && firstItem[columnName] !== undefined) {
+                            const value = firstItem[columnName];
+                            const valueLength = value ? String(value).length : 0;
+                            console.error(`   Attempted Value Length: ${valueLength} characters`);
+                            if (maxLength && valueLength > maxLength) {
+                                console.error(`   Value Exceeds Limit By: ${valueLength - maxLength} characters`);
+                            }
+                            // 값이 너무 길면 일부만 표시
+                            const valueStr = String(value);
+                            if (valueStr.length > 100) {
+                                console.error(`   Value Preview: ${valueStr.substring(0, 100)}...`);
+                            } else {
+                                console.error(`   Value: ${valueStr}`);
+                            }
+                        }
+                    } else if (bodyData[columnName] !== undefined) {
+                        const value = bodyData[columnName];
+                        const valueLength = value ? String(value).length : 0;
+                        console.error(`   Attempted Value Length: ${valueLength} characters`);
+                        if (maxLength && valueLength > maxLength) {
+                            console.error(`   Value Exceeds Limit By: ${valueLength - maxLength} characters`);
+                        }
+                        // 값이 너무 길면 일부만 표시
+                        const valueStr = String(value);
+                        if (valueStr.length > 100) {
+                            console.error(`   Value Preview: ${valueStr.substring(0, 100)}...`);
+                        } else {
+                            console.error(`   Value: ${valueStr}`);
+                        }
+                    }
+                }
+            } else {
+                // 컬럼 이름을 찾을 수 없는 경우, 요청 본문의 모든 문자열 필드 확인
+                console.error(`   Note: Could not identify specific column from error message`);
+                console.error(`   Checking all string fields in request data...`);
+                
+                const bodyData = req.body.new_data || req.body.data || req.body;
+                if (bodyData) {
+                    const dataToCheck = Array.isArray(bodyData) ? bodyData[0] : bodyData;
+                    if (dataToCheck && typeof dataToCheck === 'object') {
+                        const longFields = [];
+                        Object.entries(dataToCheck).forEach(([key, value]) => {
+                            if (typeof value === 'string' && value.length > 0) {
+                                longFields.push({ column: key, length: value.length, value: value.length > 50 ? value.substring(0, 50) + '...' : value });
+                            }
+                        });
+                        if (longFields.length > 0) {
+                            console.error(`   String fields in request data:`);
+                            longFields.forEach(field => {
+                                console.error(`      - ${field.column}: ${field.length} characters (${field.value})`);
+                            });
+                        }
+                    }
+                }
+            }
+        } else {
+            console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
+            console.error(`   Problem Source: ${errorClassification.description}`);
+            console.error(`   Reason: ${errorClassification.reason}`);
+        }
     }
 }
 
