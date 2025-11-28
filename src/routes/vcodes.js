@@ -4,7 +4,7 @@ const { removeSyncField, filterModelFields } = require('../utils/batch-sync-hand
 const { handleVcodesBatchSync, handleVcodesArrayData } = require('../utils/vcodes-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -57,17 +57,52 @@ router.post('/', async (req, res) => {
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         handleInsertUpdateError(err, req, 'Vcode', 'vcode_id', 'vcodes');
-        res.status(400).json({ 
-            error: 'Failed to create vcode', 
-            details: err.message,
-            errorType: err.constructor.name,
-            validationErrors: err.errors ? err.errors.map(e => ({
+        const errorResponse = buildDatabaseErrorResponse(err, req, 'create vcode');
+        
+        // 외래키 제약 조건 위반 감지 및 정보 추가
+        const errorMsg = err.original ? err.original.message : err.message;
+        const isForeignKeyError = err.constructor.name.includes('ForeignKeyConstraintError') ||
+                                 errorMsg.includes('foreign key constraint') ||
+                                 errorMsg.includes('violates foreign key') ||
+                                 errorMsg.includes('is not present in table');
+        
+        if (isForeignKeyError) {
+            const keyMatch = errorMsg.match(/Key \(([^)]+)\)=\(([^)]+)\)/i);
+            const tableMatch = errorMsg.match(/is not present in table ['"]([^'"]+)['"]/i) ||
+                              errorMsg.match(/table ['"]([^'"]+)['"]/i);
+            const constraintMatch = errorMsg.match(/constraint ['"]([^'"]+)['"]/i);
+            
+            if (keyMatch && tableMatch) {
+                errorResponse.foreignKeyError = {
+                    column: keyMatch[1].trim(),
+                    value: keyMatch[2].trim(),
+                    referencedTable: tableMatch[1],
+                    constraintName: constraintMatch ? constraintMatch[1] : null
+                };
+            }
+        }
+        
+        // Validation 에러인 경우 상세 정보 추가
+        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+            errorResponse.validationErrors = err.errors.map(e => ({
                 field: e.path,
                 value: e.value,
-                message: e.message
-            })) : undefined,
-            originalError: err.original ? err.original.message : null
-        });
+                message: e.message,
+                type: e.type,
+                validator: e.validatorKey || e.validatorName
+            }));
+            
+            // 누락된 필수 컬럼 목록 추가
+            const missingColumns = err.errors
+                .filter(e => e.type === 'notNull Violation' || 
+                           e.message?.toLowerCase().includes('cannot be null'))
+                .map(e => e.path);
+            if (missingColumns.length > 0) {
+                errorResponse.missingColumns = missingColumns;
+            }
+        }
+        
+        res.status(400).json(errorResponse);
     }
 });
 

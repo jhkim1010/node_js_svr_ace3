@@ -54,6 +54,71 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
         return; // 연결 오류는 여기서 처리 완료
     }
     
+    // 외래키 제약 조건 위반 감지
+    const isForeignKeyError = err.constructor.name.includes('ForeignKeyConstraintError') ||
+                             errorMsg.includes('foreign key constraint') ||
+                             errorMsg.includes('violates foreign key') ||
+                             errorMsg.includes('is not present in table');
+    
+    if (isForeignKeyError) {
+        // 외래키 제약 조건 위반 상세 분석
+        // PostgreSQL 형식: "Key (column_name)=(value) is not present in table \"referenced_table\""
+        // 또는: "insert or update on table \"table_name\" violates foreign key constraint \"constraint_name\""
+        
+        const keyMatch = errorMsg.match(/Key \(([^)]+)\)=\(([^)]+)\)/i);
+        const tableMatch = errorMsg.match(/is not present in table ['"]([^'"]+)['"]/i) ||
+                          errorMsg.match(/table ['"]([^'"]+)['"]/i);
+        const constraintMatch = errorMsg.match(/constraint ['"]([^'"]+)['"]/i);
+        
+        const columnName = keyMatch ? keyMatch[1].trim() : null;
+        const columnValue = keyMatch ? keyMatch[2].trim() : null;
+        const referencedTable = tableMatch ? tableMatch[1] : null;
+        const constraintName = constraintMatch ? constraintMatch[1] : null;
+        
+        console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: Foreign key constraint violation`);
+        console.error(`   Problem Source: ${errorClassification.description}`);
+        console.error(`   Reason: ${errorClassification.reason}`);
+        console.error(`   Error Message: ${errorMsg}`);
+        
+        if (columnName && columnValue) {
+            console.error(`   Foreign Key Column: ${columnName}`);
+            console.error(`   Invalid Value: ${columnValue}`);
+            console.error(`   Description: 컬럼 '${columnName}'의 값 '${columnValue}'가 참조하는 테이블에 존재하지 않습니다`);
+            
+            if (referencedTable) {
+                console.error(`   Referenced Table: ${referencedTable}`);
+                console.error(`   Solution: '${referencedTable}' 테이블에 값 '${columnValue}'가 존재하는지 확인하세요`);
+            }
+            
+            // 요청 본문에서 해당 컬럼 확인
+            const bodyData = req.body.new_data || req.body.data || req.body;
+            if (bodyData) {
+                const dataToCheck = Array.isArray(bodyData) ? bodyData[0] : bodyData;
+                if (dataToCheck && typeof dataToCheck === 'object') {
+                    if (dataToCheck[columnName] !== undefined) {
+                        console.error(`   Request Data: ${columnName} = ${JSON.stringify(dataToCheck[columnName])}`);
+                        if (String(dataToCheck[columnName]) !== String(columnValue)) {
+                            console.error(`   ⚠️  주의: 요청 데이터의 값(${JSON.stringify(dataToCheck[columnName])})과 에러 메시지의 값(${columnValue})이 다릅니다`);
+                        }
+                    } else {
+                        console.error(`   Request Data: ${columnName} 필드가 요청 데이터에 없습니다`);
+                    }
+                }
+            }
+        } else {
+            // 컬럼 정보를 추출할 수 없는 경우
+            console.error(`   Note: 외래키 제약 조건 위반이 감지되었지만 컬럼 정보를 추출할 수 없습니다`);
+            if (constraintName) {
+                console.error(`   Constraint Name: ${constraintName}`);
+            }
+            if (referencedTable) {
+                console.error(`   Referenced Table: ${referencedTable}`);
+            }
+        }
+        
+        return; // 외래키 오류는 여기서 처리 완료
+    }
+    
     // Primary key 또는 unique constraint 위반인 경우 더 명확한 메시지 표시
     const isConstraintError = err.constructor.name.includes('UniqueConstraintError') || 
                                errorMsg.includes('duplicate key') || 
@@ -335,11 +400,24 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
         dbConfig.port || 5432
     );
     
+    // 외래키 제약 조건 위반 감지
+    const isForeignKeyError = err.constructor.name.includes('ForeignKeyConstraintError') ||
+                             errorMsg.includes('foreign key constraint') ||
+                             errorMsg.includes('violates foreign key') ||
+                             errorMsg.includes('is not present in table');
+    
     // 기본 에러 메시지 생성
     let message = errorMsg;
     if (connectionDiagnosis) {
         // 연결 거부 오류인 경우 더 명확한 메시지
         message = `Database connection refused: ${connectionDiagnosis.diagnosis.summary}`;
+    } else if (isForeignKeyError) {
+        // 외래키 오류인 경우 더 명확한 메시지
+        const keyMatch = errorMsg.match(/Key \(([^)]+)\)=\(([^)]+)\)/i);
+        const tableMatch = errorMsg.match(/is not present in table ['"]([^'"]+)['"]/i);
+        if (keyMatch && tableMatch) {
+            message = `Foreign key violation: Value '${keyMatch[2].trim()}' in column '${keyMatch[1].trim()}' does not exist in table '${tableMatch[1]}'`;
+        }
     }
     
     const errorResponse = {
@@ -359,6 +437,23 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
         errorResponse.diagnosis = diagnosisWithoutSolutions;
         errorResponse.connectionInfo = connectionDiagnosis.connectionInfo;
         errorResponse.mostLikelyCause = connectionDiagnosis.diagnosis.mostLikelyCause;
+    }
+    
+    // 외래키 제약 조건 위반인 경우 상세 정보 추가
+    if (isForeignKeyError) {
+        const keyMatch = errorMsg.match(/Key \(([^)]+)\)=\(([^)]+)\)/i);
+        const tableMatch = errorMsg.match(/is not present in table ['"]([^'"]+)['"]/i) ||
+                          errorMsg.match(/table ['"]([^'"]+)['"]/i);
+        const constraintMatch = errorMsg.match(/constraint ['"]([^'"]+)['"]/i);
+        
+        if (keyMatch && tableMatch) {
+            errorResponse.foreignKeyError = {
+                column: keyMatch[1].trim(),
+                value: keyMatch[2].trim(),
+                referencedTable: tableMatch[1],
+                constraintName: constraintMatch ? constraintMatch[1] : null
+            };
+        }
     }
     
     return errorResponse;
