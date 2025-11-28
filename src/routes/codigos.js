@@ -237,16 +237,29 @@ router.post('/', async (req, res) => {
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         handleInsertUpdateError(err, req, 'Codigos', 'codigo', 'codigos');
-        res.status(400).json({ 
-            error: 'Failed to create codigo', 
-            details: err.message,
-            errorType: err.constructor.name,
-            validationErrors: err.errors ? err.errors.map(e => ({
+        const errorResponse = buildDatabaseErrorResponse(err, req, 'create codigo');
+        
+        // Validation 에러인 경우 상세 정보 추가
+        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+            errorResponse.validationErrors = err.errors.map(e => ({
                 field: e.path,
                 value: e.value,
-                message: e.message
-            })) : undefined
-        });
+                message: e.message,
+                type: e.type,
+                validator: e.validatorKey || e.validatorName
+            }));
+            
+            // 누락된 필수 컬럼 목록 추가
+            const missingColumns = err.errors
+                .filter(e => e.type === 'notNull Violation' || 
+                           e.message?.toLowerCase().includes('cannot be null'))
+                .map(e => e.path);
+            if (missingColumns.length > 0) {
+                errorResponse.missingColumns = missingColumns;
+            }
+        }
+        
+        res.status(400).json(errorResponse);
     }
 });
 

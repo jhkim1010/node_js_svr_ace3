@@ -122,16 +122,49 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
         console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
         console.error(`   Problem Source: ${errorClassification.description}`);
         console.error(`   Reason: ${errorClassification.reason}`);
+        
+        // 누락된 필수 컬럼 확인
+        const missingColumns = [];
+        const invalidColumns = [];
+        
         err.errors.forEach((validationError, index) => {
-            console.error(`   [${index + 1}] Column: ${validationError.path}`);
+            const columnName = validationError.path || 'unknown';
+            const errorType = validationError.type || 'N/A';
+            
+            console.error(`   [${index + 1}] Column: ${columnName}`);
             console.error(`       Value: ${validationError.value !== undefined && validationError.value !== null ? JSON.stringify(validationError.value) : 'null'}`);
-            console.error(`       Error Type: ${validationError.type || 'N/A'}`);
+            console.error(`       Error Type: ${errorType}`);
             console.error(`       Validator: ${validationError.validatorKey || validationError.validatorName || 'N/A'}`);
             console.error(`       Message: ${validationError.message}`);
             if (validationError.validatorArgs && validationError.validatorArgs.length > 0) {
                 console.error(`       Validator Args: ${JSON.stringify(validationError.validatorArgs)}`);
             }
+            
+            // NOT NULL 제약 조건 위반인 경우
+            if (errorType === 'notNull Violation' || 
+                validationError.message?.toLowerCase().includes('cannot be null') ||
+                validationError.message?.toLowerCase().includes('notnull violation')) {
+                missingColumns.push(columnName);
+            } else {
+                invalidColumns.push({ column: columnName, reason: validationError.message });
+            }
         });
+        
+        // 누락된 필수 컬럼 요약
+        if (missingColumns.length > 0) {
+            console.error(`\n   ⚠️  필수 컬럼 누락 (${missingColumns.length}개):`);
+            missingColumns.forEach(col => {
+                console.error(`      - ${col}: 필수 값이 누락되었습니다 (NOT NULL 제약 조건)`);
+            });
+        }
+        
+        // 유효하지 않은 컬럼 요약
+        if (invalidColumns.length > 0) {
+            console.error(`\n   ⚠️  유효하지 않은 컬럼 (${invalidColumns.length}개):`);
+            invalidColumns.forEach(({ column, reason }) => {
+                console.error(`      - ${column}: ${reason}`);
+            });
+        }
     } else {
         // 컬럼 길이 제한 오류 감지 및 분석
         const isLengthError = errorMsg.includes('value too long for type') || 
@@ -222,9 +255,48 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
                 }
             }
         } else {
-            console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
-            console.error(`   Problem Source: ${errorClassification.description}`);
-            console.error(`   Reason: ${errorClassification.reason}`);
+            // NOT NULL 제약 조건 위반 감지 (PostgreSQL 에러 메시지에서)
+            const isNotNullError = errorMsg.includes('null value in column') ||
+                                 errorMsg.includes('violates not-null constraint') ||
+                                 errorMsg.includes('column') && errorMsg.includes('cannot be null');
+            
+            if (isNotNullError) {
+                // 컬럼 이름 추출
+                const columnMatch = errorMsg.match(/column ['"]([^'"]+)['"]/i) || 
+                                   errorMsg.match(/column ([^\s]+)/i);
+                const columnName = columnMatch ? columnMatch[1] : '알 수 없음';
+                
+                console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: Required column missing`);
+                console.error(`   Problem Source: ${errorClassification.description}`);
+                console.error(`   Reason: ${errorClassification.reason}`);
+                console.error(`   Error Message: ${errorMsg}`);
+                console.error(`   Missing Column: ${columnName}`);
+                console.error(`   Description: 필수 컬럼 '${columnName}'에 값이 제공되지 않았습니다 (NOT NULL 제약 조건)`);
+                
+                // 요청 본문에서 해당 컬럼 확인
+                const bodyData = req.body.new_data || req.body.data || req.body;
+                if (bodyData) {
+                    const dataToCheck = Array.isArray(bodyData) ? bodyData[0] : bodyData;
+                    if (dataToCheck && typeof dataToCheck === 'object') {
+                        if (dataToCheck[columnName] === undefined) {
+                            console.error(`   Status: 요청 데이터에 '${columnName}' 필드가 없습니다`);
+                        } else if (dataToCheck[columnName] === null) {
+                            console.error(`   Status: 요청 데이터에 '${columnName}' 필드가 null로 설정되어 있습니다`);
+                        } else {
+                            console.error(`   Status: 요청 데이터에 '${columnName}' 필드가 있지만 값이 유효하지 않습니다`);
+                            console.error(`   Value: ${JSON.stringify(dataToCheck[columnName])}`);
+                        }
+                        
+                        // 요청 데이터의 모든 필드 목록 출력 (디버깅용)
+                        const providedFields = Object.keys(dataToCheck).filter(key => dataToCheck[key] !== null && dataToCheck[key] !== undefined);
+                        console.error(`   Provided Fields (${providedFields.length}): ${providedFields.join(', ')}`);
+                    }
+                }
+            } else {
+                console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
+                console.error(`   Problem Source: ${errorClassification.description}`);
+                console.error(`   Reason: ${errorClassification.reason}`);
+            }
         }
     }
 }
