@@ -3,7 +3,7 @@ const { Sequelize } = require('sequelize');
 // 헤더 기반 동적 연결 사용하므로 정적 sequelize는 더미 인스턴스로 생성
 // 실제 연결은 하지 않으며, 모델 정의를 위한 기본값으로만 사용
 const sequelize = new Sequelize('dummy', 'dummy', 'dummy', {
-    host: 'localhost',
+    host: '127.0.0.1',
     port: 5432,
     dialect: 'postgres',
     logging: false,

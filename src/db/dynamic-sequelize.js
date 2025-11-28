@@ -9,9 +9,9 @@ function getConnectionKey(host, port, database, user) {
 }
 
 function getDynamicSequelize(host, port, database, user, password, ssl = false) {
-    // host는 파라미터로 받은 값을 사용 (무조건 localhost로 강제되어 있음)
+    // host는 파라미터로 받은 값을 사용 (무조건 127.0.0.1로 강제되어 있음)
     // 환경 변수 DB_HOST는 무시하고 파라미터로 받은 host 사용
-    host = host || 'localhost';
+    host = host || '127.0.0.1';
     const key = getConnectionKey(host, port, database, user);
     
     // 이미 존재하는 연결이 있으면 재사용

@@ -20,7 +20,7 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
     const dbConfig = req.dbConfig || {};
     const connectionDiagnosis = diagnoseConnectionRefusedError(
         err, 
-        dbConfig.host || 'localhost', 
+        dbConfig.host || '127.0.0.1', 
         dbConfig.port || 5432
     );
     
@@ -121,7 +121,7 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
     const dbConfig = req.dbConfig || {};
     const connectionDiagnosis = diagnoseConnectionRefusedError(
         err, 
-        dbConfig.host || 'localhost', 
+        dbConfig.host || '127.0.0.1', 
         dbConfig.port || 5432
     );
     

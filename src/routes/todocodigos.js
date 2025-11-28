@@ -115,7 +115,7 @@ router.get('/', async (req, res) => {
         const dbConfig = req.dbConfig || {};
         const diagnosis = diagnoseConnectionRefusedError(
             err, 
-            dbConfig.host || 'localhost', 
+            dbConfig.host || '127.0.0.1', 
             dbConfig.port || 5432
         );
         
@@ -172,7 +172,7 @@ router.get('/:id', async (req, res) => {
         const dbConfig = req.dbConfig || {};
         const diagnosis = diagnoseConnectionRefusedError(
             err, 
-            dbConfig.host || 'localhost', 
+            dbConfig.host || '127.0.0.1', 
             dbConfig.port || 5432
         );
         

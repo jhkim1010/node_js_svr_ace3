@@ -66,8 +66,8 @@ app.post('/api/health', async (req, res) => {
         
         // Sequelize를 사용하여 연결 테스트
         const { Sequelize } = require('sequelize');
-        // host가 없으면 기본값 'localhost' 사용 (오류 없이)
-        const dbHost = (host || process.env.DB_HOST || 'localhost').toString().trim();
+        // host가 없으면 기본값 '127.0.0.1' 사용 (오류 없이)
+        const dbHost = (host || process.env.DB_HOST || '127.0.0.1').toString().trim();
         // port가 없거나 빈 값이면 기본값 5432 사용 (PostgreSQL 기본 포트, 오류 없이)
         let dbPort = 5432; // 기본값
         if (port && port.toString().trim() !== '') {

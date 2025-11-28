@@ -5,7 +5,7 @@
  * @param {number|string} port - 연결 시도한 포트
  * @returns {Object} 상세한 원인 분석 결과
  */
-function diagnoseConnectionRefusedError(err, host = 'localhost', port = 5432) {
+function diagnoseConnectionRefusedError(err, host = '127.0.0.1', port = 5432) {
     const errorMessage = (err.original ? err.original.message : err.message) || '';
     const errorCode = (err.original ? err.original.code : err.code) || '';
     const lowerMessage = errorMessage.toLowerCase();
@@ -38,7 +38,7 @@ function diagnoseConnectionRefusedError(err, host = 'localhost', port = 5432) {
     }
     
     // 호스트와 포트 정보 추출
-    const targetHost = host || 'localhost';
+    const targetHost = host || '127.0.0.1';
     const targetPort = parseInt(port, 10) || 5432;
     
     // 가능한 원인 분석
