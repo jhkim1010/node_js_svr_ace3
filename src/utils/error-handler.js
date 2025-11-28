@@ -74,9 +74,40 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
             console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: Primary key (${keyDisplay}) duplicate`);
             console.error(`   Problem Source: ${errorClassification.description}`);
             console.error(`   Reason: The ${keyDisplay} value already exists in the database. Use UPDATE instead of INSERT, or use a different ${keyDisplay} value.`);
-            const bodyData = req.body.new_data || req.body;
-            if (bodyData && bodyData[primaryKeyStr] !== undefined) {
-                console.error(`   Attempted ${primaryKeyStr} value: ${bodyData[primaryKeyStr]}`);
+            
+            // 요청 본문에서 primary key 값 찾기
+            const bodyData = req.body.new_data || req.body.data || req.body;
+            if (bodyData) {
+                if (Array.isArray(bodyData)) {
+                    // 배열인 경우 중복된 id_ga 찾기
+                    const duplicateKeys = [];
+                    const seenKeys = new Set();
+                    bodyData.forEach((item, index) => {
+                        if (item && item[primaryKeyStr] !== undefined && item[primaryKeyStr] !== null) {
+                            const keyValue = item[primaryKeyStr];
+                            if (seenKeys.has(keyValue)) {
+                                duplicateKeys.push({ index, value: keyValue });
+                            } else {
+                                seenKeys.add(keyValue);
+                            }
+                        }
+                    });
+                    
+                    if (duplicateKeys.length > 0) {
+                        console.error(`   ⚠️  중복된 ${primaryKeyStr} 값이 요청 배열에 포함되어 있습니다:`);
+                        duplicateKeys.forEach(dup => {
+                            console.error(`      - 배열 인덱스 ${dup.index}: ${primaryKeyStr} = ${dup.value}`);
+                        });
+                        console.error(`   해결 방법: 요청 배열에서 중복된 항목을 제거하거나, 서버에서 이미 존재하는 레코드는 UPDATE로 처리됩니다.`);
+                    }
+                    
+                    // 첫 번째 항목의 primary key 값 표시
+                    if (bodyData.length > 0 && bodyData[0] && bodyData[0][primaryKeyStr] !== undefined) {
+                        console.error(`   Attempted ${primaryKeyStr} value (first item): ${bodyData[0][primaryKeyStr]}`);
+                    }
+                } else if (bodyData[primaryKeyStr] !== undefined) {
+                    console.error(`   Attempted ${primaryKeyStr} value: ${bodyData[primaryKeyStr]}`);
+                }
             }
         } else {
             console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: ${errorMsg}`);
