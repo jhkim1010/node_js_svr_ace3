@@ -7,6 +7,7 @@ const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier
 const { handleInsertUpdateError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 const { validateTableAndSchema, logTableAndSchema } = require('../utils/table-schema-validator');
+const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 
 const router = Router();
 
@@ -14,10 +15,23 @@ router.get('/', async (req, res) => {
     try {
         const Clientes = getModelForRequest(req, 'Clientes');
         
+        // max_id 파라미터 확인 (id 기반 페이징용)
+        const maxId = req.body?.max_id || req.query?.max_id;
+        
         // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
         const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
         
         let whereCondition = {};
+        
+        // max_id가 있으면 id > maxId 조건 추가 (id 기반 페이징)
+        if (maxId) {
+            const maxIdNum = parseInt(maxId, 10);
+            if (!isNaN(maxIdNum)) {
+                whereCondition.id = {
+                    [Op.gt]: maxIdNum
+                };
+            }
+        }
         
         // last_get_utime이 있으면 utime 필터 추가 (문자열 비교로 timezone 변환 방지)
         if (lastGetUtime) {
@@ -25,9 +39,13 @@ router.get('/', async (req, res) => {
             let utimeStr = String(lastGetUtime);
             utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
             // utime::text > 'last_get_utime' 조건 추가 (문자열 비교)
-            whereCondition[Op.and] = [
-                Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`)
-            ];
+            if (whereCondition[Op.and]) {
+                whereCondition[Op.and].push(Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`));
+            } else {
+                whereCondition[Op.and] = [
+                    Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`)
+                ];
+            }
         }
         
         // 총 데이터 개수 조회
@@ -38,20 +56,20 @@ router.get('/', async (req, res) => {
         const records = await Clientes.findAll({ 
             where: whereCondition,
             limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
-            order: [['id', 'ASC']] 
+            order: [['id', 'ASC']] // id 기반 정렬로 놓치는 정보 없게
         });
         
         // 다음 배치가 있는지 확인
         const hasMore = records.length > limit;
         const data = hasMore ? records.slice(0, limit) : records;
         
-        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id)
-        let nextMaxUtime = null;
+        // 다음 요청을 위한 max_id 계산 (마지막 레코드의 id)
+        let nextMaxId = null;
         if (data.length > 0) {
             const lastRecord = data[data.length - 1];
             if (lastRecord.id !== null && lastRecord.id !== undefined) {
                 // id 값을 문자열로 변환하여 반환
-                nextMaxUtime = String(lastRecord.id);
+                nextMaxId = String(lastRecord.id);
             }
         }
         
@@ -62,7 +80,7 @@ router.get('/', async (req, res) => {
                 count: data.length,
                 total: totalCount,
                 hasMore: hasMore,
-                nextMaxUtime: nextMaxUtime
+                nextMaxId: nextMaxId // id 기반 페이징을 위한 nextMaxId
             }
         };
         
@@ -94,7 +112,7 @@ router.post('/', async (req, res) => {
     try {
         const Clientes = getModelForRequest(req, 'Clientes');
         
-        // BATCH_SYNC 작업 처리
+        // BATCH_SYNC 작업 처리 (utime 비교 사용)
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             // table과 schema 검증 및 로깅
             const validation = validateTableAndSchema(req, 'clientes', 'Clientes');
@@ -107,24 +125,28 @@ router.post('/', async (req, res) => {
                 });
             }
             
-            // clientes는 dni만 기본 키로 사용
-            const result = await handleBatchSync(req, res, Clientes, 'dni', 'Clientes');
+            // clientes는 utime 비교를 사용하여 insert/update/skip 결정
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Clientes, 'dni', 'Clientes');
             await notifyBatchSync(req, Clientes, result);
             return res.status(200).json(result);
         }
         
-        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
+        // data가 배열인 경우 처리 (utime 비교 사용)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleArrayData(req, res, Clientes, 'dni', 'Clientes');
+            req.body.operation = req.body.operation || 'UPDATE';
+            // utime 비교를 사용하여 insert/update/skip 결정
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Clientes, 'dni', 'Clientes');
+            await notifyBatchSync(req, Clientes, result);
             return res.status(200).json(result);
         }
         
-        // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우)
+        // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우, utime 비교 사용)
         const rawData = req.body.new_data || req.body;
         if (Array.isArray(rawData)) {
-            // 배열인 경우 BATCH_SYNC와 동일하게 처리
+            // 배열인 경우 utime 비교를 사용하여 처리
             req.body.data = rawData;
-            const result = await handleBatchSync(req, res, Clientes, 'dni', 'Clientes');
+            req.body.operation = req.body.operation || 'UPDATE';
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Clientes, 'dni', 'Clientes');
             await notifyBatchSync(req, Clientes, result);
             return res.status(200).json(result);
         }
@@ -154,11 +176,11 @@ router.put('/:id', async (req, res) => {
     try {
         const Clientes = getModelForRequest(req, 'Clientes');
         
-        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
+        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우, utime 비교 사용)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
-            // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleArrayData, Clientes, 'dni', 'Clientes');
+            // utime 비교를 사용하여 insert/update/skip 결정
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Clientes, 'dni', 'Clientes');
             await notifyBatchSync(req, Clientes, result);
             return res.status(200).json(result);
         }
