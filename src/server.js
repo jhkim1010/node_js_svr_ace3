@@ -145,9 +145,11 @@ app.post('/api/health', async (req, res) => {
             }
         };
         
-        // 연결 거부 오류인 경우 상세 진단 정보 추가
+        // 연결 거부 오류인 경우 상세 진단 정보 추가 (해결 방법 제외)
         if (diagnosis) {
-            errorResponse.diagnosis = diagnosis.diagnosis;
+            // 해결 방법(recommendedSolutions)은 제외하고 진단 정보만 포함
+            const { recommendedSolutions, ...diagnosisWithoutSolutions } = diagnosis.diagnosis;
+            errorResponse.diagnosis = diagnosisWithoutSolutions;
             errorResponse.errorType = diagnosis.errorType;
         }
         
