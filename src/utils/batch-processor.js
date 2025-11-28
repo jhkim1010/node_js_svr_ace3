@@ -44,6 +44,7 @@ async function processBatchedArray(req, res, handler, Model, primaryKey, modelNa
     let totalCreated = 0;
     let totalUpdated = 0;
     let totalDeleted = 0;
+    let totalSkipped = 0;
     let totalProcessed = 0;
     let totalFailed = 0;
     let globalIndex = 0;
@@ -77,6 +78,7 @@ async function processBatchedArray(req, res, handler, Model, primaryKey, modelNa
             totalCreated += result.created || 0;
             totalUpdated += result.updated || 0;
             totalDeleted += result.deleted || 0;
+            totalSkipped += result.skipped || 0;
             totalProcessed += result.processed || 0;
             totalFailed += result.failed || 0;
             
@@ -107,15 +109,17 @@ async function processBatchedArray(req, res, handler, Model, primaryKey, modelNa
     allErrors.sort((a, b) => a.index - b.index);
     
     const totalCount = originalData.length;
+    const skippedMessage = totalSkipped > 0 ? `, ${totalSkipped} skipped` : '';
     const finalResult = {
         success: totalFailed === 0,
-        message: `Batched processing complete: ${totalProcessed} succeeded (${totalCreated} created, ${totalUpdated} updated, ${totalDeleted} deleted), ${totalFailed} failed across ${chunks.length} batches`,
+        message: `Batched processing complete: ${totalProcessed} succeeded (${totalCreated} created, ${totalUpdated} updated, ${totalDeleted} deleted${skippedMessage}), ${totalFailed} failed across ${chunks.length} batches`,
         processed: totalProcessed,
         failed: totalFailed,
         total: totalCount,
         created: totalCreated,
         updated: totalUpdated,
         deleted: totalDeleted,
+        skipped: totalSkipped,
         batches: chunks.length,
         batchSize: BATCH_SIZE,
         results: allResults,
@@ -128,6 +132,7 @@ async function processBatchedArray(req, res, handler, Model, primaryKey, modelNa
         created: totalCreated,
         updated: totalUpdated,
         deleted: totalDeleted,
+        skipped: totalSkipped,
         failed: totalFailed
     };
     

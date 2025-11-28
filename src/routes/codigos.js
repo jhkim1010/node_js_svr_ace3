@@ -6,6 +6,7 @@ const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
+const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 
 const router = Router();
 
@@ -16,6 +17,9 @@ router.get('/', async (req, res) => {
         // max_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
         // 실제로는 id_codigo 값을 받음 (호환성을 위해 max_utime 이름 유지)
         const maxUtime = req.body?.max_utime || req.query?.max_utime;
+        
+        // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
+        const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
         
         let whereCondition = {};
         let maxIdCodigo = null;
@@ -31,6 +35,18 @@ router.get('/', async (req, res) => {
                     [Op.gt]: maxIdCodigo
                 };
             }
+        }
+        
+        // last_get_utime이 있으면 utime 필터 추가
+        if (lastGetUtime) {
+            // ISO 8601 형식의 'T'를 공백으로 변환하고 시간대 정보 제거
+            let utimeStr = String(lastGetUtime);
+            utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
+            // utime::text > 'last_get_utime' 조건 추가 (문자열 비교)
+            whereCondition[Op.and] = [
+                ...(whereCondition[Op.and] || []),
+                Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`)
+            ];
         }
         
         // 총 데이터 개수 조회
@@ -108,8 +124,12 @@ router.post('/', async (req, res) => {
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
+        // codigos는 utime 비교가 필요하므로 utime 비교 핸들러 사용
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleArrayData(req, res, Codigos, 'codigo', 'Codigos');
+            req.body.operation = req.body.operation || 'UPDATE';
+            // 50개를 넘으면 배치로 나눠서 처리
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Codigos, 'codigo', 'Codigos');
+            await notifyBatchSync(req, Codigos, result);
             return res.status(200).json(result);
         }
         
@@ -153,13 +173,14 @@ router.put('/:id', async (req, res) => {
         // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
+            // utime 비교 핸들러 사용 (codigos 전용)
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleArrayData, Codigos, 'codigo', 'Codigos');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Codigos, 'codigo', 'Codigos');
             await notifyBatchSync(req, Codigos, result);
             return res.status(200).json(result);
         }
         
-        // 단일 항목 처리 (기존 로직)
+        // 단일 항목 처리 (utime 비교 포함)
         const cleanedData = removeSyncField(req.body);
         const dataToUpdate = filterModelFields(Codigos, cleanedData);
         
@@ -167,12 +188,99 @@ router.put('/:id', async (req, res) => {
         const sequelize = Codigos.sequelize;
         const transaction = await sequelize.transaction();
         try {
+            // 기존 레코드 조회 (id_codigo로 조회)
+            const existing = await Codigos.findOne({ where: { id_codigo: id }, transaction });
+            if (!existing) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
+            }
+            
+            // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트 (문자열 직접 비교, timezone 변환 없음)
+            let clientUtimeStr = null;
+            if (dataToUpdate.utime) {
+                if (dataToUpdate.utime instanceof Date) {
+                    // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
+                    const year = dataToUpdate.utime.getFullYear();
+                    const month = String(dataToUpdate.utime.getMonth() + 1).padStart(2, '0');
+                    const day = String(dataToUpdate.utime.getDate()).padStart(2, '0');
+                    const hours = String(dataToUpdate.utime.getHours()).padStart(2, '0');
+                    const minutes = String(dataToUpdate.utime.getMinutes()).padStart(2, '0');
+                    const seconds = String(dataToUpdate.utime.getSeconds()).padStart(2, '0');
+                    const ms = String(dataToUpdate.utime.getMilliseconds()).padStart(3, '0');
+                    clientUtimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+                } else {
+                    // 문자열인 경우 ISO 8601 형식의 'T'를 공백으로 변환하여 통일된 형식으로 비교
+                    // "2025-11-27T19:20:52.615" -> "2025-11-27 19:20:52.615"
+                    let utimeStr = String(dataToUpdate.utime);
+                    // 'T'를 공백으로 변환 (ISO 8601 형식 처리)
+                    utimeStr = utimeStr.replace(/T/, ' ');
+                    // 시간대 정보 제거 (Z, +09:00 등)
+                    utimeStr = utimeStr.replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '');
+                    clientUtimeStr = utimeStr.trim();
+                }
+            }
+            
+            // 서버의 utime을 데이터베이스에서 문자열로 직접 가져오기 (timezone 변환 방지)
+            let serverUtimeStr = null;
+            const serverUtimeRaw = await Codigos.findOne({ 
+                where: { id_codigo: id }, 
+                transaction,
+                attributes: [[Sequelize.literal(`utime::text`), 'utime']],
+                raw: true
+            });
+            if (serverUtimeRaw && serverUtimeRaw.utime) {
+                serverUtimeStr = String(serverUtimeRaw.utime).trim();
+            }
+            
+            let shouldUpdate = false;
+            if (!clientUtimeStr && !serverUtimeStr) {
+                shouldUpdate = true;
+            } else if (clientUtimeStr && !serverUtimeStr) {
+                shouldUpdate = true;
+            } else if (clientUtimeStr && serverUtimeStr) {
+                // 문자열 직접 비교 (timezone 변환 없음)
+                shouldUpdate = clientUtimeStr > serverUtimeStr;
+            } else {
+                shouldUpdate = false;
+            }
+            
+            if (!shouldUpdate) {
+                await transaction.rollback();
+                return res.status(200).json({
+                    message: 'Skipped: server utime is newer or equal',
+                    serverUtime: serverUtimeStr,
+                    clientUtime: clientUtimeStr,
+                    data: existing
+                });
+            }
+            
+            // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
+            if (dataToUpdate.utime) {
+                let utimeStr = null;
+                if (dataToUpdate.utime instanceof Date) {
+                    // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
+                    const year = dataToUpdate.utime.getFullYear();
+                    const month = String(dataToUpdate.utime.getMonth() + 1).padStart(2, '0');
+                    const day = String(dataToUpdate.utime.getDate()).padStart(2, '0');
+                    const hours = String(dataToUpdate.utime.getHours()).padStart(2, '0');
+                    const minutes = String(dataToUpdate.utime.getMinutes()).padStart(2, '0');
+                    const seconds = String(dataToUpdate.utime.getSeconds()).padStart(2, '0');
+                    const ms = String(dataToUpdate.utime.getMilliseconds()).padStart(3, '0');
+                    utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+                } else {
+                    // 문자열인 경우 그대로 사용 (timezone 변환 없음)
+                    utimeStr = String(dataToUpdate.utime);
+                }
+                // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
+                dataToUpdate.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
+            }
+            
             const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
             if (count === 0) {
                 await transaction.rollback();
                 return res.status(404).json({ error: 'Not found' });
             }
-            const updated = await Codigos.findByPk(id, { transaction });
+            const updated = await Codigos.findOne({ where: { id_codigo: id }, transaction });
             await transaction.commit();
             // WebSocket 알림 전송
             await notifyDbChange(req, Codigos, 'update', updated);

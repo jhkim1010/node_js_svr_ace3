@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { Op, Sequelize } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
@@ -11,8 +12,63 @@ const router = Router();
 router.get('/', async (req, res) => {
     try {
         const Tipos = getModelForRequest(req, 'Tipos');
-        const records = await Tipos.findAll({ limit: 100, order: [['id_tipo', 'DESC']] });
-        res.json(records);
+        
+        // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
+        const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
+        
+        let whereCondition = {};
+        
+        // last_get_utime이 있으면 utime 필터 추가 (문자열 비교로 timezone 변환 방지)
+        if (lastGetUtime) {
+            // ISO 8601 형식의 'T'를 공백으로 변환하고 시간대 정보 제거
+            let utimeStr = String(lastGetUtime);
+            utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
+            // utime::text > 'last_get_utime' 조건 추가 (문자열 비교)
+            whereCondition[Op.and] = [
+                Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`)
+            ];
+        }
+        
+        // 총 데이터 개수 조회
+        const totalCount = await Tipos.count({ where: whereCondition });
+        
+        // 100개 단위로 제한
+        const limit = 100;
+        const records = await Tipos.findAll({ 
+            where: whereCondition,
+            limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
+            order: [['id_tipo', 'ASC']] 
+        });
+        
+        // 다음 배치가 있는지 확인
+        const hasMore = records.length > limit;
+        const data = hasMore ? records.slice(0, limit) : records;
+        
+        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id_tipo)
+        let nextMaxUtime = null;
+        if (data.length > 0) {
+            const lastRecord = data[data.length - 1];
+            if (lastRecord.id_tipo !== null && lastRecord.id_tipo !== undefined) {
+                // id_tipo 값을 문자열로 변환하여 반환
+                nextMaxUtime = String(lastRecord.id_tipo);
+            }
+        }
+        
+        // 페이지네이션 정보와 함께 응답
+        const responseData = {
+            data: data,
+            pagination: {
+                count: data.length,
+                total: totalCount,
+                hasMore: hasMore,
+                nextMaxUtime: nextMaxUtime
+            }
+        };
+        
+        // 응답 로거에서 사용할 데이터 개수 저장
+        req._responseDataCount = data.length;
+        
+        res.json(responseData);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to list tipos', details: err.message });

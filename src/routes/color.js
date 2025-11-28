@@ -14,14 +14,37 @@ router.get('/', async (req, res) => {
         const Color = getModelForRequest(req, 'Color');
         
         // max_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
+        // 실제로는 id_color 값을 받음 (호환성을 위해 max_utime 이름 유지)
         const maxUtime = req.body?.max_utime || req.query?.max_utime;
+        
+        // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
+        const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
         
         let whereCondition = {};
         if (maxUtime) {
-            // utime이 max_utime보다 큰 데이터만 조회
-            whereCondition.utime = {
-                [Op.gt]: new Date(maxUtime)
-            };
+            // max_utime 값이 실제로는 id_color 값임
+            const maxIdColor = parseInt(maxUtime, 10);
+            if (isNaN(maxIdColor)) {
+                console.error(`ERROR: Invalid id_color format: ${maxUtime}`);
+            } else {
+                // id_color가 maxIdColor보다 큰 레코드만 조회
+                whereCondition.id_color = {
+                    [Op.gt]: maxIdColor
+                };
+            }
+        }
+        
+        // last_get_utime이 있으면 utime 필터 추가 (문자열 비교로 timezone 변환 방지)
+        if (lastGetUtime) {
+            // ISO 8601 형식의 'T'를 공백으로 변환하고 시간대 정보 제거
+            let utimeStr = String(lastGetUtime);
+            utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
+            // utime::text > 'last_get_utime' 조건 추가 (문자열 비교)
+            const Sequelize = require('sequelize');
+            whereCondition[Op.and] = [
+                ...(whereCondition[Op.and] || []),
+                Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`)
+            ];
         }
         
         // 총 데이터 개수 조회
@@ -32,17 +55,21 @@ router.get('/', async (req, res) => {
         const records = await Color.findAll({
             where: whereCondition,
             limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
-            order: [['utime', 'ASC']]
+            order: [['id_color', 'ASC']]
         });
         
         // 다음 배치가 있는지 확인
         const hasMore = records.length > limit;
         const data = hasMore ? records.slice(0, limit) : records;
         
-        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 utime)
+        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id_color)
         let nextMaxUtime = null;
-        if (data.length > 0 && data[data.length - 1].utime) {
-            nextMaxUtime = data[data.length - 1].utime.toISOString();
+        if (data.length > 0) {
+            const lastRecord = data[data.length - 1];
+            if (lastRecord.id_color !== null && lastRecord.id_color !== undefined) {
+                // id_color 값을 문자열로 변환하여 반환
+                nextMaxUtime = String(lastRecord.id_color);
+            }
         }
         
         // 페이지네이션 정보와 함께 응답
