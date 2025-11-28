@@ -112,8 +112,16 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
         dbConfig.port || 5432
     );
     
+    // 기본 에러 메시지 생성
+    let message = errorMsg;
+    if (connectionDiagnosis) {
+        // 연결 거부 오류인 경우 더 명확한 메시지
+        message = `Database connection refused: ${connectionDiagnosis.diagnosis.summary}`;
+    }
+    
     const errorResponse = {
         error: `Failed to ${operation}`,
+        message: message,
         details: errorMsg,
         errorType: err.constructor.name,
         errorCode: errorCode,
@@ -125,6 +133,7 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
     if (connectionDiagnosis) {
         errorResponse.diagnosis = connectionDiagnosis.diagnosis;
         errorResponse.connectionInfo = connectionDiagnosis.connectionInfo;
+        errorResponse.mostLikelyCause = connectionDiagnosis.diagnosis.mostLikelyCause;
     }
     
     return errorResponse;
