@@ -1,26 +1,59 @@
+// Docker 환경 감지 함수
+function isDockerEnvironment() {
+    try {
+        const fs = require('fs');
+        return process.env.DOCKER === 'true' || 
+               process.env.IN_DOCKER === 'true' ||
+               fs.existsSync('/.dockerenv') ||
+               process.env.HOSTNAME?.includes('docker') ||
+               process.cwd() === '/home/node/app';
+    } catch (e) {
+        return process.env.DOCKER === 'true' || 
+               process.env.IN_DOCKER === 'true' ||
+               process.env.HOSTNAME?.includes('docker') ||
+               process.cwd() === '/home/node/app';
+    }
+}
+
+// 기본 DB 호스트 결정 (Docker 환경이면 host.docker.internal, 아니면 127.0.0.1)
+function getDefaultDbHost() {
+    // 환경 변수 DB_HOST가 있으면 우선 사용
+    if (process.env.DB_HOST) {
+        return process.env.DB_HOST;
+    }
+    // Docker 환경이면 host.docker.internal 사용
+    if (isDockerEnvironment()) {
+        return 'host.docker.internal';
+    }
+    // 로컬 환경이면 127.0.0.1 사용
+    return '127.0.0.1';
+}
+
 function parseDbHeader(req, res, next) {
-    // PUT, GET, POST 요청의 경우 host 헤더를 무조건 127.0.0.1로 강제 설정
+    const defaultHost = getDefaultDbHost();
+    
+    // PUT, GET, POST 요청의 경우 host 헤더를 기본 호스트로 강제 설정
     if (req.method === 'PUT' || req.method === 'GET' || req.method === 'POST') {
-        // 요청 헤더의 host 관련 값들을 127.0.0.1로 강제 설정
+        // 요청 헤더의 host 관련 값들을 기본 호스트로 강제 설정
         if (req.headers['x-db-host']) {
-            req.headers['x-db-host'] = '127.0.0.1';
+            req.headers['x-db-host'] = defaultHost;
         }
         if (req.headers['db-host']) {
-            req.headers['db-host'] = '127.0.0.1';
+            req.headers['db-host'] = defaultHost;
         }
-        // 쿼리 파라미터도 127.0.0.1로 강제 설정
+        // 쿼리 파라미터도 기본 호스트로 강제 설정
         if (req.query?.db_host) {
-            req.query.db_host = '127.0.0.1';
+            req.query.db_host = defaultHost;
         }
         if (req.query?.host) {
-            req.query.host = '127.0.0.1';
+            req.query.host = defaultHost;
         }
-        // 요청 본문도 127.0.0.1로 강제 설정
+        // 요청 본문도 기본 호스트로 강제 설정
         if (req.body?.db_host) {
-            req.body.db_host = '127.0.0.1';
+            req.body.db_host = defaultHost;
         }
         if (req.body?.host) {
-            req.body.host = '127.0.0.1';
+            req.body.host = defaultHost;
         }
     }
     
@@ -37,24 +70,23 @@ function parseDbHeader(req, res, next) {
     
     // 내부 요청인 경우 요청 본문, 쿼리 파라미터, 환경 변수에서 DB 정보 찾기
     if (isInternalRequest) {
-        // 요청 본문에서 DB 정보 추출 시도 (host는 무조건 127.0.0.1로 강제)
-        const bodyDbHost = '127.0.0.1'; // 무조건 127.0.0.1 사용
+        // 요청 본문에서 DB 정보 추출 시도 (host는 기본 호스트로 강제)
+        const bodyDbHost = defaultHost; // 기본 호스트 사용
         const bodyDbPort = req.body?.db_port || req.body?.port;
         const bodyDbName = req.body?.db_name || req.body?.database || req.body?.db;
         const bodyDbUser = req.body?.db_user || req.body?.user;
         const bodyDbPassword = req.body?.db_password || req.body?.password;
         const bodyDbSsl = req.body?.db_ssl || req.body?.ssl;
         
-        // 쿼리 파라미터에서 DB 정보 추출 시도 (GET 요청용, host는 무조건 127.0.0.1로 강제)
-        const queryDbHost = '127.0.0.1'; // 무조건 127.0.0.1 사용
+        // 쿼리 파라미터에서 DB 정보 추출 시도 (GET 요청용, host는 기본 호스트로 강제)
+        const queryDbHost = defaultHost; // 기본 호스트 사용
         const queryDbPort = req.query?.db_port || req.query?.port;
         const queryDbName = req.query?.db_name || req.query?.database || req.query?.db;
         const queryDbUser = req.query?.db_user || req.query?.user;
         const queryDbPassword = req.query?.db_password || req.query?.password;
         const queryDbSsl = req.query?.db_ssl || req.query?.ssl;
         
-        // 환경 변수에서 기본 DB 설정 가져오기 (host는 무조건 127.0.0.1로 강제)
-        const defaultHost = '127.0.0.1'; // 무조건 127.0.0.1 사용 (환경 변수 무시)
+        // 환경 변수에서 기본 DB 설정 가져오기
         const defaultPort = process.env.DB_PORT || '5432';
         const defaultDatabase = process.env.DB_NAME || '';
         const defaultUser = process.env.DB_USER || '';
@@ -62,8 +94,8 @@ function parseDbHeader(req, res, next) {
         const defaultSsl = process.env.DB_SSL === 'true' || process.env.DB_SSL === '1';
         
         // 우선순위: 헤더 > 쿼리 파라미터 > 요청 본문 > 환경 변수
-        // host는 무조건 '127.0.0.1'로 설정 (헤더 값 무시)
-        const dbHost = '127.0.0.1';
+        // host는 기본 호스트로 설정 (헤더 값 무시)
+        const dbHost = defaultHost;
         const dbPort = (req.headers['x-db-port'] || req.headers['db-port'] || queryDbPort || bodyDbPort || defaultPort).toString().trim();
         const dbName = (req.headers['x-db-name'] || req.headers['db-name'] || queryDbName || bodyDbName || defaultDatabase).toString().trim();
         const dbUser = (req.headers['x-db-user'] || req.headers['db-user'] || queryDbUser || bodyDbUser || defaultUser).toString().trim();
@@ -73,7 +105,7 @@ function parseDbHeader(req, res, next) {
         // 내부 요청인 경우 DB 정보가 하나라도 있으면 사용
         if (dbHost && dbPort && dbName && dbUser && dbPassword) {
             req.dbConfig = {
-                host: '127.0.0.1', // 무조건 127.0.0.1 사용
+                host: defaultHost, // 기본 호스트 사용
                 port: parseInt(dbPort, 10),
                 database: dbName,
                 user: dbUser,
@@ -86,9 +118,9 @@ function parseDbHeader(req, res, next) {
     }
     
     // 헤더에서 DB 정보 추출 (공백 제거)
-    // host는 무조건 '127.0.0.1'로 설정 (헤더 값 무시)
+    // host는 기본 호스트로 설정 (헤더 값 무시)
     // port는 기본값 사용 (없어도 오류 발생 안 함)
-    const dbHost = '127.0.0.1'; // 헤더 값 무시하고 항상 127.0.0.1 사용
+    const dbHost = defaultHost; // 헤더 값 무시하고 기본 호스트 사용
     const dbPort = (req.headers['x-db-port'] || req.headers['db-port'] || '5432').trim();
     const dbName = (req.headers['x-db-name'] || req.headers['db-name'] || '').trim();
     const dbUser = (req.headers['x-db-user'] || req.headers['db-user'] || '').trim();
@@ -99,8 +131,8 @@ function parseDbHeader(req, res, next) {
     const errors = [];
     const receivedValues = {};
     
-    // x-db-host는 무조건 '127.0.0.1' 사용 (헤더 값 무시)
-    receivedValues['x-db-host'] = '127.0.0.1';
+    // x-db-host는 기본 호스트 사용 (헤더 값 무시)
+    receivedValues['x-db-host'] = defaultHost;
     
     // x-db-port 검증 (기본값 사용하지만 유효성은 확인)
     receivedValues['x-db-port'] = dbPort;
@@ -196,7 +228,7 @@ function parseDbHeader(req, res, next) {
     
     // req 객체에 DB 정보 저장
     req.dbConfig = {
-        host: '127.0.0.1', // 무조건 127.0.0.1 사용 (헤더 값 무시)
+        host: defaultHost, // 기본 호스트 사용 (헤더 값 무시)
         port: parseInt(dbPort, 10),
         database: dbName,
         user: dbUser,

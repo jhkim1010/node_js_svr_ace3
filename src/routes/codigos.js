@@ -102,9 +102,24 @@ router.get('/', async (req, res) => {
         
         // 연결 거부 오류 진단
         const dbConfig = req.dbConfig || {};
+        // 기본 호스트 결정 (Docker 환경 감지)
+        const getDefaultDbHost = () => {
+            if (process.env.DB_HOST) return process.env.DB_HOST;
+            try {
+                const fs = require('fs');
+                const isDocker = process.env.DOCKER === 'true' || 
+                               process.env.IN_DOCKER === 'true' ||
+                               fs.existsSync('/.dockerenv') ||
+                               process.env.HOSTNAME?.includes('docker') ||
+                               process.cwd() === '/home/node/app';
+                return isDocker ? 'host.docker.internal' : '127.0.0.1';
+            } catch (e) {
+                return '127.0.0.1';
+            }
+        };
         const diagnosis = diagnoseConnectionRefusedError(
             err, 
-            dbConfig.host || '127.0.0.1', 
+            dbConfig.host || getDefaultDbHost(), 
             dbConfig.port || 5432
         );
         
@@ -146,9 +161,24 @@ router.get('/:id', async (req, res) => {
         
         // 연결 거부 오류 진단
         const dbConfig = req.dbConfig || {};
+        // 기본 호스트 결정 (Docker 환경 감지)
+        const getDefaultDbHost = () => {
+            if (process.env.DB_HOST) return process.env.DB_HOST;
+            try {
+                const fs = require('fs');
+                const isDocker = process.env.DOCKER === 'true' || 
+                               process.env.IN_DOCKER === 'true' ||
+                               fs.existsSync('/.dockerenv') ||
+                               process.env.HOSTNAME?.includes('docker') ||
+                               process.cwd() === '/home/node/app';
+                return isDocker ? 'host.docker.internal' : '127.0.0.1';
+            } catch (e) {
+                return '127.0.0.1';
+            }
+        };
         const diagnosis = diagnoseConnectionRefusedError(
             err, 
-            dbConfig.host || '127.0.0.1', 
+            dbConfig.host || getDefaultDbHost(), 
             dbConfig.port || 5432
         );
         

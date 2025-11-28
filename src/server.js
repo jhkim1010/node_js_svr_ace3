@@ -66,8 +66,22 @@ app.post('/api/health', async (req, res) => {
         
         // Sequelize를 사용하여 연결 테스트
         const { Sequelize } = require('sequelize');
-        // host가 없으면 기본값 '127.0.0.1' 사용 (오류 없이)
-        const dbHost = (host || process.env.DB_HOST || '127.0.0.1').toString().trim();
+        // host가 없으면 기본값 결정 (Docker 환경 감지)
+        const getDefaultDbHost = () => {
+            if (process.env.DB_HOST) return process.env.DB_HOST;
+            try {
+                const fs = require('fs');
+                const isDocker = process.env.DOCKER === 'true' || 
+                               process.env.IN_DOCKER === 'true' ||
+                               fs.existsSync('/.dockerenv') ||
+                               process.env.HOSTNAME?.includes('docker') ||
+                               process.cwd() === '/home/node/app';
+                return isDocker ? 'host.docker.internal' : '127.0.0.1';
+            } catch (e) {
+                return '127.0.0.1';
+            }
+        };
+        const dbHost = (host || process.env.DB_HOST || getDefaultDbHost()).toString().trim();
         // port가 없거나 빈 값이면 기본값 5432 사용 (PostgreSQL 기본 포트, 오류 없이)
         let dbPort = 5432; // 기본값
         if (port && port.toString().trim() !== '') {

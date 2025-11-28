@@ -8,10 +8,40 @@ function getConnectionKey(host, port, database, user) {
     return `${host}:${port}/${database}@${user}`;
 }
 
+// Docker 환경 감지 함수
+function isDockerEnvironment() {
+    try {
+        const fs = require('fs');
+        return process.env.DOCKER === 'true' || 
+               process.env.IN_DOCKER === 'true' ||
+               fs.existsSync('/.dockerenv') ||
+               process.env.HOSTNAME?.includes('docker') ||
+               process.cwd() === '/home/node/app';
+    } catch (e) {
+        return process.env.DOCKER === 'true' || 
+               process.env.IN_DOCKER === 'true' ||
+               process.env.HOSTNAME?.includes('docker') ||
+               process.cwd() === '/home/node/app';
+    }
+}
+
+// 기본 DB 호스트 결정 (Docker 환경이면 host.docker.internal, 아니면 127.0.0.1)
+function getDefaultDbHost() {
+    // 환경 변수 DB_HOST가 있으면 우선 사용
+    if (process.env.DB_HOST) {
+        return process.env.DB_HOST;
+    }
+    // Docker 환경이면 host.docker.internal 사용
+    if (isDockerEnvironment()) {
+        return 'host.docker.internal';
+    }
+    // 로컬 환경이면 127.0.0.1 사용
+    return '127.0.0.1';
+}
+
 function getDynamicSequelize(host, port, database, user, password, ssl = false) {
-    // host는 파라미터로 받은 값을 사용 (무조건 127.0.0.1로 강제되어 있음)
-    // 환경 변수 DB_HOST는 무시하고 파라미터로 받은 host 사용
-    host = host || '127.0.0.1';
+    // host가 없으면 기본 호스트 사용 (Docker 환경 감지)
+    host = host || getDefaultDbHost();
     const key = getConnectionKey(host, port, database, user);
     
     // 이미 존재하는 연결이 있으면 재사용

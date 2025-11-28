@@ -18,9 +18,24 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
     
     // 연결 거부 오류인 경우 상세 진단
     const dbConfig = req.dbConfig || {};
+    // 기본 호스트 결정 (Docker 환경 감지)
+    const getDefaultDbHost = () => {
+        if (process.env.DB_HOST) return process.env.DB_HOST;
+        try {
+            const fs = require('fs');
+            const isDocker = process.env.DOCKER === 'true' || 
+                           process.env.IN_DOCKER === 'true' ||
+                           fs.existsSync('/.dockerenv') ||
+                           process.env.HOSTNAME?.includes('docker') ||
+                           process.cwd() === '/home/node/app';
+            return isDocker ? 'host.docker.internal' : '127.0.0.1';
+        } catch (e) {
+            return '127.0.0.1';
+        }
+    };
     const connectionDiagnosis = diagnoseConnectionRefusedError(
         err, 
-        dbConfig.host || '127.0.0.1', 
+        dbConfig.host || getDefaultDbHost(), 
         dbConfig.port || 5432
     );
     
@@ -106,9 +121,24 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
     const errorName = err.original ? err.original.name : err.name;
     
     const dbConfig = req.dbConfig || {};
+    // 기본 호스트 결정 (Docker 환경 감지)
+    const getDefaultDbHost = () => {
+        if (process.env.DB_HOST) return process.env.DB_HOST;
+        try {
+            const fs = require('fs');
+            const isDocker = process.env.DOCKER === 'true' || 
+                           process.env.IN_DOCKER === 'true' ||
+                           fs.existsSync('/.dockerenv') ||
+                           process.env.HOSTNAME?.includes('docker') ||
+                           process.cwd() === '/home/node/app';
+            return isDocker ? 'host.docker.internal' : '127.0.0.1';
+        } catch (e) {
+            return '127.0.0.1';
+        }
+    };
     const connectionDiagnosis = diagnoseConnectionRefusedError(
         err, 
-        dbConfig.host || '127.0.0.1', 
+        dbConfig.host || getDefaultDbHost(), 
         dbConfig.port || 5432
     );
     
