@@ -5,9 +5,8 @@ function responseLogger(req, res, next) {
     res.on('finish', () => {
         const statusCode = res.statusCode;
         const isSuccess = statusCode >= 200 && statusCode < 300;
-        const statusText = isSuccess ? 'Success' : 'Failed';
         
-        // 라우터 정보 추출
+        // 라우터 정보 추출 (테이블 이름)
         const path = req.originalUrl || req.path || req.url;
         
         // path가 http:// 또는 https://로 시작하는지 확인
@@ -40,22 +39,19 @@ function responseLogger(req, res, next) {
             dataCount = req._dataCount || 1;
         }
         
-        // 데이터베이스 정보
-        const dbInfo = req.dbConfig 
-            ? `${req.dbConfig.database}@${req.dbConfig.host}:${req.dbConfig.port}`
+        // 데이터베이스 이름만 (host:port 제거)
+        const dbName = req.dbConfig 
+            ? req.dbConfig.database
             : 'N/A';
-        
-        // HTTP 메서드 정보 추가
-        const httpMethod = req.method || 'UNKNOWN';
         
         // 처리 통계 정보가 있으면 총 개수만 출력 (pagination으로 나눠서 들어올 때도 총 개수만 표시)
         if (req._processingStats) {
             const stats = req._processingStats;
             const skippedText = stats.skipped > 0 ? ` | Skipped: ${stats.skipped}` : '';
-            console.log(`${statusText} | ${httpMethod} | ${dbInfo} | ${routerName} | ${operation} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}${skippedText}`);
+            console.log(`${dbName} | ${routerName} | ${operation} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}${skippedText}`);
         } else {
             // 1줄로 출력
-            console.log(`${statusText} | ${httpMethod} | ${dbInfo} | ${routerName} | ${operation} | ${dataCount}개`);
+            console.log(`${dbName} | ${routerName} | ${operation} | ${dataCount}개`);
         }
     });
     
