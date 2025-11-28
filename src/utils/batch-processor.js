@@ -96,8 +96,7 @@ async function processBatchedArray(req, res, handler, Model, primaryKey, modelNa
             });
             globalIndex += chunk.length;
             
-            // 에러가 발생해도 다음 배치는 계속 처리
-            console.error(`Batch ${chunkIndex + 1}/${chunks.length} failed:`, err.message);
+            // 에러가 발생해도 다음 배치는 계속 처리 (로그는 최종 결과에서만 출력)
         } finally {
             // 원래 요청 본문 복원
             req.body = originalBody;

@@ -296,11 +296,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
         if (results.length > 0) {
             const totalCount = req.body.data.length;
             
-            // 스킵된 항목 수 로그 출력
-            if (skippedCount > 0) {
-                console.log(`[UTIME COMPARISON SUMMARY] ${skippedCount} item(s) skipped due to server utime being newer or equal`);
-            }
-            
             const result = {
                 success: true,
                 message: `Processing complete: ${results.length} succeeded (${createdCount} created, ${updatedCount} updated, ${skippedCount} skipped), ${errors.length} failed`,

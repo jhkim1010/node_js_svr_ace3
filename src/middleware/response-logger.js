@@ -48,10 +48,11 @@ function responseLogger(req, res, next) {
         // HTTP 메서드 정보 추가
         const httpMethod = req.method || 'UNKNOWN';
         
-        // 처리 통계 정보가 있으면 상세 출력
+        // 처리 통계 정보가 있으면 총 개수만 출력 (pagination으로 나눠서 들어올 때도 총 개수만 표시)
         if (req._processingStats) {
             const stats = req._processingStats;
-            console.log(`${statusText} | ${httpMethod} | ${dbInfo} | ${routerName} | ${operation} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}`);
+            const skippedText = stats.skipped > 0 ? ` | Skipped: ${stats.skipped}` : '';
+            console.log(`${statusText} | ${httpMethod} | ${dbInfo} | ${routerName} | ${operation} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}${skippedText}`);
         } else {
             // 1줄로 출력
             console.log(`${statusText} | ${httpMethod} | ${dbInfo} | ${routerName} | ${operation} | ${dataCount}개`);
