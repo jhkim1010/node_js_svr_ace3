@@ -3,7 +3,7 @@ const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -22,12 +22,9 @@ router.get('/', async (req, res) => {
             console.error('   Original error:', err.original);
         }
         console.error('');
-        res.status(500).json({ 
-            error: 'Failed to list gastos', 
-            details: err.message,
-            errorType: err.constructor.name,
-            originalError: err.original ? err.original.message : null
-        });
+        
+        const errorResponse = buildDatabaseErrorResponse(err, req, 'list gastos');
+        res.status(500).json(errorResponse);
     }
 });
 

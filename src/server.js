@@ -125,7 +125,11 @@ app.post('/api/health', async (req, res) => {
         const errorCode = err.original ? err.original.code : err.code;
         const errorName = err.original ? err.original.name : err.name;
         
-        res.status(400).json({
+        // 연결 거부 오류 진단
+        const { diagnoseConnectionRefusedError } = require('./utils/error-classifier');
+        const diagnosis = diagnoseConnectionRefusedError(err, dbHost, dbPort);
+        
+        const errorResponse = {
             ok: false,
             status: 'connection_failed',
             error: 'Database connection failed',
@@ -134,12 +138,20 @@ app.post('/api/health', async (req, res) => {
             errorCode: errorCode,
             errorName: errorName,
             connectionInfo: {
-                host: host || process.env.DB_HOST || 'localhost',
-                port: port,
+                host: dbHost,
+                port: dbPort,
                 database: databaseName,
                 username: username
             }
-        });
+        };
+        
+        // 연결 거부 오류인 경우 상세 진단 정보 추가
+        if (diagnosis) {
+            errorResponse.diagnosis = diagnosis.diagnosis;
+            errorResponse.errorType = diagnosis.errorType;
+        }
+        
+        res.status(400).json(errorResponse);
     }
 });
 

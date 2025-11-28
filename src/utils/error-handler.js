@@ -2,7 +2,7 @@
  * 공통 에러 처리 함수
  * unique constraint 에러를 감지하고 명확한 메시지를 출력
  */
-const { classifyError } = require('./error-classifier');
+const { classifyError, diagnoseConnectionRefusedError } = require('./error-classifier');
 
 /**
  * 에러를 처리하고 로그를 출력하는 함수
@@ -15,6 +15,42 @@ const { classifyError } = require('./error-classifier');
 function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
     const errorMsg = err.original ? err.original.message : err.message;
     const errorClassification = classifyError(err);
+    
+    // 연결 거부 오류인 경우 상세 진단
+    const dbConfig = req.dbConfig || {};
+    const connectionDiagnosis = diagnoseConnectionRefusedError(
+        err, 
+        dbConfig.host || 'localhost', 
+        dbConfig.port || 5432
+    );
+    
+    if (connectionDiagnosis) {
+        console.error(`\n❌ ${modelName} 연결 거부 오류 발생`);
+        console.error(`   연결 정보: ${connectionDiagnosis.connectionInfo.host}:${connectionDiagnosis.connectionInfo.port}`);
+        console.error(`   환경: ${connectionDiagnosis.connectionInfo.environment}`);
+        console.error(`   진단 요약: ${connectionDiagnosis.diagnosis.summary}`);
+        console.error(`   가장 가능성 높은 원인: ${connectionDiagnosis.diagnosis.mostLikelyCause}`);
+        console.error(`\n   가능한 원인:`);
+        connectionDiagnosis.diagnosis.possibleCauses.forEach((cause, index) => {
+            console.error(`   ${index + 1}. [${cause.probability}] ${cause.cause}`);
+            console.error(`      ${cause.description}`);
+        });
+        console.error(`\n   권장 해결 방법:`);
+        connectionDiagnosis.diagnosis.recommendedSolutions.forEach((solution, index) => {
+            console.error(`   ${index + 1}. ${solution.solution}`);
+            console.error(`      ${solution.description}`);
+            if (solution.example) {
+                console.error(`      예시: ${solution.example}`);
+            }
+            if (solution.commands) {
+                Object.entries(solution.commands).forEach(([platform, cmd]) => {
+                    console.error(`      ${platform}: ${cmd}`);
+                });
+            }
+        });
+        console.error('');
+        return; // 연결 오류는 여기서 처리 완료
+    }
     
     // Primary key 또는 unique constraint 위반인 경우 더 명확한 메시지 표시
     const isConstraintError = err.constructor.name.includes('UniqueConstraintError') || 
@@ -70,5 +106,42 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
     }
 }
 
-module.exports = { handleInsertUpdateError };
+/**
+ * 연결 오류를 포함한 일반적인 데이터베이스 오류에 대한 응답 생성
+ * @param {Error} err - 발생한 에러
+ * @param {Object} req - Express request 객체
+ * @param {string} operation - 작업 설명 (예: 'fetch gastos', 'list records')
+ * @returns {Object} 에러 응답 객체
+ */
+function buildDatabaseErrorResponse(err, req, operation = 'database operation') {
+    const errorMsg = err.original ? err.original.message : err.message;
+    const errorCode = err.original ? err.original.code : err.code;
+    const errorName = err.original ? err.original.name : err.name;
+    
+    const dbConfig = req.dbConfig || {};
+    const connectionDiagnosis = diagnoseConnectionRefusedError(
+        err, 
+        dbConfig.host || 'localhost', 
+        dbConfig.port || 5432
+    );
+    
+    const errorResponse = {
+        error: `Failed to ${operation}`,
+        details: errorMsg,
+        errorType: err.constructor.name,
+        errorCode: errorCode,
+        errorName: errorName,
+        originalError: err.original ? err.original.message : null
+    };
+    
+    // 연결 거부 오류인 경우 상세 진단 정보 추가
+    if (connectionDiagnosis) {
+        errorResponse.diagnosis = connectionDiagnosis.diagnosis;
+        errorResponse.connectionInfo = connectionDiagnosis.connectionInfo;
+    }
+    
+    return errorResponse;
+}
+
+module.exports = { handleInsertUpdateError, buildDatabaseErrorResponse };
 
