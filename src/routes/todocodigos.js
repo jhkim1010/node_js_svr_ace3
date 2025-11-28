@@ -130,19 +130,6 @@ router.get('/', async (req, res) => {
                 console.error(`   ${index + 1}. [${cause.probability}] ${cause.cause}`);
                 console.error(`      ${cause.description}`);
             });
-            console.error(`\n   권장 해결 방법:`);
-            diagnosis.diagnosis.recommendedSolutions.forEach((solution, index) => {
-                console.error(`   ${index + 1}. ${solution.solution}`);
-                console.error(`      ${solution.description}`);
-                if (solution.example) {
-                    console.error(`      예시: ${solution.example}`);
-                }
-                if (solution.commands) {
-                    Object.entries(solution.commands).forEach(([platform, cmd]) => {
-                        console.error(`      ${platform}: ${cmd}`);
-                    });
-                }
-            });
             console.error('');
         }
         console.error('');

@@ -4,9 +4,10 @@ const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
+const { diagnoseConnectionRefusedError } = require('../utils/error-classifier');
 
 const router = Router();
 
@@ -91,8 +92,39 @@ router.get('/', async (req, res) => {
         
         res.json(responseData);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to list codigos', details: err.message });
+        console.error('\nERROR: Codigos fetch error:');
+        console.error('   Error type:', err.constructor.name);
+        console.error('   Error message:', err.message);
+        console.error('   Full error:', err);
+        if (err.original) {
+            console.error('   Original error:', err.original);
+        }
+        
+        // 연결 거부 오류 진단
+        const dbConfig = req.dbConfig || {};
+        const diagnosis = diagnoseConnectionRefusedError(
+            err, 
+            dbConfig.host || '127.0.0.1', 
+            dbConfig.port || 5432
+        );
+        
+        if (diagnosis) {
+            console.error(`\n❌ Codigos 연결 거부 오류 발생`);
+            console.error(`   연결 정보: ${diagnosis.connectionInfo.host}:${diagnosis.connectionInfo.port}`);
+            console.error(`   환경: ${diagnosis.connectionInfo.environment}`);
+            console.error(`   진단 요약: ${diagnosis.diagnosis.summary}`);
+            console.error(`   가장 가능성 높은 원인: ${diagnosis.diagnosis.mostLikelyCause}`);
+            console.error(`\n   가능한 원인:`);
+            diagnosis.diagnosis.possibleCauses.forEach((cause, index) => {
+                console.error(`   ${index + 1}. [${cause.probability}] ${cause.cause}`);
+                console.error(`      ${cause.description}`);
+            });
+            console.error('');
+        }
+        console.error('');
+        
+        const errorResponse = buildDatabaseErrorResponse(err, req, 'list codigos');
+        res.status(500).json(errorResponse);
     }
 });
 
@@ -105,8 +137,32 @@ router.get('/:id', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch codigo', details: err.message });
+        console.error('\nERROR: Codigos fetch by id error:');
+        console.error('   Error type:', err.constructor.name);
+        console.error('   Error message:', err.message);
+        if (err.original) {
+            console.error('   Original error:', err.original);
+        }
+        
+        // 연결 거부 오류 진단
+        const dbConfig = req.dbConfig || {};
+        const diagnosis = diagnoseConnectionRefusedError(
+            err, 
+            dbConfig.host || '127.0.0.1', 
+            dbConfig.port || 5432
+        );
+        
+        if (diagnosis) {
+            console.error(`\n❌ Codigos 연결 거부 오류 발생`);
+            console.error(`   연결 정보: ${diagnosis.connectionInfo.host}:${diagnosis.connectionInfo.port}`);
+            console.error(`   환경: ${diagnosis.connectionInfo.environment}`);
+            console.error(`   진단 요약: ${diagnosis.diagnosis.summary}`);
+            console.error(`   가장 가능성 높은 원인: ${diagnosis.diagnosis.mostLikelyCause}`);
+        }
+        console.error('');
+        
+        const errorResponse = buildDatabaseErrorResponse(err, req, 'fetch codigo');
+        res.status(500).json(errorResponse);
     }
 });
 
