@@ -1,30 +1,38 @@
 // 공통 로깅 유틸리티: 스택에서 파일/라인 정보를 추출해서 함께 출력
 
 /**
- * 호출 스택에서 파일 경로와 라인/컬럼 정보를 추출합니다.
- * @param {number} stackOffset - stack 상에서 몇 번째 줄을 사용할지 (0: Error, 1: 현재 함수, 2: 호출자)
+ * 호출 스택에서 "실제 호출자"의 파일 경로와 라인/컬럼 정보를 추출합니다.
+ * - log-utils.js 내부 프레임은 건너뛰고, 처음으로 log-utils.js가 아닌 프레임을 선택합니다.
  * @returns {{file: string, line: number, column: number, raw: string}|null}
  */
-function getCallerLocation(stackOffset = 2) {
+function getCallerLocation() {
     try {
         const err = new Error();
         if (!err.stack) return null;
 
         const lines = err.stack.split('\n');
-        if (lines.length <= stackOffset) return null;
+        // 0: Error, 1 이후가 실제 스택 프레임
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            // log-utils.js 자체는 건너뛰기
+            if (line.includes('log-utils.js')) {
+                continue;
+            }
+            // 예: "at Object.<anonymous> (/path/to/file.js:123:45)"
+            const match = line.match(/\(?([^()]+):(\d+):(\d+)\)?$/);
+            if (!match) {
+                continue;
+            }
 
-        const target = lines[stackOffset].trim();
-        // 예: "at Object.<anonymous> (/path/to/file.js:123:45)"
-        const match = target.match(/\(?([^()]+):(\d+):(\d+)\)?$/);
-        if (!match) {
-            return { file: 'unknown', line: 0, column: 0, raw: target };
+            const file = match[1];
+            const lineNum = parseInt(match[2], 10) || 0;
+            const column = parseInt(match[3], 10) || 0;
+
+            return { file, line: lineNum, column, raw: line };
         }
 
-        const file = match[1];
-        const line = parseInt(match[2], 10) || 0;
-        const column = parseInt(match[3], 10) || 0;
-
-        return { file, line, column, raw: target };
+        // 적당한 프레임을 찾지 못했으면 null
+        return null;
     } catch (e) {
         return null;
     }
@@ -35,7 +43,7 @@ function getCallerLocation(stackOffset = 2) {
  * @param  {...any} args - console.error 에 전달할 인자들
  */
 function logErrorWithLocation(...args) {
-    const loc = getCallerLocation(2); // 호출자 기준
+    const loc = getCallerLocation();
     if (loc) {
         console.error(`[${loc.file}:${loc.line}]`, ...args);
     } else {
