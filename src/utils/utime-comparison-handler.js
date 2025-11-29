@@ -81,40 +81,75 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }, {});
 
                     if (canUsePrimaryKey && Object.keys(primaryKeyWhere).length === primaryKeyArray.length) {
-                        const resultPk = await processRecordWithUtimeComparison(
-                            Model,
-                            filteredItem,
-                            clientUtimeStr,
-                            primaryKeyWhere,
-                            primaryKeyArray,
-                            transaction,
-                            savepointName,
-                            sequelize
-                        );
+                        try {
+                            const resultPk = await processRecordWithUtimeComparison(
+                                Model,
+                                filteredItem,
+                                clientUtimeStr,
+                                primaryKeyWhere,
+                                primaryKeyArray,
+                                transaction,
+                                savepointName,
+                                sequelize
+                            );
 
-                        if (resultPk.action === 'updated') {
-                            results.push({ index: i, action: 'updated', data: resultPk.data });
-                            updatedCount++;
-                            
-                            // primary key 기반 처리 완료 → 다음 아이템으로
-                            continue;
-                        }
+                            if (resultPk.action === 'updated') {
+                                results.push({ index: i, action: 'updated', data: resultPk.data });
+                                updatedCount++;
+                                
+                                // primary key 기반 처리 완료 → 다음 아이템으로
+                                continue;
+                            }
 
-                        if (resultPk.action === 'skipped') {
-                            results.push({
-                                index: i,
-                                action: 'skipped',
-                                reason: resultPk.reason || 'server_utime_newer',
-                                serverUtime: resultPk.serverUtime,
-                                clientUtime: resultPk.clientUtime,
-                                data: resultPk.data
-                            });
-                            skippedCount++;
+                            if (resultPk.action === 'skipped') {
+                                results.push({
+                                    index: i,
+                                    action: 'skipped',
+                                    reason: resultPk.reason || 'server_utime_newer',
+                                    serverUtime: resultPk.serverUtime,
+                                    clientUtime: resultPk.clientUtime,
+                                    data: resultPk.data
+                                });
+                                skippedCount++;
+                                
+                                // primary key 기반 처리 완료 → 다음 아이템으로
+                                continue;
+                            }
+                            // resultPk.action === 'not_found' 인 경우만 INSERT 시도로 진행
+                        } catch (pkErr) {
+                            // processRecordWithUtimeComparison에서 에러 발생 시
+                            // unique constraint 에러인지 확인하고 SKIP 처리
+                            const pkErrorMsg = pkErr.original ? pkErr.original.message : pkErr.message || '';
+                            const pkLowerMsg = pkErrorMsg.toLowerCase();
+                            const isPkUniqueError = isUniqueConstraintError(pkErr) || 
+                                                   pkLowerMsg.includes('duplicate key') ||
+                                                   pkLowerMsg.includes('unique constraint') ||
+                                                   pkLowerMsg.includes('violates unique constraint');
                             
-                            // primary key 기반 처리 완료 → 다음 아이템으로
-                            continue;
+                            if (isPkUniqueError) {
+                                const constraintMatch = pkErrorMsg.match(/constraint "([^"]+)"/i);
+                                const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
+                                
+                                try {
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (rollbackErr) {
+                                    // 무시
+                                }
+                                
+                                results.push({
+                                    index: i,
+                                    action: 'skipped',
+                                    reason: 'unique_constraint_violation',
+                                    constraint: constraintName,
+                                    error: pkErrorMsg
+                                });
+                                skippedCount++;
+                                continue;
+                            } else {
+                                // unique constraint 에러가 아니면 다시 throw
+                                throw pkErr;
+                            }
                         }
-                        // resultPk.action === 'not_found' 인 경우만 INSERT 시도로 진행
                     }
 
                     // 2단계: primary key로 레코드를 찾지 못했으면 INSERT 시도
@@ -139,7 +174,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         const lowerMsg = errorMsg.toLowerCase();
 
                         // 3단계: UNIQUE 제약 조건 에러 → 어떤 unique key 인지 출력 후 SKIP
-                        if (isUniqueConstraintError(createErr)) {
+                        // isUniqueConstraintError 함수와 직접 메시지 체크 모두 수행
+                        const isUniqueError = isUniqueConstraintError(createErr) || 
+                                             lowerMsg.includes('duplicate key') ||
+                                             lowerMsg.includes('unique constraint') ||
+                                             lowerMsg.includes('violates unique constraint');
+                        if (isUniqueError) {
                             const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
