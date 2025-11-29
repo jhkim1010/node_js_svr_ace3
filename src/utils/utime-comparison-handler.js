@@ -65,7 +65,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                  * 3) INSERT 중 UNIQUE 에러 → 어떤 unique constraint 인지 출력 후 SKIP
                  * 4) INSERT 중 FOREIGN KEY 에러 → 어떤 외래키 인지 출력 후 SKIP
                  */
-                if (modelName === 'Codigos' || modelName === 'Todocodigos') {
+                if (['Codigos', 'Todocodigos', 'Clientes', 'Color', 'Tipos', 'Gastos', 'Vtags'].includes(modelName)) {
                     const primaryKeyArray = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
                     
                     // 1단계: primary key로 기존 레코드 조회

@@ -46,7 +46,8 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const Gastos = getModelForRequest(req, 'Gastos');
-        const compositePrimaryKey = ['id_ga', 'sucursal']; // Gastos 복합 PK/unique 기준
+        // Gastos 동기화 로직에서는 (id_ga, sucursal) 복합 키를 기본 식별자로 사용
+        const compositePrimaryKey = ['id_ga', 'sucursal'];
         
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
