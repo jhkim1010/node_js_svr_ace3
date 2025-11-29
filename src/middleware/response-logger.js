@@ -41,20 +41,24 @@ function responseLogger(req, res, next) {
             dataCount = req._dataCount || 1;
         }
         
-        // 데이터베이스 이름만 (host:port 제거) - 출력 시 [[ ]]로 감싸기
+        // 데이터베이스 이름만 (host:port 제거) - 출력 시 [ ]로 감싸기
         const rawDbName = req.dbConfig 
             ? req.dbConfig.database
             : 'N/A';
-        const dbName = `[[${rawDbName}]]`;
+        const dbName = `[${rawDbName}]`;
+        
+        // HTTP 메서드와 operation을 함께 표시하여 POST/GET 구분 명확히
+        const method = (req.method || '').toUpperCase();
+        const operationWithMethod = `${method}/${operation}`;
         
         // 처리 통계 정보가 있으면 총 개수만 출력 (pagination으로 나눠서 들어올 때도 총 개수만 표시)
         if (req._processingStats) {
             const stats = req._processingStats;
             const skippedText = stats.skipped > 0 ? ` | Skipped: ${stats.skipped}` : '';
-            console.log(`${dbName} | ${routerName} | ${operation} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}${skippedText}`);
+            console.log(`${dbName} | ${routerName} | ${operationWithMethod} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}${skippedText}`);
         } else {
             // 1줄로 출력
-            console.log(`${dbName} | ${routerName} | ${operation} | ${dataCount}개`);
+            console.log(`${dbName} | ${routerName} | ${operationWithMethod} | ${dataCount}개`);
         }
     });
     
