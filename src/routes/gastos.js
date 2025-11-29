@@ -47,112 +47,21 @@ router.post('/', async (req, res) => {
         const Gastos = getModelForRequest(req, 'Gastos');
         
         // BATCH_SYNC 작업 처리
-        // gastos 테이블은 id_ga에 unique 제약 조건이 없으므로 primary key를 unique key로 사용하지 않음
+        // gastos는 id_ga와 sucursal의 복합 unique key를 사용
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            // gastos는 항상 INSERT만 수행 (id_ga는 sequence로 자동 생성)
-            const sequelize = Gastos.sequelize;
-            const transaction = await sequelize.transaction();
-            const results = [];
-            let createdCount = 0;
-            
-            try {
-                for (let i = 0; i < req.body.data.length; i++) {
-                    const item = req.body.data[i];
-                    const cleanedItem = removeSyncField(item);
-                    const filteredItem = filterModelFields(Gastos, cleanedItem);
-                    // id_ga는 sequence로 자동 생성되므로 제거
-                    delete filteredItem.id_ga;
-                    const created = await Gastos.create(filteredItem, { transaction });
-                    results.push({ index: i, action: 'created', data: created });
-                    createdCount++;
-                }
-                await transaction.commit();
-                
-                const result = {
-                    success: true,
-                    message: `Processing complete: ${results.length} created`,
-                    processed: results.length,
-                    failed: 0,
-                    total: req.body.data.length,
-                    created: createdCount,
-                    updated: 0,
-                    results: results
-                };
-                
-                req._processingStats = {
-                    total: req.body.data.length,
-                    created: createdCount,
-                    updated: 0,
-                    deleted: 0,
-                    failed: 0
-                };
-                
-                await notifyBatchSync(req, Gastos, result);
-                return res.status(200).json(result);
-            } catch (err) {
-                await transaction.rollback();
-                throw err;
-            }
+            const result = await handleBatchSync(req, res, Gastos, ['id_ga', 'sucursal'], 'Gastos');
+            await notifyBatchSync(req, Gastos, result);
+            return res.status(200).json(result);
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            // gastos는 항상 INSERT만 수행 (id_ga는 sequence로 자동 생성)
-            const sequelize = Gastos.sequelize;
-            const transaction = await sequelize.transaction();
-            const results = [];
-            let createdCount = 0;
-            
-            try {
-                for (let i = 0; i < req.body.data.length; i++) {
-                    const item = req.body.data[i];
-                    const cleanedItem = removeSyncField(item);
-                    const filteredItem = filterModelFields(Gastos, cleanedItem);
-                    // id_ga는 sequence로 자동 생성되므로 제거
-                    delete filteredItem.id_ga;
-                    const created = await Gastos.create(filteredItem, { transaction });
-                    results.push({ index: i, action: 'created', data: created });
-                    createdCount++;
-                }
-                await transaction.commit();
-                
-                const result = {
-                    success: true,
-                    message: `Processing complete: ${results.length} created`,
-                    processed: results.length,
-                    failed: 0,
-                    total: req.body.data.length,
-                    created: createdCount,
-                    updated: 0,
-                    results: results
-                };
-                
-                req._processingStats = {
-                    total: req.body.data.length,
-                    created: createdCount,
-                    updated: 0,
-                    deleted: 0,
-                    failed: 0
-                };
-                
-                await notifyBatchSync(req, Gastos, result);
-                return res.status(200).json(result);
-            } catch (err) {
-                await transaction.rollback();
-                throw err;
-            }
+            const result = await handleArrayData(req, res, Gastos, ['id_ga', 'sucursal'], 'Gastos');
+            return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리 (gastos는 항상 INSERT만 수행)
-        const rawData = req.body.new_data || req.body;
-        const cleanedData = removeSyncField(rawData);
-        const filteredItem = filterModelFields(Gastos, cleanedData);
-        // id_ga는 sequence로 자동 생성되므로 제거
-        delete filteredItem.id_ga;
-        
-        const created = await Gastos.create(filteredItem);
-        await notifyDbChange(req, Gastos, 'create', created);
-        const result = { action: 'created', data: created };
+        // 일반 단일 생성 요청 처리 (복합 unique key 기반으로 UPDATE/CREATE 결정)
+        const result = await handleSingleItem(req, res, Gastos, ['id_ga', 'sucursal'], 'Gastos');
         await notifyDbChange(req, Gastos, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {

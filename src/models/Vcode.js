@@ -56,8 +56,7 @@ function defineVcodeModel(sequelize) {
     schema: 'public',
     timestamps: false,
     indexes: [
-        { unique: true, name: 'vcode_id.uniq', fields: ['vcode_id'] },
-        { unique: true, name: 'vcode_seq.uniq', fields: ['vcode_id'] },
+        { unique: true, name: 'vcodes_unique', fields: ['vcode_id', 'sucursal'] },
     ],
     });
 }

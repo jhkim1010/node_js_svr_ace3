@@ -39,24 +39,25 @@ router.post('/', async (req, res) => {
         const Vcode = getModelForRequest(req, 'Vcode');
         
         // BATCH_SYNC 작업 처리 (Vcodes 전용 핸들러 사용)
+        // vcodes는 vcode_id와 sucursal의 복합 unique key를 사용
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            const result = await handleVcodesBatchSync(req, res, Vcode, 'vcode_id', 'Vcode');
+            const result = await handleVcodesBatchSync(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             await notifyBatchSync(req, Vcode, result);
             return res.status(200).json(result);
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도) (Vcodes 전용 핸들러 사용)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleVcodesArrayData(req, res, Vcode, 'vcode_id', 'Vcode');
+            const result = await handleVcodesArrayData(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Vcode, 'vcode_id', 'Vcode');
+        // 일반 단일 생성 요청 처리 (복합 unique key 기반으로 UPDATE/CREATE 결정)
+        const result = await handleSingleItem(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
         await notifyDbChange(req, Vcode, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        handleInsertUpdateError(err, req, 'Vcode', 'vcode_id', 'vcodes');
+        handleInsertUpdateError(err, req, 'Vcode', ['vcode_id', 'sucursal'], 'vcodes');
         const errorResponse = buildDatabaseErrorResponse(err, req, 'create vcode');
         
         // 외래키 제약 조건 위반 감지 및 정보 추가
@@ -116,7 +117,7 @@ router.put('/:id', async (req, res) => {
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleVcodesArrayData, Vcode, 'vcode_id', 'Vcode');
+            const result = await processBatchedArray(req, res, handleVcodesArrayData, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             await notifyBatchSync(req, Vcode, result);
             return res.status(200).json(result);
         }

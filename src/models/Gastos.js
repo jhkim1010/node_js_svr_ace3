@@ -25,6 +25,13 @@ function defineGastosModel(sequelize) {
         tableName: 'gastos',
         schema: 'public',
         timestamps: false,
+        indexes: [
+            { 
+                unique: true, 
+                name: 'gastos_id_ga_sucursal_unique', 
+                fields: ['id_ga', 'sucursal'] 
+            }
+        ],
     });
 }
 
