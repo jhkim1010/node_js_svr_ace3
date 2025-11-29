@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
+const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
@@ -45,25 +46,42 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const Gastos = getModelForRequest(req, 'Gastos');
+        const compositePrimaryKey = ['id_ga', 'sucursal']; // Gastos 복합 PK/unique 기준
         
         // BATCH_SYNC 작업 처리
-        // gastos는 id_ga와 sucursal의 복합 unique key를 사용
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            const result = await handleBatchSync(req, res, Gastos, ['id_ga', 'sucursal'], 'Gastos');
+            const result = await handleUtimeComparisonArrayData(req, res, Gastos, compositePrimaryKey, 'Gastos');
             await notifyBatchSync(req, Gastos, result);
             return res.status(200).json(result);
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleArrayData(req, res, Gastos, ['id_ga', 'sucursal'], 'Gastos');
+            // utime 비교 + primary key 우선 순서 적용
+            const result = await handleUtimeComparisonArrayData(req, res, Gastos, compositePrimaryKey, 'Gastos');
+            await notifyBatchSync(req, Gastos, result);
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리 (복합 unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Gastos, ['id_ga', 'sucursal'], 'Gastos');
-        await notifyDbChange(req, Gastos, result.action === 'created' ? 'create' : 'update', result.data);
-        res.status(result.action === 'created' ? 201 : 200).json(result.data);
+        // 단일 생성/업데이트 요청도 utime 비교 + primary key 우선 순서 적용
+        const rawData = req.body.new_data || req.body;
+        req.body.data = Array.isArray(rawData) ? rawData : [rawData];
+
+        const result = await handleUtimeComparisonArrayData(req, res, Gastos, compositePrimaryKey, 'Gastos');
+
+        // 첫 번째 결과를 기반으로 응답 구성
+        const first = result.results && result.results[0];
+        const action = first?.action || 'created';
+        const data = first?.data || rawData;
+
+        if (action === 'skipped') {
+            // 중복(unique) 또는 FK 문제로 스킵된 경우도 에러가 아닌 정상 응답으로 처리
+            await notifyDbChange(req, Gastos, 'skip', data);
+            return res.status(200).json(first);
+        }
+
+        await notifyDbChange(req, Gastos, action === 'created' ? 'create' : 'update', data);
+        res.status(action === 'created' ? 201 : 200).json(data);
     } catch (err) {
         handleInsertUpdateError(err, req, 'Gastos', 'id_ga', 'gastos');
         res.status(400).json({ 
