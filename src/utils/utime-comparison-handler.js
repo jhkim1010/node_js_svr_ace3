@@ -39,6 +39,14 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
         const uniqueKeys = getUniqueKeys(Model, primaryKey);
         
         for (let i = 0; i < req.body.data.length; i++) {
+            // 각 항목 처리 전에 SAVEPOINT 생성 (에러 발생 시 롤백용)
+            const savepointName = `sp_utime_${i}_${Date.now()}`;
+            try {
+                await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
+            } catch (spErr) {
+                // SAVEPOINT 생성 실패는 무시하고 계속 진행
+            }
+            
             try {
                 const item = req.body.data[i];
                 const cleanedData = removeSyncField(item);
@@ -177,6 +185,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
                                 results.push({ index: i, action: 'updated', data: updated });
                                 updatedCount++;
+                                
+                                // SAVEPOINT 해제
+                                try {
+                                    await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (releaseErr) {
+                                    // 무시
+                                }
                             } else {
                                 // 서버 utime이 더 높거나 같으면 스킵
                                 results.push({ 
@@ -188,6 +203,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     data: existingRecord 
                                 });
                                 skippedCount++;
+                                
+                                // SAVEPOINT 해제
+                                try {
+                                    await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (releaseErr) {
+                                    // 무시
+                                }
                             }
                         } else {
                             // 레코드가 없으면 INSERT 시도
@@ -213,12 +235,27 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
                                     createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
                                 }
-                                const created = await Model.create(createData, { transaction });
-                                results.push({ index: i, action: 'created', data: created });
-                                createdCount++;
-                            } catch (createErr) {
-                                // unique constraint 에러인 경우 레코드를 다시 조회하여 utime 비교 수행
+                                try {
+                                    const created = await Model.create(createData, { transaction });
+                                    results.push({ index: i, action: 'created', data: created });
+                                    createdCount++;
+                                    
+                                    // SAVEPOINT 해제
+                                    try {
+                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (releaseErr) {
+                                        // 무시
+                                    }
+                                } catch (createErr) {
+                                // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 레코드를 다시 조회하여 utime 비교 수행
                                 if (isUniqueConstraintError(createErr)) {
+                                    try {
+                                        // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
+                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (rollbackErr) {
+                                        // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
+                                    }
+                                    
                                     // 레코드가 실제로 존재하는지 다시 확인
                                     const retryRecord = Array.isArray(availableUniqueKey)
                                         ? await Model.findOne({ 
@@ -305,6 +342,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
                                             results.push({ index: i, action: 'updated', data: updated });
                                             updatedCount++;
+                                            
+                                            // SAVEPOINT 해제
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
                                         } else {
                                             // 서버 utime이 더 높거나 같으면 스킵
                                             results.push({ 
@@ -316,13 +360,30 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 data: retryRecord 
                                             });
                                             skippedCount++;
+                                            
+                                            // SAVEPOINT 해제
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
                                         }
                                     } else {
-                                        // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
+                                        // 레코드를 찾을 수 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                        try {
+                                            await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (rollbackErr) {
+                                            // 무시
+                                        }
                                         throw createErr;
                                     }
                                 } else {
-                                    // unique constraint 에러가 아니면 원래 에러를 다시 던짐
+                                    // unique constraint 에러가 아니면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                    try {
+                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (rollbackErr) {
+                                        // 무시
+                                    }
                                     throw createErr;
                                 }
                             }
@@ -355,9 +416,23 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const created = await Model.create(createData, { transaction });
                             results.push({ index: i, action: 'created', data: created });
                             createdCount++;
+                            
+                            // SAVEPOINT 해제
+                            try {
+                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                            } catch (releaseErr) {
+                                // 무시
+                            }
                         } catch (createErr) {
-                            // unique constraint 에러인 경우 primary key로 레코드를 조회하여 utime 비교 수행
+                            // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 primary key로 레코드를 조회하여 utime 비교 수행
                             if (isUniqueConstraintError(createErr) && primaryKey) {
+                                try {
+                                    // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (rollbackErr) {
+                                    // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
+                                }
+                                
                                 // primary key로 레코드 조회
                                 const primaryKeyValue = Array.isArray(primaryKey) 
                                     ? primaryKey.map(key => filteredItem[key]).filter(v => v !== undefined && v !== null)
@@ -446,6 +521,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             const updated = await Model.findOne({ where: primaryKeyWhere, transaction });
                                             results.push({ index: i, action: 'updated', data: updated });
                                             updatedCount++;
+                                            
+                                            // SAVEPOINT 해제
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
                                         } else {
                                             // 서버 utime이 더 높거나 같으면 스킵
                                             results.push({ 
@@ -457,17 +539,39 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 data: retryRecord 
                                             });
                                             skippedCount++;
+                                            
+                                            // SAVEPOINT 해제
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
                                         }
                                     } else {
-                                        // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
+                                        // 레코드를 찾을 수 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                        try {
+                                            await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (rollbackErr) {
+                                            // 무시
+                                        }
                                         throw createErr;
                                     }
                                 } else {
-                                    // primary key 값이 없으면 원래 에러를 다시 던짐
+                                    // primary key 값이 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                    try {
+                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (rollbackErr) {
+                                        // 무시
+                                    }
                                     throw createErr;
                                 }
                             } else {
-                                // unique constraint 에러가 아니거나 primary key가 없으면 원래 에러를 다시 던짐
+                                // unique constraint 에러가 아니거나 primary key가 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                try {
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (rollbackErr) {
+                                    // 무시
+                                }
                                 throw createErr;
                             }
                         }
@@ -496,11 +600,178 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         const Sequelize = require('sequelize');
                         createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
                     }
-                    const created = await Model.create(createData, { transaction });
-                    results.push({ index: i, action: 'created', data: created });
-                    createdCount++;
+                    try {
+                        const created = await Model.create(createData, { transaction });
+                        results.push({ index: i, action: 'created', data: created });
+                        createdCount++;
+                        
+                        // SAVEPOINT 해제
+                        try {
+                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                        } catch (releaseErr) {
+                            // 무시
+                        }
+                    } catch (createErr) {
+                        // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 primary key로 레코드를 조회하여 utime 비교 수행
+                        if (isUniqueConstraintError(createErr) && primaryKey) {
+                            try {
+                                // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
+                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                            } catch (rollbackErr) {
+                                // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
+                            }
+                            
+                            // primary key로 레코드 조회
+                            const primaryKeyValue = Array.isArray(primaryKey) 
+                                ? primaryKey.map(key => filteredItem[key]).filter(v => v !== undefined && v !== null)
+                                : filteredItem[primaryKey];
+                            
+                            if (primaryKeyValue) {
+                                const primaryKeyWhere = Array.isArray(primaryKey)
+                                    ? primaryKey.reduce((acc, key) => {
+                                        if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                            acc[key] = filteredItem[key];
+                                        }
+                                        return acc;
+                                    }, {})
+                                    : { [primaryKey]: filteredItem[primaryKey] };
+                                
+                                const retryRecord = await Model.findOne({ 
+                                    where: primaryKeyWhere, 
+                                    transaction,
+                                    attributes: {
+                                        include: [
+                                            [Sequelize.literal(`utime::text`), 'utime_str']
+                                        ]
+                                    },
+                                    raw: true
+                                });
+                                
+                                if (retryRecord) {
+                                    // 기존 레코드의 utime 값
+                                    let serverUtimeStr = null;
+                                    if (retryRecord.utime_str) {
+                                        serverUtimeStr = String(retryRecord.utime_str).trim();
+                                    } else if (retryRecord.utime) {
+                                        if (retryRecord.utime instanceof Date) {
+                                            const rawRecord = await Model.findOne({ 
+                                                where: primaryKeyWhere, 
+                                                transaction,
+                                                attributes: [[Sequelize.literal(`utime::text`), 'utime']],
+                                                raw: true
+                                            });
+                                            if (rawRecord && rawRecord.utime) {
+                                                serverUtimeStr = String(rawRecord.utime).trim();
+                                            }
+                                        } else {
+                                            serverUtimeStr = String(retryRecord.utime).trim();
+                                        }
+                                    }
+                                    
+                                    // utime 비교
+                                    let shouldUpdate = false;
+                                    
+                                    if (!clientUtimeStr && !serverUtimeStr) {
+                                        shouldUpdate = true;
+                                    } else if (clientUtimeStr && !serverUtimeStr) {
+                                        shouldUpdate = true;
+                                    } else if (clientUtimeStr && serverUtimeStr) {
+                                        shouldUpdate = clientUtimeStr > serverUtimeStr;
+                                    } else {
+                                        shouldUpdate = false;
+                                    }
+                                    
+                                    if (shouldUpdate) {
+                                        // 업데이트 수행
+                                        const updateData = { ...filteredItem };
+                                        const keysToRemove = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
+                                        keysToRemove.forEach(key => delete updateData[key]);
+                                        
+                                        // utime을 문자열로 보장하여 timezone 변환 방지
+                                        if (updateData.utime) {
+                                            let utimeStr = null;
+                                            if (updateData.utime instanceof Date) {
+                                                const year = updateData.utime.getFullYear();
+                                                const month = String(updateData.utime.getMonth() + 1).padStart(2, '0');
+                                                const day = String(updateData.utime.getDate()).padStart(2, '0');
+                                                const hours = String(updateData.utime.getHours()).padStart(2, '0');
+                                                const minutes = String(updateData.utime.getMinutes()).padStart(2, '0');
+                                                const seconds = String(updateData.utime.getSeconds()).padStart(2, '0');
+                                                const ms = String(updateData.utime.getMilliseconds()).padStart(3, '0');
+                                                utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+                                            } else {
+                                                utimeStr = String(updateData.utime);
+                                            }
+                                            updateData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
+                                        }
+                                        
+                                        await Model.update(updateData, { where: primaryKeyWhere, transaction });
+                                        const updated = await Model.findOne({ where: primaryKeyWhere, transaction });
+                                        results.push({ index: i, action: 'updated', data: updated });
+                                        updatedCount++;
+                                        
+                                        // SAVEPOINT 해제
+                                        try {
+                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (releaseErr) {
+                                            // 무시
+                                        }
+                                    } else {
+                                        // 서버 utime이 더 높거나 같으면 스킵
+                                        results.push({ 
+                                            index: i, 
+                                            action: 'skipped', 
+                                            reason: 'server_utime_newer',
+                                            serverUtime: serverUtimeStr,
+                                            clientUtime: clientUtimeStr,
+                                            data: retryRecord 
+                                        });
+                                        skippedCount++;
+                                        
+                                        // SAVEPOINT 해제
+                                        try {
+                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (releaseErr) {
+                                            // 무시
+                                        }
+                                    }
+                                } else {
+                                    // 레코드를 찾을 수 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                    try {
+                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (rollbackErr) {
+                                        // 무시
+                                    }
+                                    throw createErr;
+                                }
+                            } else {
+                                // primary key 값이 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                try {
+                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (rollbackErr) {
+                                    // 무시
+                                }
+                                throw createErr;
+                            }
+                        } else {
+                            // unique constraint 에러가 아니거나 primary key가 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                            try {
+                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                            } catch (rollbackErr) {
+                                // 무시
+                            }
+                            throw createErr;
+                        }
+                    }
                 }
             } catch (itemErr) {
+                // SAVEPOINT 롤백 시도
+                try {
+                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                } catch (rollbackErr) {
+                    // 무시
+                }
+                
                 errors.push({ 
                     index: i, 
                     error: itemErr.message,
