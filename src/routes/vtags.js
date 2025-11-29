@@ -37,19 +37,20 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const Vtags = getModelForRequest(req, 'Vtags');
-        const primaryKey = 'vtag_id'; // Vtags의 primary key
+        // vtags는 (vtag_id, sucursal) 복합 primary key를 사용
+        const compositePrimaryKey = ['vtag_id', 'sucursal'];
         
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            // utime 비교 + primary key 우선 순서 적용
-            const result = await handleUtimeComparisonArrayData(req, res, Vtags, primaryKey, 'Vtags');
+            // utime 비교 + 복합 primary key 우선 순서 적용
+            const result = await handleUtimeComparisonArrayData(req, res, Vtags, compositePrimaryKey, 'Vtags');
             await notifyBatchSync(req, Vtags, result);
             return res.status(200).json(result);
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleUtimeComparisonArrayData(req, res, Vtags, primaryKey, 'Vtags');
+            const result = await handleUtimeComparisonArrayData(req, res, Vtags, compositePrimaryKey, 'Vtags');
             await notifyBatchSync(req, Vtags, result);
             return res.status(200).json(result);
         }
@@ -59,14 +60,14 @@ router.post('/', async (req, res) => {
         if (Array.isArray(rawData)) {
             // 배열인 경우 BATCH_SYNC와 동일하게 utime 비교 로직으로 처리
             req.body.data = rawData;
-            const result = await handleUtimeComparisonArrayData(req, res, Vtags, primaryKey, 'Vtags');
+            const result = await handleUtimeComparisonArrayData(req, res, Vtags, compositePrimaryKey, 'Vtags');
             await notifyBatchSync(req, Vtags, result);
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청도 utime 비교 + primary key 우선 순서 적용
+        // 일반 단일 생성 요청도 utime 비교 + 복합 primary key 우선 순서 적용
         req.body.data = [rawData];
-        const result = await handleUtimeComparisonArrayData(req, res, Vtags, primaryKey, 'Vtags');
+        const result = await handleUtimeComparisonArrayData(req, res, Vtags, compositePrimaryKey, 'Vtags');
 
         const first = result.results && result.results[0];
         const action = first?.action || 'created';
