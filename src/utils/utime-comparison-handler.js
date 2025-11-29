@@ -56,8 +56,171 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 
                 // 클라이언트에서 온 utime 값 (문자열로 직접 비교, timezone 변환 없음)
                 const clientUtimeStr = convertUtimeToString(filteredItem.utime);
+
+                /**
+                 * Codigos, Todocodigos 전용: 새로운 처리 순서
+                 * 1) primary key로 기존 레코드 조회 후 utime 비교 → UPDATE / SKIP
+                 * 2) 기존 레코드 없으면 INSERT 시도
+                 * 3) INSERT 중 UNIQUE 에러 → 어떤 unique constraint 인지 출력 후 SKIP
+                 * 4) INSERT 중 FOREIGN KEY 에러 → 어떤 외래키 인지 출력 후 SKIP
+                 */
+                if (modelName === 'Codigos' || modelName === 'Todocodigos') {
+                    const primaryKeyArray = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
+                    
+                    // 1단계: primary key로 기존 레코드 조회
+                    let canUsePrimaryKey = true;
+                    const primaryKeyWhere = primaryKeyArray.reduce((acc, key) => {
+                        const value = filteredItem[key];
+                        if (value === undefined || value === null) {
+                            canUsePrimaryKey = false;
+                        } else {
+                            acc[key] = value;
+                        }
+                        return acc;
+                    }, {});
+
+                    if (canUsePrimaryKey && Object.keys(primaryKeyWhere).length === primaryKeyArray.length) {
+                        const resultPk = await processRecordWithUtimeComparison(
+                            Model,
+                            filteredItem,
+                            clientUtimeStr,
+                            primaryKeyWhere,
+                            primaryKeyArray,
+                            transaction,
+                            savepointName,
+                            sequelize
+                        );
+
+                        if (resultPk.action === 'updated') {
+                            results.push({ index: i, action: 'updated', data: resultPk.data });
+                            updatedCount++;
+                            
+                            // primary key 기반 처리 완료 → 다음 아이템으로
+                            continue;
+                        }
+
+                        if (resultPk.action === 'skipped') {
+                            results.push({
+                                index: i,
+                                action: 'skipped',
+                                reason: resultPk.reason || 'server_utime_newer',
+                                serverUtime: resultPk.serverUtime,
+                                clientUtime: resultPk.clientUtime,
+                                data: resultPk.data
+                            });
+                            skippedCount++;
+                            
+                            // primary key 기반 처리 완료 → 다음 아이템으로
+                            continue;
+                        }
+                        // resultPk.action === 'not_found' 인 경우만 INSERT 시도로 진행
+                    }
+
+                    // 2단계: primary key로 레코드를 찾지 못했으면 INSERT 시도
+                    const createData = { ...filteredItem };
+                    if (createData.utime) {
+                        createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
+                    }
+
+                    try {
+                        const created = await Model.create(createData, { transaction });
+                        results.push({ index: i, action: 'created', data: created });
+                        createdCount++;
+
+                        // SAVEPOINT 해제
+                        try {
+                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                        } catch (releaseErr) {
+                            // 무시
+                        }
+                    } catch (createErr) {
+                        const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
+                        const lowerMsg = errorMsg.toLowerCase();
+
+                        // 3단계: UNIQUE 제약 조건 에러 → 어떤 unique key 인지 출력 후 SKIP
+                        if (isUniqueConstraintError(createErr)) {
+                            const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
+                            const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
+
+                            console.error(`ERROR: ${modelName} INSERT skipped due to unique constraint`);
+                            console.error(`   Constraint Name: ${constraintName}`);
+                            console.error(`   Error Message: ${errorMsg}`);
+
+                            results.push({
+                                index: i,
+                                action: 'skipped',
+                                reason: 'unique_constraint_violation',
+                                constraint: constraintName,
+                                error: errorMsg
+                            });
+                            skippedCount++;
+
+                            // SAVEPOINT 해제 (데이터 변경이 없으므로 그대로 진행)
+                            try {
+                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                            } catch (releaseErr) {
+                                // 무시
+                            }
+                        }
+                        // 4단계: FOREIGN KEY 제약 조건 에러 → 어떤 외래키 인지 출력 후 SKIP
+                        else if (
+                            createErr.constructor.name.includes('ForeignKeyConstraintError') ||
+                            lowerMsg.includes('foreign key constraint') ||
+                            lowerMsg.includes('violates foreign key') ||
+                            lowerMsg.includes('is not present in table')
+                        ) {
+                            const keyMatch = errorMsg.match(/Key \(([^)]+)\)=\(([^)]+)\)/i);
+                            const tableMatch =
+                                errorMsg.match(/is not present in table ['"]([^'"]+)['"]/i) ||
+                                errorMsg.match(/table ['"]([^'"]+)['"]/i);
+                            const constraintMatch = errorMsg.match(/constraint ['"]([^'"]+)['"]/i);
+
+                            const fkColumn = keyMatch ? keyMatch[1].trim() : '알 수 없는 컬럼';
+                            const invalidValue = keyMatch ? keyMatch[2].trim() : '알 수 없는 값';
+                            const referencedTable = tableMatch ? tableMatch[1] : '알 수 없는 테이블';
+                            const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
+
+                            console.error(`ERROR: ${modelName} INSERT skipped due to foreign key constraint`);
+                            console.error(`   Constraint Name: ${constraintName}`);
+                            console.error(`   Foreign Key Column: ${fkColumn}`);
+                            console.error(`   Invalid Value: ${invalidValue}`);
+                            console.error(`   Referenced Table: ${referencedTable}`);
+                            console.error(`   Error Message: ${errorMsg}`);
+
+                            results.push({
+                                index: i,
+                                action: 'skipped',
+                                reason: 'foreign_key_constraint_violation',
+                                constraint: constraintName,
+                                column: fkColumn,
+                                value: invalidValue,
+                                referencedTable: referencedTable,
+                                error: errorMsg
+                            });
+                            skippedCount++;
+
+                            // SAVEPOINT 해제
+                            try {
+                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                            } catch (releaseErr) {
+                                // 무시
+                            }
+                        } else {
+                            // 그 외 에러는 SAVEPOINT 롤백 후 그대로 throw (실패로 처리)
+                            try {
+                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                            } catch (rollbackErr) {
+                                // 무시
+                            }
+                            throw createErr;
+                        }
+                    }
+
+                    // Codigos, Todocodigos 에 대해서는 여기까지 처리했으므로 다음 아이템으로
+                    continue;
+                }
                 
-                // UPDATE operation 처리
+                // UPDATE operation 처리 (기존 공통 로직 - Codigos, Todocodigos 이외에서 사용)
                 if (operation === 'UPDATE' || operation === 'INSERT' || operation === 'CREATE') {
                     const availableUniqueKey = findAvailableUniqueKey(filteredItem, uniqueKeys);
                     
