@@ -1,11 +1,11 @@
 const { Router } = require('express');
 const { Op, Sequelize } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
-const { handleSingleItem } = require('../utils/single-item-handler');
+const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
+const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 
 const router = Router();
 
@@ -94,40 +94,68 @@ router.post('/', async (req, res) => {
         const Tipos = getModelForRequest(req, 'Tipos');
         
         // BATCH_SYNC 작업 처리
+        // tipos는 primary key 충돌 시 utime 비교를 통해 update/skip 결정
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            // tipos는 tpcodigo만 기본 키로 사용
-            const result = await handleBatchSync(req, res, Tipos, 'tpcodigo', 'Tipos');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Tipos, 'tpcodigo', 'Tipos');
             await notifyBatchSync(req, Tipos, result);
             return res.status(200).json(result);
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
+        // tipos는 utime 비교가 필요하므로 utime 비교 핸들러 사용
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleArrayData(req, res, Tipos, 'tpcodigo', 'Tipos');
+            req.body.operation = req.body.operation || 'UPDATE';
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Tipos, 'tpcodigo', 'Tipos');
+            await notifyBatchSync(req, Tipos, result);
             return res.status(200).json(result);
         }
         
         // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우)
         const rawData = req.body.new_data || req.body;
         if (Array.isArray(rawData)) {
-            // 배열인 경우 BATCH_SYNC와 동일하게 처리
+            // 배열인 경우 utime 비교 핸들러 사용
             req.body.data = rawData;
-            const result = await handleBatchSync(req, res, Tipos, 'tpcodigo', 'Tipos');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Tipos, 'tpcodigo', 'Tipos');
             await notifyBatchSync(req, Tipos, result);
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Tipos, 'tpcodigo', 'Tipos');
-        await notifyDbChange(req, Tipos, result.action === 'created' ? 'create' : 'update', result.data);
-        res.status(result.action === 'created' ? 201 : 200).json(result.data);
+        // 일반 단일 생성 요청 처리 (utime 비교 핸들러 사용)
+        // 단일 항목도 배열로 변환하여 utime 비교 핸들러 사용
+        req.body.data = [rawData];
+        const result = await handleUtimeComparisonArrayData(req, res, Tipos, 'tpcodigo', 'Tipos');
+        const singleResult = result.results && result.results.length > 0 ? result.results[0] : null;
+        if (singleResult) {
+            await notifyDbChange(req, Tipos, singleResult.action === 'created' ? 'create' : singleResult.action === 'updated' ? 'update' : 'skip', singleResult.data);
+            res.status(singleResult.action === 'created' ? 201 : singleResult.action === 'updated' ? 200 : 200).json(singleResult.data);
+            return;
+        }
+        throw new Error('Failed to process tipo');
     } catch (err) {
         handleInsertUpdateError(err, req, 'Tipos', 'tpcodigo', 'tipos');
-        res.status(400).json({ 
-            error: 'Failed to create tipo', 
-            details: err.message,
-            errorType: err.constructor.name
-        });
+        const errorResponse = buildDatabaseErrorResponse(err, req, 'create tipo');
+        
+        // Validation 에러인 경우 상세 정보 추가
+        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+            errorResponse.validationErrors = err.errors.map(e => ({
+                field: e.path,
+                value: e.value,
+                message: e.message,
+                type: e.type,
+                validator: e.validatorKey || e.validatorName
+            }));
+            
+            // 누락된 필수 컬럼 목록 추가
+            const missingColumns = err.errors
+                .filter(e => e.type === 'notNull Violation' || 
+                           e.message?.toLowerCase().includes('cannot be null'))
+                .map(e => e.path);
+            if (missingColumns.length > 0) {
+                errorResponse.missingColumns = missingColumns;
+            }
+        }
+        
+        res.status(400).json(errorResponse);
     }
 });
 

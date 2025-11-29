@@ -1,8 +1,7 @@
 const { Router } = require('express');
 const { Op, Sequelize } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
-const { handleSingleItem } = require('../utils/single-item-handler');
+const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
@@ -212,8 +211,9 @@ router.post('/', async (req, res) => {
         const Todocodigos = getModelForRequest(req, 'Todocodigos');
         
         // BATCH_SYNC 작업 처리
+        // todocodigos는 primary key 충돌 시 utime 비교를 통해 update/skip 결정
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            const result = await handleBatchSync(req, res, Todocodigos, 'id_todocodigo', 'Todocodigos');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Todocodigos, 'id_todocodigo', 'Todocodigos');
             await notifyBatchSync(req, Todocodigos, result);
             return res.status(200).json(result);
         }
@@ -228,8 +228,27 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Todocodigos, 'id_todocodigo', 'Todocodigos');
+        // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우)
+        const rawData = req.body.new_data || req.body;
+        if (Array.isArray(rawData)) {
+            // 배열인 경우 utime 비교 핸들러 사용
+            req.body.data = rawData;
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Todocodigos, 'id_todocodigo', 'Todocodigos');
+            await notifyBatchSync(req, Todocodigos, result);
+            return res.status(200).json(result);
+        }
+        
+        // 일반 단일 생성 요청 처리 (utime 비교 핸들러 사용)
+        // 단일 항목도 배열로 변환하여 utime 비교 핸들러 사용
+        req.body.data = [rawData];
+        const result = await handleUtimeComparisonArrayData(req, res, Todocodigos, 'id_todocodigo', 'Todocodigos');
+        const singleResult = result.results && result.results.length > 0 ? result.results[0] : null;
+        if (singleResult) {
+            await notifyDbChange(req, Todocodigos, singleResult.action === 'created' ? 'create' : singleResult.action === 'updated' ? 'update' : 'skip', singleResult.data);
+            res.status(singleResult.action === 'created' ? 201 : singleResult.action === 'updated' ? 200 : 200).json(singleResult.data);
+            return;
+        }
+        throw new Error('Failed to process todocodigo');
         await notifyDbChange(req, Todocodigos, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {

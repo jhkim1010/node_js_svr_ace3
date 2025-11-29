@@ -201,10 +201,9 @@ router.post('/', async (req, res) => {
         const Codigos = getModelForRequest(req, 'Codigos');
         
         // BATCH_SYNC 작업 처리
+        // codigos는 primary key 충돌 시 utime 비교를 통해 update/skip 결정
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            // codigos는 codigo만 기본 키로 사용
-            const result = await handleBatchSync(req, res, Codigos, 'codigo', 'Codigos');
-            // WebSocket 알림 전송
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Codigos, 'codigo', 'Codigos');
             await notifyBatchSync(req, Codigos, result);
             return res.status(200).json(result);
         }
@@ -222,16 +221,24 @@ router.post('/', async (req, res) => {
         // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우)
         const rawData = req.body.new_data || req.body;
         if (Array.isArray(rawData)) {
-            // 배열인 경우 BATCH_SYNC와 동일하게 처리
+            // 배열인 경우 utime 비교 핸들러 사용
             req.body.data = rawData;
-            const result = await handleBatchSync(req, res, Codigos, 'codigo', 'Codigos');
-            // WebSocket 알림 전송
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Codigos, 'codigo', 'Codigos');
             await notifyBatchSync(req, Codigos, result);
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Codigos, 'codigo', 'Codigos');
+        // 일반 단일 생성 요청 처리 (utime 비교 핸들러 사용)
+        // 단일 항목도 배열로 변환하여 utime 비교 핸들러 사용
+        req.body.data = [rawData];
+        const result = await handleUtimeComparisonArrayData(req, res, Codigos, 'codigo', 'Codigos');
+        const singleResult = result.results && result.results.length > 0 ? result.results[0] : null;
+        if (singleResult) {
+            await notifyDbChange(req, Codigos, singleResult.action === 'created' ? 'create' : singleResult.action === 'updated' ? 'update' : 'skip', singleResult.data);
+            res.status(singleResult.action === 'created' ? 201 : singleResult.action === 'updated' ? 200 : 200).json(singleResult.data);
+            return;
+        }
+        throw new Error('Failed to process codigo');
         // WebSocket 알림 전송
         await notifyDbChange(req, Codigos, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
