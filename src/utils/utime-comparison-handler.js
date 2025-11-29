@@ -246,8 +246,8 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     // 무시
                                 }
                             } catch (createErr) {
-                                // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 레코드를 다시 조회하여 utime 비교 수행
-                                if (isUniqueConstraintError(createErr)) {
+                                // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 primary key로 레코드를 조회하여 utime 비교 수행
+                                if (isUniqueConstraintError(createErr) && primaryKey) {
                                     try {
                                         // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
                                         await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
@@ -255,19 +255,25 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
                                     }
                                     
-                                    // 레코드가 실제로 존재하는지 다시 확인
-                                    const retryRecord = Array.isArray(availableUniqueKey)
-                                        ? await Model.findOne({ 
-                                            where: whereCondition, 
-                                            transaction,
-                                            attributes: {
-                                                include: [
-                                                    [Sequelize.literal(`utime::text`), 'utime_str']
-                                                ]
-                                            },
-                                            raw: true
-                                        })
-                                        : await Model.findByPk(filteredItem[availableUniqueKey], { 
+                                    // primary key로 레코드 조회 (primary key 충돌이 발생했을 수 있으므로)
+                                    const primaryKeyValue = Array.isArray(primaryKey) 
+                                        ? primaryKey.map(key => filteredItem[key]).filter(v => v !== undefined && v !== null)
+                                        : filteredItem[primaryKey];
+                                    
+                                    let retryRecord = null;
+                                    
+                                    if (primaryKeyValue) {
+                                        const primaryKeyWhere = Array.isArray(primaryKey)
+                                            ? primaryKey.reduce((acc, key) => {
+                                                if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                                    acc[key] = filteredItem[key];
+                                                }
+                                                return acc;
+                                            }, {})
+                                            : { [primaryKey]: filteredItem[primaryKey] };
+                                        
+                                        retryRecord = await Model.findOne({ 
+                                            where: primaryKeyWhere, 
                                             transaction,
                                             attributes: {
                                                 include: [
@@ -276,6 +282,31 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             },
                                             raw: true
                                         });
+                                    }
+                                    
+                                    // primary key로 레코드를 찾지 못했으면 availableUniqueKey로 시도
+                                    if (!retryRecord && availableUniqueKey) {
+                                        retryRecord = Array.isArray(availableUniqueKey)
+                                            ? await Model.findOne({ 
+                                                where: whereCondition, 
+                                                transaction,
+                                                attributes: {
+                                                    include: [
+                                                        [Sequelize.literal(`utime::text`), 'utime_str']
+                                                    ]
+                                                },
+                                                raw: true
+                                            })
+                                            : await Model.findByPk(filteredItem[availableUniqueKey], { 
+                                                transaction,
+                                                attributes: {
+                                                    include: [
+                                                        [Sequelize.literal(`utime::text`), 'utime_str']
+                                                    ]
+                                                },
+                                                raw: true
+                                            });
+                                    }
                                     
                                     if (retryRecord) {
                                         // 기존 레코드의 utime 값 (데이터베이스에서 문자열로 직접 가져옴)
@@ -314,8 +345,26 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         if (shouldUpdate) {
                                             // 업데이트 수행
                                             const updateData = { ...filteredItem };
-                                            const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
-                                            keysToRemove.forEach(key => delete updateData[key]);
+                                            
+                                            // primary key로 찾았으면 primary key를 제거, 아니면 availableUniqueKey를 제거
+                                            let updateWhere = null;
+                                            if (primaryKeyValue && retryRecord) {
+                                                const primaryKeyWhere = Array.isArray(primaryKey)
+                                                    ? primaryKey.reduce((acc, key) => {
+                                                        if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                                            acc[key] = filteredItem[key];
+                                                        }
+                                                        return acc;
+                                                    }, {})
+                                                    : { [primaryKey]: filteredItem[primaryKey] };
+                                                updateWhere = primaryKeyWhere;
+                                                const keysToRemove = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
+                                                keysToRemove.forEach(key => delete updateData[key]);
+                                            } else if (availableUniqueKey) {
+                                                updateWhere = whereCondition;
+                                                const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                                keysToRemove.forEach(key => delete updateData[key]);
+                                            }
                                             
                                             // utime을 문자열로 보장하여 timezone 변환 방지
                                             if (updateData.utime) {
@@ -335,12 +384,14 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 updateData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
                                             }
                                             
-                                            await Model.update(updateData, { where: whereCondition, transaction });
-                                            const updated = Array.isArray(availableUniqueKey)
-                                                ? await Model.findOne({ where: whereCondition, transaction })
-                                                : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                            results.push({ index: i, action: 'updated', data: updated });
-                                            updatedCount++;
+                                            if (updateWhere) {
+                                                await Model.update(updateData, { where: updateWhere, transaction });
+                                                const updated = await Model.findOne({ where: updateWhere, transaction });
+                                                results.push({ index: i, action: 'updated', data: updated });
+                                                updatedCount++;
+                                            } else {
+                                                throw new Error('Cannot determine update condition');
+                                            }
                                             
                                             // SAVEPOINT 해제
                                             try {
