@@ -19,7 +19,9 @@ function responseLogger(req, res, next) {
             console.error('');
         }
         
-        const routerName = extractRouterName(path);
+        // 테이블(라우터) 이름 추출 및 강조
+        const routerNameRaw = extractRouterName(path);
+        const routerName = `**${routerNameRaw}**`;
         
         // CRUD 작업 종류
         const operation = getOperationType(req.method);
@@ -39,10 +41,11 @@ function responseLogger(req, res, next) {
             dataCount = req._dataCount || 1;
         }
         
-        // 데이터베이스 이름만 (host:port 제거)
-        const dbName = req.dbConfig 
+        // 데이터베이스 이름만 (host:port 제거) - 출력 시 [[ ]]로 감싸기
+        const rawDbName = req.dbConfig 
             ? req.dbConfig.database
             : 'N/A';
+        const dbName = `[[${rawDbName}]]`;
         
         // 처리 통계 정보가 있으면 총 개수만 출력 (pagination으로 나눠서 들어올 때도 총 개수만 표시)
         if (req._processingStats) {
