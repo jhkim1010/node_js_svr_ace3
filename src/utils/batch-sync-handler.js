@@ -31,18 +31,22 @@ function filterModelFields(Model, data) {
 }
 
 // 모델에서 unique key 목록 추출 (primary key + unique constraints)
-function getUniqueKeys(Model, primaryKey) {
+// excludePrimaryKey: true인 경우 primary key를 unique key 목록에서 제외
+function getUniqueKeys(Model, primaryKey, excludePrimaryKey = false) {
     const uniqueKeys = [];
     
-    // primary key 추가
-    if (primaryKey) {
+    // primary key 추가 (excludePrimaryKey가 false인 경우에만)
+    if (primaryKey && !excludePrimaryKey) {
         uniqueKeys.push(Array.isArray(primaryKey) ? primaryKey : [primaryKey]);
     }
     
     // Model.rawAttributes에서 unique: true인 필드 찾기
     if (Model.rawAttributes) {
         for (const [fieldName, attr] of Object.entries(Model.rawAttributes)) {
-            if (attr.unique === true) {
+            // primary key가 아닌 unique 필드만 추가
+            const isPrimaryKey = attr.primaryKey === true || 
+                                (Array.isArray(primaryKey) ? primaryKey.includes(fieldName) : primaryKey === fieldName);
+            if (attr.unique === true && !isPrimaryKey) {
                 uniqueKeys.push([fieldName]);
             }
         }
@@ -52,7 +56,13 @@ function getUniqueKeys(Model, primaryKey) {
     if (Model.options && Model.options.indexes) {
         for (const index of Model.options.indexes) {
             if (index.unique === true && index.fields && Array.isArray(index.fields)) {
-                uniqueKeys.push(index.fields);
+                // primary key와 겹치지 않는 인덱스만 추가
+                const isPrimaryKeyIndex = Array.isArray(primaryKey) 
+                    ? primaryKey.every(key => index.fields.includes(key)) && index.fields.length === primaryKey.length
+                    : index.fields.length === 1 && index.fields[0] === primaryKey;
+                if (!isPrimaryKeyIndex) {
+                    uniqueKeys.push(index.fields);
+                }
             }
         }
     }
