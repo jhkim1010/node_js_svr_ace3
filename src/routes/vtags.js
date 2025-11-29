@@ -64,10 +64,22 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Vtags, 'vtag_id', 'Vtags');
-        await notifyDbChange(req, Vtags, result.action === 'created' ? 'create' : 'update', result.data);
-        res.status(result.action === 'created' ? 201 : 200).json(result.data);
+        // 일반 단일 생성 요청도 utime 비교 + primary key 우선 순서 적용
+        req.body.data = [rawData];
+        const result = await handleUtimeComparisonArrayData(req, res, Vtags, primaryKey, 'Vtags');
+
+        const first = result.results && result.results[0];
+        const action = first?.action || 'created';
+        const data = first?.data || rawData;
+
+        if (action === 'skipped') {
+            // 중복(unique) 또는 FK 문제로 스킵된 경우도 에러가 아닌 정상 응답으로 처리
+            await notifyDbChange(req, Vtags, 'skip', data);
+            return res.status(200).json(first);
+        }
+
+        await notifyDbChange(req, Vtags, action === 'created' ? 'create' : 'update', data);
+        res.status(action === 'created' ? 201 : 200).json(data);
     } catch (err) {
         handleInsertUpdateError(err, req, 'Vtags', 'vtag_id', 'vtags');
         res.status(400).json({ 
