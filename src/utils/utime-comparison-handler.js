@@ -213,40 +213,39 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             }
                         } else {
                             // 레코드가 없으면 INSERT 시도
-                            try {
-                                // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
-                                const createData = { ...filteredItem };
-                                if (createData.utime) {
-                                    let utimeStr = null;
-                                    if (createData.utime instanceof Date) {
-                                        // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
-                                        const year = createData.utime.getFullYear();
-                                        const month = String(createData.utime.getMonth() + 1).padStart(2, '0');
-                                        const day = String(createData.utime.getDate()).padStart(2, '0');
-                                        const hours = String(createData.utime.getHours()).padStart(2, '0');
-                                        const minutes = String(createData.utime.getMinutes()).padStart(2, '0');
-                                        const seconds = String(createData.utime.getSeconds()).padStart(2, '0');
-                                        const ms = String(createData.utime.getMilliseconds()).padStart(3, '0');
-                                        utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-                                    } else {
-                                        // 문자열인 경우 그대로 사용 (timezone 변환 없음)
-                                        utimeStr = String(createData.utime);
-                                    }
-                                    // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
-                                    createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
+                            // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
+                            const createData = { ...filteredItem };
+                            if (createData.utime) {
+                                let utimeStr = null;
+                                if (createData.utime instanceof Date) {
+                                    // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
+                                    const year = createData.utime.getFullYear();
+                                    const month = String(createData.utime.getMonth() + 1).padStart(2, '0');
+                                    const day = String(createData.utime.getDate()).padStart(2, '0');
+                                    const hours = String(createData.utime.getHours()).padStart(2, '0');
+                                    const minutes = String(createData.utime.getMinutes()).padStart(2, '0');
+                                    const seconds = String(createData.utime.getSeconds()).padStart(2, '0');
+                                    const ms = String(createData.utime.getMilliseconds()).padStart(3, '0');
+                                    utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+                                } else {
+                                    // 문자열인 경우 그대로 사용 (timezone 변환 없음)
+                                    utimeStr = String(createData.utime);
                                 }
+                                // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
+                                createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
+                            }
+                            try {
+                                const created = await Model.create(createData, { transaction });
+                                results.push({ index: i, action: 'created', data: created });
+                                createdCount++;
+                                
+                                // SAVEPOINT 해제
                                 try {
-                                    const created = await Model.create(createData, { transaction });
-                                    results.push({ index: i, action: 'created', data: created });
-                                    createdCount++;
-                                    
-                                    // SAVEPOINT 해제
-                                    try {
-                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                                    } catch (releaseErr) {
-                                        // 무시
-                                    }
-                                } catch (createErr) {
+                                    await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                } catch (releaseErr) {
+                                    // 무시
+                                }
+                            } catch (createErr) {
                                 // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 레코드를 다시 조회하여 utime 비교 수행
                                 if (isUniqueConstraintError(createErr)) {
                                     try {
