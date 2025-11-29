@@ -2,6 +2,8 @@
 const { Sequelize } = require('sequelize');
 const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKey, buildWhereCondition, isUniqueConstraintError } = require('./batch-sync-handler');
 const { processBatchedArray } = require('./batch-processor');
+const { convertUtimeToString, convertUtimeToSequelizeLiteral } = require('./utime-helpers');
+const { findRecordByPrimaryKey, processRecordWithUtimeComparison, handlePrimaryKeyConflict } = require('./utime-record-operations');
 
 /**
  * utime을 비교하여 클라이언트 utime이 더 높을 때만 업데이트하는 핸들러
@@ -53,30 +55,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 const filteredItem = filterModelFields(Model, cleanedData);
                 
                 // 클라이언트에서 온 utime 값 (문자열로 직접 비교, timezone 변환 없음)
-                let clientUtimeStr = null;
-                if (filteredItem.utime) {
-                    if (filteredItem.utime instanceof Date) {
-                        // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
-                        // YYYY-MM-DD HH:mm:ss.SSS 형식으로 변환
-                        const year = filteredItem.utime.getFullYear();
-                        const month = String(filteredItem.utime.getMonth() + 1).padStart(2, '0');
-                        const day = String(filteredItem.utime.getDate()).padStart(2, '0');
-                        const hours = String(filteredItem.utime.getHours()).padStart(2, '0');
-                        const minutes = String(filteredItem.utime.getMinutes()).padStart(2, '0');
-                        const seconds = String(filteredItem.utime.getSeconds()).padStart(2, '0');
-                        const ms = String(filteredItem.utime.getMilliseconds()).padStart(3, '0');
-                        clientUtimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-                    } else {
-                        // 문자열인 경우 ISO 8601 형식의 'T'를 공백으로 변환하여 통일된 형식으로 비교
-                        // "2025-11-27T19:20:52.615" -> "2025-11-27 19:20:52.615"
-                        let utimeStr = String(filteredItem.utime);
-                        // 'T'를 공백으로 변환 (ISO 8601 형식 처리)
-                        utimeStr = utimeStr.replace(/T/, ' ');
-                        // 시간대 정보 제거 (Z, +09:00 등)
-                        utimeStr = utimeStr.replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '');
-                        clientUtimeStr = utimeStr.trim();
-                    }
-                }
+                const clientUtimeStr = convertUtimeToString(filteredItem.utime);
                 
                 // UPDATE operation 처리
                 if (operation === 'UPDATE' || operation === 'INSERT' || operation === 'CREATE') {
@@ -160,23 +139,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 
                                 // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
                                 if (updateData.utime) {
-                                    let utimeStr = null;
-                                    if (updateData.utime instanceof Date) {
-                                        // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
-                                        const year = updateData.utime.getFullYear();
-                                        const month = String(updateData.utime.getMonth() + 1).padStart(2, '0');
-                                        const day = String(updateData.utime.getDate()).padStart(2, '0');
-                                        const hours = String(updateData.utime.getHours()).padStart(2, '0');
-                                        const minutes = String(updateData.utime.getMinutes()).padStart(2, '0');
-                                        const seconds = String(updateData.utime.getSeconds()).padStart(2, '0');
-                                        const ms = String(updateData.utime.getMilliseconds()).padStart(3, '0');
-                                        utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-                                    } else {
-                                        // 문자열인 경우 그대로 사용 (timezone 변환 없음)
-                                        utimeStr = String(updateData.utime);
-                                    }
-                                    // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
-                                    updateData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
+                                    updateData.utime = convertUtimeToSequelizeLiteral(updateData.utime);
                                 }
                                 
                                 await Model.update(updateData, { where: whereCondition, transaction });
@@ -212,67 +175,31 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                             }
                         } else {
-                            // 레코드가 없으면 INSERT 시도
-                            // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
-                            const createData = { ...filteredItem };
-                            if (createData.utime) {
-                                let utimeStr = null;
-                                if (createData.utime instanceof Date) {
-                                    // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
-                                    const year = createData.utime.getFullYear();
-                                    const month = String(createData.utime.getMonth() + 1).padStart(2, '0');
-                                    const day = String(createData.utime.getDate()).padStart(2, '0');
-                                    const hours = String(createData.utime.getHours()).padStart(2, '0');
-                                    const minutes = String(createData.utime.getMinutes()).padStart(2, '0');
-                                    const seconds = String(createData.utime.getSeconds()).padStart(2, '0');
-                                    const ms = String(createData.utime.getMilliseconds()).padStart(3, '0');
-                                    utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-                                } else {
-                                    // 문자열인 경우 그대로 사용 (timezone 변환 없음)
-                                    utimeStr = String(createData.utime);
-                                }
-                                // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
-                                createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
-                            }
-                            try {
-                                const created = await Model.create(createData, { transaction });
-                                results.push({ index: i, action: 'created', data: created });
-                                createdCount++;
+                            // availableUniqueKey로 레코드를 찾지 못했을 때, primary key로도 확인
+                            let existingRecordByPk = null;
+                            if (primaryKey) {
+                                const primaryKeyValue = Array.isArray(primaryKey) 
+                                    ? primaryKey.map(key => filteredItem[key]).filter(v => v !== undefined && v !== null)
+                                    : filteredItem[primaryKey];
                                 
-                                // SAVEPOINT 해제
-                                try {
-                                    await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                                } catch (releaseErr) {
-                                    // 무시
-                                }
-                            } catch (createErr) {
-                                // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 primary key로 레코드를 조회하여 utime 비교 수행
-                                if (isUniqueConstraintError(createErr) && primaryKey) {
-                                    try {
-                                        // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
-                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
-                                    } catch (rollbackErr) {
-                                        // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
-                                    }
+                                if (primaryKeyValue) {
+                                    const primaryKeyWhere = Array.isArray(primaryKey)
+                                        ? primaryKey.reduce((acc, key) => {
+                                            if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                                acc[key] = filteredItem[key];
+                                            }
+                                            return acc;
+                                        }, {})
+                                        : { [primaryKey]: filteredItem[primaryKey] };
                                     
-                                    // primary key로 레코드 조회 (primary key 충돌이 발생했을 수 있으므로)
-                                    const primaryKeyValue = Array.isArray(primaryKey) 
-                                        ? primaryKey.map(key => filteredItem[key]).filter(v => v !== undefined && v !== null)
-                                        : filteredItem[primaryKey];
+                                    // availableUniqueKey가 primary key와 다른 경우에만 primary key로 조회
+                                    const isPrimaryKeySameAsUniqueKey = Array.isArray(availableUniqueKey)
+                                        ? Array.isArray(primaryKey) && availableUniqueKey.length === primaryKey.length && 
+                                          availableUniqueKey.every(key => primaryKey.includes(key))
+                                        : availableUniqueKey === primaryKey;
                                     
-                                    let retryRecord = null;
-                                    
-                                    if (primaryKeyValue) {
-                                        const primaryKeyWhere = Array.isArray(primaryKey)
-                                            ? primaryKey.reduce((acc, key) => {
-                                                if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
-                                                    acc[key] = filteredItem[key];
-                                                }
-                                                return acc;
-                                            }, {})
-                                            : { [primaryKey]: filteredItem[primaryKey] };
-                                        
-                                        retryRecord = await Model.findOne({ 
+                                    if (!isPrimaryKeySameAsUniqueKey) {
+                                        existingRecordByPk = await Model.findOne({ 
                                             where: primaryKeyWhere, 
                                             transaction,
                                             attributes: {
@@ -283,143 +210,324 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             raw: true
                                         });
                                     }
-                                    
-                                    // primary key로 레코드를 찾지 못했으면 availableUniqueKey로 시도
-                                    if (!retryRecord && availableUniqueKey) {
-                                        retryRecord = Array.isArray(availableUniqueKey)
-                                            ? await Model.findOne({ 
-                                                where: whereCondition, 
-                                                transaction,
-                                                attributes: {
-                                                    include: [
-                                                        [Sequelize.literal(`utime::text`), 'utime_str']
-                                                    ]
-                                                },
-                                                raw: true
-                                            })
-                                            : await Model.findByPk(filteredItem[availableUniqueKey], { 
-                                                transaction,
-                                                attributes: {
-                                                    include: [
-                                                        [Sequelize.literal(`utime::text`), 'utime_str']
-                                                    ]
-                                                },
-                                                raw: true
-                                            });
-                                    }
-                                    
-                                    if (retryRecord) {
-                                        // 기존 레코드의 utime 값 (데이터베이스에서 문자열로 직접 가져옴)
-                                        let serverUtimeStr = null;
-                                        if (retryRecord.utime_str) {
-                                            serverUtimeStr = String(retryRecord.utime_str).trim();
-                                        } else if (retryRecord.utime) {
-                                            if (retryRecord.utime instanceof Date) {
-                                                const rawRecord = await Model.findOne({ 
-                                                    where: whereCondition, 
-                                                    transaction,
-                                                    attributes: [[Sequelize.literal(`utime::text`), 'utime']],
-                                                    raw: true
-                                                });
-                                                if (rawRecord && rawRecord.utime) {
-                                                    serverUtimeStr = String(rawRecord.utime).trim();
+                                }
+                            }
+                            
+                            if (existingRecordByPk) {
+                                // primary key로 레코드를 찾았으면 utime 비교 수행
+                                let serverUtimeStr = null;
+                                if (existingRecordByPk.utime_str) {
+                                    serverUtimeStr = String(existingRecordByPk.utime_str).trim();
+                                } else if (existingRecordByPk.utime) {
+                                    if (existingRecordByPk.utime instanceof Date) {
+                                        const primaryKeyWhere = Array.isArray(primaryKey)
+                                            ? primaryKey.reduce((acc, key) => {
+                                                if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                                    acc[key] = filteredItem[key];
                                                 }
-                                            } else {
-                                                serverUtimeStr = String(retryRecord.utime).trim();
-                                            }
-                                        }
-                                        
-                                        // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트
-                                        let shouldUpdate = false;
-                                        
-                                        if (!clientUtimeStr && !serverUtimeStr) {
-                                            shouldUpdate = true;
-                                        } else if (clientUtimeStr && !serverUtimeStr) {
-                                            shouldUpdate = true;
-                                        } else if (clientUtimeStr && serverUtimeStr) {
-                                            shouldUpdate = clientUtimeStr > serverUtimeStr;
-                                        } else {
-                                            shouldUpdate = false;
-                                        }
-                                        
-                                        if (shouldUpdate) {
-                                            // 업데이트 수행
-                                            const updateData = { ...filteredItem };
-                                            
-                                            // primary key로 찾았으면 primary key를 제거, 아니면 availableUniqueKey를 제거
-                                            let updateWhere = null;
-                                            if (primaryKeyValue && retryRecord) {
-                                                const primaryKeyWhere = Array.isArray(primaryKey)
-                                                    ? primaryKey.reduce((acc, key) => {
-                                                        if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
-                                                            acc[key] = filteredItem[key];
-                                                        }
-                                                        return acc;
-                                                    }, {})
-                                                    : { [primaryKey]: filteredItem[primaryKey] };
-                                                updateWhere = primaryKeyWhere;
-                                                const keysToRemove = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
-                                                keysToRemove.forEach(key => delete updateData[key]);
-                                            } else if (availableUniqueKey) {
-                                                updateWhere = whereCondition;
-                                                const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
-                                                keysToRemove.forEach(key => delete updateData[key]);
-                                            }
-                                            
-                                            // utime을 문자열로 보장하여 timezone 변환 방지
-                                            if (updateData.utime) {
-                                                let utimeStr = null;
-                                                if (updateData.utime instanceof Date) {
-                                                    const year = updateData.utime.getFullYear();
-                                                    const month = String(updateData.utime.getMonth() + 1).padStart(2, '0');
-                                                    const day = String(updateData.utime.getDate()).padStart(2, '0');
-                                                    const hours = String(updateData.utime.getHours()).padStart(2, '0');
-                                                    const minutes = String(updateData.utime.getMinutes()).padStart(2, '0');
-                                                    const seconds = String(updateData.utime.getSeconds()).padStart(2, '0');
-                                                    const ms = String(updateData.utime.getMilliseconds()).padStart(3, '0');
-                                                    utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-                                                } else {
-                                                    utimeStr = String(updateData.utime);
-                                                }
-                                                updateData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
-                                            }
-                                            
-                                            if (updateWhere) {
-                                                await Model.update(updateData, { where: updateWhere, transaction });
-                                                const updated = await Model.findOne({ where: updateWhere, transaction });
-                                                results.push({ index: i, action: 'updated', data: updated });
-                                                updatedCount++;
-                                            } else {
-                                                throw new Error('Cannot determine update condition');
-                                            }
-                                            
-                                            // SAVEPOINT 해제
-                                            try {
-                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                                            } catch (releaseErr) {
-                                                // 무시
-                                            }
-                                        } else {
-                                            // 서버 utime이 더 높거나 같으면 스킵
-                                            results.push({ 
-                                                index: i, 
-                                                action: 'skipped', 
-                                                reason: 'server_utime_newer',
-                                                serverUtime: serverUtimeStr,
-                                                clientUtime: clientUtimeStr,
-                                                data: retryRecord 
-                                            });
-                                            skippedCount++;
-                                            
-                                            // SAVEPOINT 해제
-                                            try {
-                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                                            } catch (releaseErr) {
-                                                // 무시
-                                            }
+                                                return acc;
+                                            }, {})
+                                            : { [primaryKey]: filteredItem[primaryKey] };
+                                        const rawRecord = await Model.findOne({ 
+                                            where: primaryKeyWhere, 
+                                            transaction,
+                                            attributes: [[Sequelize.literal(`utime::text`), 'utime']],
+                                            raw: true
+                                        });
+                                        if (rawRecord && rawRecord.utime) {
+                                            serverUtimeStr = String(rawRecord.utime).trim();
                                         }
                                     } else {
-                                        // 레코드를 찾을 수 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                        serverUtimeStr = String(existingRecordByPk.utime).trim();
+                                    }
+                                }
+                                
+                                // utime 비교
+                                let shouldUpdate = false;
+                                
+                                if (!clientUtimeStr && !serverUtimeStr) {
+                                    shouldUpdate = true;
+                                } else if (clientUtimeStr && !serverUtimeStr) {
+                                    shouldUpdate = true;
+                                } else if (clientUtimeStr && serverUtimeStr) {
+                                    shouldUpdate = clientUtimeStr > serverUtimeStr;
+                                } else {
+                                    shouldUpdate = false;
+                                }
+                                
+                                if (shouldUpdate) {
+                                    // 업데이트 수행
+                                    const updateData = { ...filteredItem };
+                                    const keysToRemove = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
+                                    keysToRemove.forEach(key => delete updateData[key]);
+                                    
+                                    // utime을 문자열로 보장하여 timezone 변환 방지
+                                    if (updateData.utime) {
+                                        let utimeStr = null;
+                                        if (updateData.utime instanceof Date) {
+                                            const year = updateData.utime.getFullYear();
+                                            const month = String(updateData.utime.getMonth() + 1).padStart(2, '0');
+                                            const day = String(updateData.utime.getDate()).padStart(2, '0');
+                                            const hours = String(updateData.utime.getHours()).padStart(2, '0');
+                                            const minutes = String(updateData.utime.getMinutes()).padStart(2, '0');
+                                            const seconds = String(updateData.utime.getSeconds()).padStart(2, '0');
+                                            const ms = String(updateData.utime.getMilliseconds()).padStart(3, '0');
+                                            utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+                                        } else {
+                                            utimeStr = String(updateData.utime);
+                                        }
+                                        updateData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
+                                    }
+                                    
+                                    const primaryKeyWhere = Array.isArray(primaryKey)
+                                        ? primaryKey.reduce((acc, key) => {
+                                            if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                                acc[key] = filteredItem[key];
+                                            }
+                                            return acc;
+                                        }, {})
+                                        : { [primaryKey]: filteredItem[primaryKey] };
+                                    
+                                    await Model.update(updateData, { where: primaryKeyWhere, transaction });
+                                    const updated = await Model.findOne({ where: primaryKeyWhere, transaction });
+                                    results.push({ index: i, action: 'updated', data: updated });
+                                    updatedCount++;
+                                    
+                                    // SAVEPOINT 해제
+                                    try {
+                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (releaseErr) {
+                                        // 무시
+                                    }
+                                } else {
+                                    // 서버 utime이 더 높거나 같으면 스킵
+                                    results.push({ 
+                                        index: i, 
+                                        action: 'skipped', 
+                                        reason: 'server_utime_newer',
+                                        serverUtime: serverUtimeStr,
+                                        clientUtime: clientUtimeStr,
+                                        data: existingRecordByPk 
+                                    });
+                                    skippedCount++;
+                                    
+                                    // SAVEPOINT 해제
+                                    try {
+                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (releaseErr) {
+                                        // 무시
+                                    }
+                                }
+                            } else {
+                                // 레코드가 없으면 INSERT 시도
+                                // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
+                                const createData = { ...filteredItem };
+                                if (createData.utime) {
+                                    createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
+                                }
+                                try {
+                                    const created = await Model.create(createData, { transaction });
+                                    results.push({ index: i, action: 'created', data: created });
+                                    createdCount++;
+                                    
+                                    // SAVEPOINT 해제
+                                    try {
+                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                    } catch (releaseErr) {
+                                        // 무시
+                                    }
+                                } catch (createErr) {
+                                    // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 primary key로 레코드를 조회하여 utime 비교 수행
+                                    if (isUniqueConstraintError(createErr) && primaryKey) {
+                                        try {
+                                            // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
+                                            await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                        } catch (rollbackErr) {
+                                            // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
+                                        }
+                                        
+                                        // primary key로 레코드 조회 (primary key 충돌이 발생했을 수 있으므로)
+                                        const primaryKeyValue = Array.isArray(primaryKey) 
+                                            ? primaryKey.map(key => filteredItem[key]).filter(v => v !== undefined && v !== null)
+                                            : filteredItem[primaryKey];
+                                        
+                                        let retryRecord = null;
+                                        
+                                        if (primaryKeyValue) {
+                                            const primaryKeyWhere = Array.isArray(primaryKey)
+                                                ? primaryKey.reduce((acc, key) => {
+                                                    if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                                        acc[key] = filteredItem[key];
+                                                    }
+                                                    return acc;
+                                                }, {})
+                                                : { [primaryKey]: filteredItem[primaryKey] };
+                                            
+                                            retryRecord = await Model.findOne({ 
+                                                where: primaryKeyWhere, 
+                                                transaction,
+                                                attributes: {
+                                                    include: [
+                                                        [Sequelize.literal(`utime::text`), 'utime_str']
+                                                    ]
+                                                },
+                                                raw: true
+                                            });
+                                        }
+                                        
+                                        // primary key로 레코드를 찾지 못했으면 availableUniqueKey로 시도
+                                        if (!retryRecord && availableUniqueKey) {
+                                            retryRecord = Array.isArray(availableUniqueKey)
+                                                ? await Model.findOne({ 
+                                                    where: whereCondition, 
+                                                    transaction,
+                                                    attributes: {
+                                                        include: [
+                                                            [Sequelize.literal(`utime::text`), 'utime_str']
+                                                        ]
+                                                    },
+                                                    raw: true
+                                                })
+                                                : await Model.findByPk(filteredItem[availableUniqueKey], { 
+                                                    transaction,
+                                                    attributes: {
+                                                        include: [
+                                                            [Sequelize.literal(`utime::text`), 'utime_str']
+                                                        ]
+                                                    },
+                                                    raw: true
+                                                });
+                                        }
+                                        
+                                        if (retryRecord) {
+                                            // 기존 레코드의 utime 값 (데이터베이스에서 문자열로 직접 가져옴)
+                                            let serverUtimeStr = null;
+                                            if (retryRecord.utime_str) {
+                                                serverUtimeStr = String(retryRecord.utime_str).trim();
+                                            } else if (retryRecord.utime) {
+                                                if (retryRecord.utime instanceof Date) {
+                                                    const primaryKeyWhereForUtime = Array.isArray(primaryKey)
+                                                        ? primaryKey.reduce((acc, key) => {
+                                                            if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                                                acc[key] = filteredItem[key];
+                                                            }
+                                                            return acc;
+                                                        }, {})
+                                                        : { [primaryKey]: filteredItem[primaryKey] };
+                                                    const rawRecord = await Model.findOne({ 
+                                                        where: primaryKeyWhereForUtime, 
+                                                        transaction,
+                                                        attributes: [[Sequelize.literal(`utime::text`), 'utime']],
+                                                        raw: true
+                                                    });
+                                                    if (rawRecord && rawRecord.utime) {
+                                                        serverUtimeStr = String(rawRecord.utime).trim();
+                                                    }
+                                                } else {
+                                                    serverUtimeStr = String(retryRecord.utime).trim();
+                                                }
+                                            }
+                                            
+                                            // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트
+                                            let shouldUpdate = false;
+                                            
+                                            if (!clientUtimeStr && !serverUtimeStr) {
+                                                shouldUpdate = true;
+                                            } else if (clientUtimeStr && !serverUtimeStr) {
+                                                shouldUpdate = true;
+                                            } else if (clientUtimeStr && serverUtimeStr) {
+                                                shouldUpdate = clientUtimeStr > serverUtimeStr;
+                                            } else {
+                                                shouldUpdate = false;
+                                            }
+                                            
+                                            if (shouldUpdate) {
+                                                // 업데이트 수행
+                                                const updateData = { ...filteredItem };
+                                                
+                                                // primary key로 찾았으면 primary key를 제거, 아니면 availableUniqueKey를 제거
+                                                let updateWhere = null;
+                                                if (primaryKeyValue && retryRecord) {
+                                                    const primaryKeyWhere = Array.isArray(primaryKey)
+                                                        ? primaryKey.reduce((acc, key) => {
+                                                            if (filteredItem[key] !== undefined && filteredItem[key] !== null) {
+                                                                acc[key] = filteredItem[key];
+                                                            }
+                                                            return acc;
+                                                        }, {})
+                                                        : { [primaryKey]: filteredItem[primaryKey] };
+                                                    updateWhere = primaryKeyWhere;
+                                                    const keysToRemove = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
+                                                    keysToRemove.forEach(key => delete updateData[key]);
+                                                } else if (availableUniqueKey) {
+                                                    updateWhere = whereCondition;
+                                                    const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                                    keysToRemove.forEach(key => delete updateData[key]);
+                                                }
+                                                
+                                                // utime을 문자열로 보장하여 timezone 변환 방지
+                                                if (updateData.utime) {
+                                                    let utimeStr = null;
+                                                    if (updateData.utime instanceof Date) {
+                                                        const year = updateData.utime.getFullYear();
+                                                        const month = String(updateData.utime.getMonth() + 1).padStart(2, '0');
+                                                        const day = String(updateData.utime.getDate()).padStart(2, '0');
+                                                        const hours = String(updateData.utime.getHours()).padStart(2, '0');
+                                                        const minutes = String(updateData.utime.getMinutes()).padStart(2, '0');
+                                                        const seconds = String(updateData.utime.getSeconds()).padStart(2, '0');
+                                                        const ms = String(updateData.utime.getMilliseconds()).padStart(3, '0');
+                                                        utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+                                                    } else {
+                                                        utimeStr = String(updateData.utime);
+                                                    }
+                                                    updateData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
+                                                }
+                                                
+                                                if (updateWhere) {
+                                                    await Model.update(updateData, { where: updateWhere, transaction });
+                                                    const updated = await Model.findOne({ where: updateWhere, transaction });
+                                                    results.push({ index: i, action: 'updated', data: updated });
+                                                    updatedCount++;
+                                                    
+                                                    // SAVEPOINT 해제
+                                                    try {
+                                                        await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                                    } catch (releaseErr) {
+                                                        // 무시
+                                                    }
+                                                } else {
+                                                    throw new Error('Cannot determine update condition');
+                                                }
+                                            } else {
+                                                // 서버 utime이 더 높거나 같으면 스킵
+                                                results.push({ 
+                                                    index: i, 
+                                                    action: 'skipped', 
+                                                    reason: 'server_utime_newer',
+                                                    serverUtime: serverUtimeStr,
+                                                    clientUtime: clientUtimeStr,
+                                                    data: retryRecord 
+                                                });
+                                                skippedCount++;
+                                                
+                                                // SAVEPOINT 해제
+                                                try {
+                                                    await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                                } catch (releaseErr) {
+                                                    // 무시
+                                                }
+                                            }
+                                        } else {
+                                            // 레코드를 찾을 수 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                            try {
+                                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (rollbackErr) {
+                                                // 무시
+                                            }
+                                            throw createErr;
+                                        }
+                                    } else {
+                                        // unique constraint 에러가 아니거나 primary key가 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
                                         try {
                                             await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                                         } catch (rollbackErr) {
@@ -427,14 +535,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         }
                                         throw createErr;
                                     }
-                                } else {
-                                    // unique constraint 에러가 아니면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
-                                    try {
-                                        await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
-                                    } catch (rollbackErr) {
-                                        // 무시
-                                    }
-                                    throw createErr;
                                 }
                             }
                         }
