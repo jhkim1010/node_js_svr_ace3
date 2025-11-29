@@ -4,7 +4,7 @@ const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKe
 const { processBatchedArray } = require('./batch-processor');
 const { convertUtimeToString, convertUtimeToSequelizeLiteral } = require('./utime-helpers');
 const { findRecordByPrimaryKey, processRecordWithUtimeComparison, handlePrimaryKeyConflict } = require('./utime-record-operations');
-const { logErrorWithLocation } = require('./log-utils');
+const { logErrorWithLocation, logInfoWithLocation } = require('./log-utils');
 
 /**
  * utime을 비교하여 클라이언트 utime이 더 높을 때만 업데이트하는 핸들러
@@ -143,9 +143,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
-                            logErrorWithLocation(`ERROR: ${modelName} INSERT skipped due to unique constraint`);
-                            console.error(`   Constraint Name: ${constraintName}`);
-                            console.error(`   Error Message: ${errorMsg}`);
+                            logInfoWithLocation(`SKIP: ${modelName} INSERT skipped due to unique constraint`);
+                            console.log(`   Constraint Name: ${constraintName}`);
+                            console.log(`   Error Message: ${errorMsg}`);
 
                             // 실패한 INSERT로 인해 트랜잭션이 abort 상태가 되지 않도록 SAVEPOINT로 롤백
                             try {
@@ -183,12 +183,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const referencedTable = tableMatch ? tableMatch[1] : '알 수 없는 테이블';
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
-                            logErrorWithLocation(`ERROR: ${modelName} INSERT skipped due to foreign key constraint`);
-                            console.error(`   Constraint Name: ${constraintName}`);
-                            console.error(`   Foreign Key Column: ${fkColumn}`);
-                            console.error(`   Invalid Value: ${invalidValue}`);
-                            console.error(`   Referenced Table: ${referencedTable}`);
-                            console.error(`   Error Message: ${errorMsg}`);
+                            logInfoWithLocation(`SKIP: ${modelName} INSERT skipped due to foreign key constraint`);
+                            console.log(`   Constraint Name: ${constraintName}`);
+                            console.log(`   Foreign Key Column: ${fkColumn}`);
+                            console.log(`   Invalid Value: ${invalidValue}`);
+                            console.log(`   Referenced Table: ${referencedTable}`);
+                            console.log(`   Error Message: ${errorMsg}`);
 
                             // 실패한 INSERT로 인해 트랜잭션이 abort 상태가 되지 않도록 SAVEPOINT로 롤백
                             try {

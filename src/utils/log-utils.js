@@ -51,7 +51,21 @@ function logErrorWithLocation(...args) {
     }
 }
 
+/**
+ * 정보 로그를 찍을 때, 호출 위치(파일:라인)를 함께 출력합니다.
+ * @param  {...any} args - console.log 에 전달할 인자들
+ */
+function logInfoWithLocation(...args) {
+    const loc = getCallerLocation();
+    if (loc) {
+        console.log(`[${loc.file}:${loc.line}]`, ...args);
+    } else {
+        console.log('[unknown:0]', ...args);
+    }
+}
+
 module.exports = {
     getCallerLocation,
     logErrorWithLocation,
+    logInfoWithLocation,
 };
