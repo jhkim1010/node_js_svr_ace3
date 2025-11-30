@@ -37,7 +37,7 @@ async function getScriptsToRun() {
     }
 }
 
-router.get('/', async (req, res) => {
+router.post('/', async (req, res) => {
     try {
         // 필수 DB 헤더 검증
         const missingHeaders = [];
@@ -75,12 +75,11 @@ router.get('/', async (req, res) => {
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
         const sequelize = Vcode.sequelize;
         
-        // 날짜 파라미터 처리
-        // 쿼리 파라미터에서 날짜 받기: fecha, date, target_date 등
-        let targetDate = req.query.fecha || req.query.date || req.query.target_date;
+        // 요청 본문에서 date와 sucursal 받기
+        let targetDate = req.body?.date || req.body?.fecha;
+        const sucursal = req.body?.sucursal;
         
-        // 날짜가 제공되지 않으면 기본값 사용
-        // vcodes는 어제 날짜, 나머지는 오늘 날짜
+        // 날짜가 제공되지 않으면 현재 날짜 사용
         let vcodeDate, otherDate;
         
         if (targetDate) {
@@ -98,17 +97,30 @@ router.get('/', async (req, res) => {
             vcodeDate = targetDate;
             otherDate = targetDate;
         } else {
-            // 기본값: vcodes는 어제, 나머지는 오늘
+            // 기본값: 현재 날짜 사용
             const today = new Date();
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            
-            vcodeDate = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
-            otherDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
+            const dateString = today.toISOString().split('T')[0]; // YYYY-MM-DD
+            vcodeDate = dateString;
+            otherDate = dateString;
         }
         
         // 쿼리 1: vcodes 데이터 집계 (b_mercadopago is false) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is false
+        const vcodeWhereConditions = [
+            Sequelize.where(
+                Sequelize.fn('DATE', Sequelize.col('fecha')),
+                vcodeDate
+            ),
+            { b_cancelado: false },
+            { borrado: false },
+            { b_mercadopago: false }
+        ];
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            vcodeWhereConditions.push({ sucursal: sucursal });
+        }
+        
         const vcodeResult = await Vcode.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'operation_count'],
@@ -121,15 +133,7 @@ router.get('/', async (req, res) => {
                 'sucursal'
             ],
             where: {
-                [Sequelize.Op.and]: [
-                    Sequelize.where(
-                        Sequelize.fn('DATE', Sequelize.col('fecha')),
-                        vcodeDate
-                    ),
-                    { b_cancelado: false },
-                    { borrado: false },
-                    { b_mercadopago: false }
-                ]
+                [Sequelize.Op.and]: vcodeWhereConditions
             },
             group: ['sucursal'],
             order: [['sucursal', 'ASC']],
@@ -138,6 +142,19 @@ router.get('/', async (req, res) => {
         
         // 쿼리 2: gastos 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha = target_date AND borrado is false
+        const gastosWhereConditions = [
+            Sequelize.where(
+                Sequelize.fn('DATE', Sequelize.col('fecha')),
+                otherDate
+            ),
+            { borrado: false }
+        ];
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            gastosWhereConditions.push({ sucursal: sucursal });
+        }
+        
         const gastosResult = await Gastos.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'gasto_count'],
@@ -145,13 +162,7 @@ router.get('/', async (req, res) => {
                 'sucursal'
             ],
             where: {
-                [Sequelize.Op.and]: [
-                    Sequelize.where(
-                        Sequelize.fn('DATE', Sequelize.col('fecha')),
-                        otherDate
-                    ),
-                    { borrado: false }
-                ]
+                [Sequelize.Op.and]: gastosWhereConditions
             },
             group: ['sucursal'],
             order: [['sucursal', 'ASC']],
@@ -160,6 +171,19 @@ router.get('/', async (req, res) => {
         
         // 쿼리 3: vdetalle 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha1 = target_date AND borrado is false
+        const vdetalleWhereConditions = [
+            Sequelize.where(
+                Sequelize.fn('DATE', Sequelize.col('fecha1')),
+                otherDate
+            ),
+            { borrado: false }
+        ];
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            vdetalleWhereConditions.push({ sucursal: sucursal });
+        }
+        
         const vdetalleResult = await Vdetalle.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_discount_event'],
@@ -167,13 +191,7 @@ router.get('/', async (req, res) => {
                 'sucursal'
             ],
             where: {
-                [Sequelize.Op.and]: [
-                    Sequelize.where(
-                        Sequelize.fn('DATE', Sequelize.col('fecha1')),
-                        otherDate
-                    ),
-                    { borrado: false }
-                ]
+                [Sequelize.Op.and]: vdetalleWhereConditions
             },
             group: ['sucursal'],
             order: [['sucursal', 'ASC']],
@@ -182,6 +200,21 @@ router.get('/', async (req, res) => {
         
         // 쿼리 4: vcodes 데이터 집계 (MercadoPago) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is true
+        const vcodeMpagoWhereConditions = [
+            Sequelize.where(
+                Sequelize.fn('DATE', Sequelize.col('fecha')),
+                otherDate
+            ),
+            { b_cancelado: false },
+            { borrado: false },
+            { b_mercadopago: true }
+        ];
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            vcodeMpagoWhereConditions.push({ sucursal: sucursal });
+        }
+        
         const vcodeMpagoResult = await Vcode.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_mpago_total'],
@@ -189,15 +222,7 @@ router.get('/', async (req, res) => {
                 'sucursal'
             ],
             where: {
-                [Sequelize.Op.and]: [
-                    Sequelize.where(
-                        Sequelize.fn('DATE', Sequelize.col('fecha')),
-                        otherDate
-                    ),
-                    { b_cancelado: false },
-                    { borrado: false },
-                    { b_mercadopago: true }
-                ]
+                [Sequelize.Op.and]: vcodeMpagoWhereConditions
             },
             group: ['sucursal'],
             order: [['sucursal', 'ASC']],
@@ -272,9 +297,10 @@ router.get('/', async (req, res) => {
         }
         
         const responseData = {
-            fecha: targetDate || otherDate, // 요청된 날짜 또는 오늘 날짜 (YYYY-MM-DD)
+            fecha: targetDate || otherDate, // 요청된 날짜 또는 현재 날짜 (YYYY-MM-DD)
             fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
             fecha_otros: otherDate, // 다른 쿼리에 사용된 날짜
+            sucursal: sucursal || null, // 요청된 sucursal 또는 null (모든 sucursal)
             vcodes: vcodeSummary, // Sucursal별 배열
             gastos: gastosSummary, // Sucursal별 배열
             vdetalle: vdetalleSummary, // Sucursal별 배열
