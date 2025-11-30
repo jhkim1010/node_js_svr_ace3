@@ -140,11 +140,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 const constraintMatch = pkErrorMsg.match(/constraint "([^"]+)"/i);
                                 const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
                                 
-                                // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시
+                                // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시 (데이터 손실이므로 ERROR)
                                 if (['Codigos', 'Todocodigos'].includes(modelName)) {
                                     const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
                                     const descripcion = filteredItem.descripcion || 'N/A';
-                                    logInfoWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
+                                    logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
                                 }
                                 
                                 try {
@@ -200,11 +200,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
-                            // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시
+                            // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시 (데이터 손실이므로 ERROR)
                             if (['Codigos', 'Todocodigos'].includes(modelName)) {
                                 const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
                                 const descripcion = filteredItem.descripcion || 'N/A';
-                                logInfoWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
+                                logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
                             }
 
                             // 실패한 INSERT로 인해 트랜잭션이 abort 상태가 되지 않도록 SAVEPOINT로 롤백
@@ -243,11 +243,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const referencedTable = tableMatch ? tableMatch[1] : '알 수 없는 테이블';
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
-                            // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시
+                            // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시 (데이터 손실이므로 ERROR)
                             if (['Codigos', 'Todocodigos'].includes(modelName)) {
                                 const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
                                 const descripcion = filteredItem.descripcion || 'N/A';
-                                logInfoWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: foreign key constraint (${fkColumn}=${invalidValue} → ${referencedTable})`);
+                                logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: foreign key constraint (${fkColumn}=${invalidValue} → ${referencedTable})`);
                             }
 
                             // 실패한 INSERT로 인해 트랜잭션이 abort 상태가 되지 않도록 SAVEPOINT로 롤백
