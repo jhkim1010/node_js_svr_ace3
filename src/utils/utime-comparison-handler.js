@@ -102,16 +102,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             }
 
                             if (resultPk.action === 'skipped') {
-                                // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시
-                                if (['Codigos', 'Todocodigos'].includes(modelName)) {
-                                    const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
-                                    const descripcion = filteredItem.descripcion || 'N/A';
-                                    const reason = resultPk.reason === 'server_utime_newer' 
-                                        ? '서버 utime이 더 최신' 
-                                        : resultPk.reason || '알 수 없는 이유';
-                                    logInfoWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: ${reason}`);
-                                }
-                                
+                                // 서버 utime이 더 높아서 skip하는 경우는 정상 동작이므로 로그 출력하지 않음
                                 results.push({
                                     index: i,
                                     action: 'skipped',
@@ -200,18 +191,68 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
-                            // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시 (데이터 손실이므로 ERROR)
-                            if (['Codigos', 'Todocodigos'].includes(modelName)) {
-                                const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
-                                const descripcion = filteredItem.descripcion || 'N/A';
-                                logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
-                            }
-
                             // 실패한 INSERT로 인해 트랜잭션이 abort 상태가 되지 않도록 SAVEPOINT로 롤백
                             try {
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
                                 // 무시
+                            }
+
+                            // Primary key로 레코드를 다시 조회하여 utime 비교 시도
+                            let canRetryWithPrimaryKey = true;
+                            const primaryKeyWhereRetry = primaryKeyArray.reduce((acc, key) => {
+                                const value = filteredItem[key];
+                                if (value === undefined || value === null) {
+                                    canRetryWithPrimaryKey = false;
+                                } else {
+                                    acc[key] = value;
+                                }
+                                return acc;
+                            }, {});
+
+                            if (canRetryWithPrimaryKey && Object.keys(primaryKeyWhereRetry).length === primaryKeyArray.length) {
+                                try {
+                                    const resultRetry = await processRecordWithUtimeComparison(
+                                        Model,
+                                        filteredItem,
+                                        clientUtimeStr,
+                                        primaryKeyWhereRetry,
+                                        primaryKeyArray,
+                                        transaction,
+                                        savepointName,
+                                        sequelize
+                                    );
+
+                                    if (resultRetry.action === 'updated') {
+                                        results.push({ index: i, action: 'updated', data: resultRetry.data });
+                                        updatedCount++;
+                                        continue;
+                                    }
+
+                                    if (resultRetry.action === 'skipped') {
+                                        // 서버 utime이 더 높아서 skip하는 경우는 정상 동작이므로 로그 출력하지 않음
+                                        results.push({
+                                            index: i,
+                                            action: 'skipped',
+                                            reason: resultRetry.reason || 'server_utime_newer',
+                                            serverUtime: resultRetry.serverUtime,
+                                            clientUtime: resultRetry.clientUtime,
+                                            data: resultRetry.data
+                                        });
+                                        skippedCount++;
+                                        continue;
+                                    }
+                                } catch (retryErr) {
+                                    // retry 실패 시 원래 에러 처리로 진행
+                                }
+                            }
+
+                            // Primary key로 retry 실패하거나 primary key를 사용할 수 없는 경우
+                            // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시 (데이터 손실이므로 ERROR)
+                            if (['Codigos', 'Todocodigos'].includes(modelName)) {
+                                const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
+                                const descripcion = filteredItem.descripcion || 'N/A';
+                                logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
                             }
 
                             results.push({
@@ -275,7 +316,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             } catch (releaseErr) {
                                 // 무시
                             }
-                        } else {
+                    } else {
                             // 그 외 에러는 SAVEPOINT 롤백 후 그대로 throw (실패로 처리)
                             try {
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
@@ -550,9 +591,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     } catch (releaseErr) {
                                         // 무시
                                     }
-                                }
-                            } else {
-                                // 레코드가 없으면 INSERT 시도
+                            }
+                        } else {
+                            // 레코드가 없으면 INSERT 시도
                                 // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
                                 const createData = { ...filteredItem };
                                 if (createData.utime) {
@@ -700,7 +741,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 
                                                 // utime을 문자열로 보장하여 timezone 변환 방지
                                                 if (updateData.utime) {
-                                                    let utimeStr = null;
+                                    let utimeStr = null;
                                                     if (updateData.utime instanceof Date) {
                                                         const year = updateData.utime.getFullYear();
                                                         const month = String(updateData.utime.getMonth() + 1).padStart(2, '0');
@@ -709,7 +750,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                         const minutes = String(updateData.utime.getMinutes()).padStart(2, '0');
                                                         const seconds = String(updateData.utime.getSeconds()).padStart(2, '0');
                                                         const ms = String(updateData.utime.getMilliseconds()).padStart(3, '0');
-                                                        utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+                                        utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
                                                     } else {
                                                         utimeStr = String(updateData.utime);
                                                     }
@@ -796,9 +837,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
                         }
                         try {
-                            const created = await Model.create(createData, { transaction });
-                            results.push({ index: i, action: 'created', data: created });
-                            createdCount++;
+                        const created = await Model.create(createData, { transaction });
+                        results.push({ index: i, action: 'created', data: created });
+                        createdCount++;
                             
                             // SAVEPOINT 해제
                             try {
@@ -984,9 +1025,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
                     }
                     try {
-                        const created = await Model.create(createData, { transaction });
-                        results.push({ index: i, action: 'created', data: created });
-                        createdCount++;
+                    const created = await Model.create(createData, { transaction });
+                    results.push({ index: i, action: 'created', data: created });
+                    createdCount++;
                         
                         // SAVEPOINT 해제
                         try {
