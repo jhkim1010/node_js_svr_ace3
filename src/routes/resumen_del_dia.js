@@ -1,41 +1,8 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
-const { runScripts } = require('../utils/script-runner');
-const path = require('path');
-const fs = require('fs').promises;
 
 const router = Router();
-
-/**
- * scripts 폴더에서 실행할 스크립트 목록을 가져옵니다
- * @returns {Promise<Array<string>>}
- */
-async function getScriptsToRun() {
-    const scriptsDir = path.join(process.cwd(), 'scripts');
-    
-    try {
-        // scripts 폴더 존재 확인
-        await fs.access(scriptsDir);
-        
-        // 폴더 내 파일 목록 가져오기
-        const files = await fs.readdir(scriptsDir);
-        
-        // 실행 가능한 스크립트 파일 필터링
-        const scriptExtensions = ['.py', '.js', '.ts', '.sh', '.bash', '.ps1', '.bat', '.cmd'];
-        const scripts = files
-            .filter(file => {
-                const ext = path.extname(file).toLowerCase();
-                return scriptExtensions.includes(ext);
-            })
-            .map(file => path.join(scriptsDir, file));
-        
-        return scripts;
-    } catch (error) {
-        // scripts 폴더가 없거나 접근할 수 없는 경우 빈 배열 반환
-        return [];
-    }
-}
 
 router.post('/', async (req, res) => {
     try {
@@ -164,10 +131,11 @@ router.post('/', async (req, res) => {
         });
         
         // 쿼리 3: vdetalle 데이터 집계 - Sucursal별 그룹화
-        // 조건: fecha1 = target_date AND borrado is false
+        // 조건: fecha1 = target_date AND borrado is false AND codigo1 = 'de'
         const vdetalleWhereConditions = [
             { fecha1: otherDate },
-            { borrado: false }
+            { borrado: false },
+            { codigo1: 'de' }
         ];
         
         // sucursal 필터링 추가 (제공된 경우)
@@ -247,43 +215,6 @@ router.post('/', async (req, res) => {
             total_mpago_day: parseFloat(item.total_mpago_day || 0)
         }));
         
-        // 스크립트 실행
-        let scriptPaths = [];
-        
-        // 쿼리 파라미터로 스크립트 지정 가능
-        if (req.query.scripts) {
-            // 쉼표로 구분된 스크립트 이름 또는 경로
-            const scriptNames = req.query.scripts.split(',').map(s => s.trim());
-            const scriptsDir = path.join(process.cwd(), 'scripts');
-            
-            for (const scriptName of scriptNames) {
-                // 절대 경로인지 확인
-                if (path.isAbsolute(scriptName)) {
-                    scriptPaths.push(scriptName);
-                } else {
-                    // 상대 경로인 경우 scripts 폴더 기준으로 찾기
-                    scriptPaths.push(path.join(scriptsDir, scriptName));
-                }
-            }
-        } else {
-            // 쿼리 파라미터가 없으면 scripts 폴더의 모든 스크립트 실행
-            scriptPaths = await getScriptsToRun();
-        }
-        
-        let scriptResults = [];
-        
-        if (scriptPaths.length > 0) {
-            try {
-                scriptResults = await runScripts(scriptPaths, {
-                    parseJson: true, // JSON 출력 자동 파싱
-                    timeout: parseInt(req.query.scriptTimeout) || 60000 // 타임아웃 설정 가능 (기본 60초)
-                });
-            } catch (scriptError) {
-                console.error('Script execution error:', scriptError);
-                // 스크립트 실행 실패해도 계속 진행
-            }
-        }
-        
         const responseData = {
             fecha: targetDate || otherDate, // 요청된 날짜 또는 현재 날짜 (YYYY-MM-DD)
             fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
@@ -291,17 +222,7 @@ router.post('/', async (req, res) => {
             vcodes: vcodeSummary, // Sucursal별 배열
             gastos: gastosSummary, // Sucursal별 배열
             vdetalle: vdetalleSummary, // Sucursal별 배열
-            vcodes_mpago: vcodeMpagoSummary, // Sucursal별 배열
-            scripts: {
-                executed: scriptPaths.length,
-                results: scriptResults.map(result => ({
-                    scriptName: result.scriptName,
-                    success: result.success,
-                    executionTime: result.executionTime,
-                    output: result.parsedOutput || result.stdout,
-                    error: result.error || result.stderr || null
-                }))
-            }
+            vcodes_mpago: vcodeMpagoSummary // Sucursal별 배열
         };
         
         res.json(responseData);
