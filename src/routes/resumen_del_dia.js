@@ -120,10 +120,7 @@ router.post('/', async (req, res) => {
         // 쿼리 1: vcodes 데이터 집계 (b_mercadopago is false) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is false
         const vcodeWhereConditions = [
-            Sequelize.where(
-                Sequelize.fn('DATE', Sequelize.col('fecha')),
-                vcodeDate
-            ),
+            { fecha: vcodeDate },
             { b_cancelado: false },
             { borrado: false },
             { b_mercadopago: false }
@@ -156,10 +153,7 @@ router.post('/', async (req, res) => {
         // 쿼리 2: gastos 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha = target_date AND borrado is false
         const gastosWhereConditions = [
-            Sequelize.where(
-                Sequelize.fn('DATE', Sequelize.col('fecha')),
-                otherDate
-            ),
+            { fecha: otherDate },
             { borrado: false }
         ];
         
@@ -185,10 +179,7 @@ router.post('/', async (req, res) => {
         // 쿼리 3: vdetalle 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha1 = target_date AND borrado is false
         const vdetalleWhereConditions = [
-            Sequelize.where(
-                Sequelize.fn('DATE', Sequelize.col('fecha1')),
-                otherDate
-            ),
+            { fecha1: otherDate },
             { borrado: false }
         ];
         
@@ -214,10 +205,7 @@ router.post('/', async (req, res) => {
         // 쿼리 4: vcodes 데이터 집계 (MercadoPago) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is true
         const vcodeMpagoWhereConditions = [
-            Sequelize.where(
-                Sequelize.fn('DATE', Sequelize.col('fecha')),
-                otherDate
-            ),
+            { fecha: otherDate },
             { b_cancelado: false },
             { borrado: false },
             { b_mercadopago: true }
