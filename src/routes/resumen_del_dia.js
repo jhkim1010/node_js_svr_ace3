@@ -40,6 +40,7 @@ router.post('/', async (req, res) => {
         const Vcode = getModelForRequest(req, 'Vcode');
         const Gastos = getModelForRequest(req, 'Gastos');
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
+        const Ingresos = getModelForRequest(req, 'Ingresos');
         const sequelize = Vcode.sequelize;
         
         // 요청 본문에서 date와 sucursal 받기
@@ -185,6 +186,32 @@ router.post('/', async (req, res) => {
             raw: true
         });
         
+        // 쿼리 5: ingresos 데이터 집계 - Sucursal별 그룹화
+        // 조건: fecha = target_date AND borrado is false
+        const ingresosWhereConditions = [
+            { fecha: otherDate },
+            { borrado: false }
+        ];
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            ingresosWhereConditions.push({ sucursal: sucursal });
+        }
+        
+        const ingresosResult = await Ingresos.findAll({
+            attributes: [
+                [sequelize.fn('COUNT', sequelize.col('*')), 'ingreso_events'],
+                [sequelize.fn('SUM', sequelize.col('cant3')), 'ingreso_total_ropas'],
+                'sucursal'
+            ],
+            where: {
+                [Sequelize.Op.and]: ingresosWhereConditions
+            },
+            group: ['sucursal'],
+            order: [['sucursal', 'ASC']],
+            raw: true
+        });
+        
         // Sucursal별로 그룹화된 결과를 배열로 변환
         const vcodeSummary = (vcodeResult || []).map(item => ({
             sucursal: item.sucursal || null,
@@ -215,6 +242,12 @@ router.post('/', async (req, res) => {
             total_mpago_day: parseFloat(item.total_mpago_day || 0)
         }));
         
+        const ingresosSummary = (ingresosResult || []).map(item => ({
+            sucursal: item.sucursal || null,
+            ingreso_events: parseInt(item.ingreso_events || 0, 10),
+            ingreso_total_ropas: parseFloat(item.ingreso_total_ropas || 0)
+        }));
+        
         const responseData = {
             fecha: targetDate || otherDate, // 요청된 날짜 또는 현재 날짜 (YYYY-MM-DD)
             fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
@@ -222,7 +255,8 @@ router.post('/', async (req, res) => {
             vcodes: vcodeSummary, // Sucursal별 배열
             gastos: gastosSummary, // Sucursal별 배열
             vdetalle: vdetalleSummary, // Sucursal별 배열
-            vcodes_mpago: vcodeMpagoSummary // Sucursal별 배열
+            vcodes_mpago: vcodeMpagoSummary, // Sucursal별 배열
+            ingresos: ingresosSummary // Sucursal별 배열
         };
         
         res.json(responseData);
