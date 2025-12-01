@@ -333,7 +333,6 @@ router.post('/', async (req, res) => {
             fecha: targetDate || otherDate, // 요청된 날짜 또는 현재 날짜 (YYYY-MM-DD)
             fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
             fecha_otros: otherDate, // 다른 쿼리에 사용된 날짜
-            sucursal: sucursal || null, // 요청된 sucursal 또는 null (모든 sucursal)
             vcodes: vcodeSummary, // Sucursal별 배열
             gastos: gastosSummary, // Sucursal별 배열
             vdetalle: vdetalleSummary, // Sucursal별 배열
