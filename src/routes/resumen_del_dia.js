@@ -104,6 +104,19 @@ router.post('/', async (req, res) => {
             otherDate = dateString;
         }
         
+        // 요청 정보 출력
+        const databaseName = req.dbConfig?.database || 'N/A';
+        const finalDate = vcodeDate;
+        const finalSucursal = sucursal || 'ALL';
+        
+        console.log('========================================');
+        console.log('📊 Resumen del Dia Request');
+        console.log('========================================');
+        console.log(`Database: ${databaseName}`);
+        console.log(`Date: ${finalDate}`);
+        console.log(`Sucursal: ${finalSucursal}`);
+        console.log('========================================');
+        
         // 쿼리 1: vcodes 데이터 집계 (b_mercadopago is false) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is false
         const vcodeWhereConditions = [
