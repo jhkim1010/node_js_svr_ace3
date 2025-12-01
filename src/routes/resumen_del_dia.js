@@ -104,19 +104,6 @@ router.post('/', async (req, res) => {
             otherDate = dateString;
         }
         
-        // 요청 정보 출력
-        const databaseName = req.dbConfig?.database || 'N/A';
-        const finalDate = vcodeDate;
-        const finalSucursal = sucursal || 'ALL';
-        
-        console.log('========================================');
-        console.log('📊 Resumen del Dia Request');
-        console.log('========================================');
-        console.log(`Database: ${databaseName}`);
-        console.log(`Date: ${finalDate}`);
-        console.log(`Sucursal: ${finalSucursal}`);
-        console.log('========================================');
-        
         // 쿼리 1: vcodes 데이터 집계 (b_mercadopago is false) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is false
         const vcodeWhereConditions = [
@@ -130,9 +117,6 @@ router.post('/', async (req, res) => {
         if (sucursal) {
             vcodeWhereConditions.push({ sucursal: sucursal });
         }
-        
-        console.log('\n📋 [쿼리 1] vcodes 데이터 집계 (b_mercadopago = false)');
-        console.log('조건:', JSON.stringify(vcodeWhereConditions, null, 2));
         
         const vcodeResult = await Vcode.findAll({
             attributes: [
@@ -150,12 +134,7 @@ router.post('/', async (req, res) => {
             },
             group: ['sucursal'],
             order: [['sucursal', 'ASC']],
-            raw: true,
-            logging: (sql) => {
-                console.log('실행 SQL:');
-                console.log(sql);
-                console.log('');
-            }
+            raw: true
         });
         
         // 쿼리 2: gastos 데이터 집계 - Sucursal별 그룹화
@@ -170,9 +149,6 @@ router.post('/', async (req, res) => {
             gastosWhereConditions.push({ sucursal: sucursal });
         }
         
-        console.log('\n📋 [쿼리 2] gastos 데이터 집계');
-        console.log('조건:', JSON.stringify(gastosWhereConditions, null, 2));
-        
         const gastosResult = await Gastos.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'gasto_count'],
@@ -184,12 +160,7 @@ router.post('/', async (req, res) => {
             },
             group: ['sucursal'],
             order: [['sucursal', 'ASC']],
-            raw: true,
-            logging: (sql) => {
-                console.log('실행 SQL:');
-                console.log(sql);
-                console.log('');
-            }
+            raw: true
         });
         
         // 쿼리 3: vdetalle 데이터 집계 - Sucursal별 그룹화
@@ -204,9 +175,6 @@ router.post('/', async (req, res) => {
             vdetalleWhereConditions.push({ sucursal: sucursal });
         }
         
-        console.log('\n📋 [쿼리 3] vdetalle 데이터 집계');
-        console.log('조건:', JSON.stringify(vdetalleWhereConditions, null, 2));
-        
         const vdetalleResult = await Vdetalle.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_discount_event'],
@@ -218,12 +186,7 @@ router.post('/', async (req, res) => {
             },
             group: ['sucursal'],
             order: [['sucursal', 'ASC']],
-            raw: true,
-            logging: (sql) => {
-                console.log('실행 SQL:');
-                console.log(sql);
-                console.log('');
-            }
+            raw: true
         });
         
         // 쿼리 4: vcodes 데이터 집계 (MercadoPago) - Sucursal별 그룹화
@@ -240,9 +203,6 @@ router.post('/', async (req, res) => {
             vcodeMpagoWhereConditions.push({ sucursal: sucursal });
         }
         
-        console.log('\n📋 [쿼리 4] vcodes 데이터 집계 (MercadoPago)');
-        console.log('조건:', JSON.stringify(vcodeMpagoWhereConditions, null, 2));
-        
         const vcodeMpagoResult = await Vcode.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_mpago_total'],
@@ -254,12 +214,7 @@ router.post('/', async (req, res) => {
             },
             group: ['sucursal'],
             order: [['sucursal', 'ASC']],
-            raw: true,
-            logging: (sql) => {
-                console.log('실행 SQL:');
-                console.log(sql);
-                console.log('');
-            }
+            raw: true
         });
         
         // Sucursal별로 그룹화된 결과를 배열로 변환
@@ -348,13 +303,6 @@ router.post('/', async (req, res) => {
                 }))
             }
         };
-        
-        // 응답 데이터 출력
-        console.log('\n========================================');
-        console.log('📤 Response Data');
-        console.log('========================================');
-        console.log(JSON.stringify(responseData, null, 2));
-        console.log('========================================\n');
         
         res.json(responseData);
     } catch (err) {
