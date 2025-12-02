@@ -324,12 +324,37 @@ function getWebSocketServer() {
 // - codigos, todocodigos, tipos, color: sucursal 무관하게 모든 클라이언트에게 전송
 // - ingresos: 데이터베이스와 sucursal 번호가 같은 경우에만 전송
 // - 기타 테이블: 기본적으로 sucursal 필터링 적용
+// 
+// excludeClientId 처리:
+// - excludeClientId는 clientId 또는 ws.id일 수 있음
+// - ws.id는 항상 고유하므로 ws.id로 비교하는 것이 안전함
+// - clientId가 짧거나 중복될 수 있으므로, excludeClientId가 ws.id와 일치하는지 먼저 확인
 function broadcastToDbClients(dbKey, excludeClientId, data) {
     if (!wss || !dbKey) return;
     
     // 해당 데이터베이스에 연결된 클라이언트 그룹 가져오기
     const clientGroup = dbClientGroups.get(dbKey);
     if (!clientGroup || clientGroup.size === 0) return;
+    
+    // excludeClientId에 해당하는 ws.id 찾기 (clientId 중복 방지)
+    let excludeWsId = null;
+    if (excludeClientId) {
+        clientGroup.forEach((ws, wsId) => {
+            const info = clientInfo.get(wsId);
+            if (info) {
+                // ws.id가 excludeClientId와 일치하는지 확인 (가장 정확)
+                if (wsId === excludeClientId) {
+                    excludeWsId = wsId;
+                }
+                // clientId가 excludeClientId와 일치하는지 확인 (하지만 ws.id가 우선)
+                else if (info.clientId === excludeClientId && !excludeWsId) {
+                    // clientId가 중복될 수 있으므로 첫 번째 매치만 사용
+                    // 실제로는 ws.id로 비교하는 것이 더 안전함
+                    excludeWsId = wsId;
+                }
+            }
+        });
+    }
     
     // 테이블명 추출
     let tableName = null;
@@ -400,38 +425,40 @@ function broadcastToDbClients(dbKey, excludeClientId, data) {
         const info = clientInfo.get(wsId);
         if (!info) return;
         
-        const socketClientId = info.clientId || wsId;
-        // 요청한 클라이언트는 제외
-        if (socketClientId !== excludeClientId) {
-            let shouldSend = false;
-            
-            if (isSucursalIndependent) {
-                // codigos, todocodigos, tipos, color: sucursal 무관하게 모든 클라이언트에게 전송
-                shouldSend = true;
-            } else if (isIngresosTable) {
-                // ingresos: 데이터베이스와 sucursal 번호가 같은 경우에만 전송
-                // - 클라이언트가 특정 sucursal에 연결된 경우: 해당 sucursal 데이터만 전송
-                // - 클라이언트가 sucursal 없이 연결된 경우: 전송하지 않음 (ingresos는 반드시 sucursal 필요)
-                // - 데이터에 sucursal이 없는 경우: 전송하지 않음
-                shouldSend = info.sucursal !== null && 
-                             dataSucursal !== null && 
-                             info.sucursal === dataSucursal;
-            } else {
-                // 기타 테이블: 기본 sucursal 필터링
-                // - 클라이언트가 특정 sucursal에 연결된 경우: 해당 sucursal 데이터만 전송
-                // - 클라이언트가 sucursal 없이 연결된 경우 (null): 모든 데이터 전송
-                // - 데이터에 sucursal이 없는 경우: 모든 클라이언트에게 전송
-                shouldSend = info.sucursal === null || 
-                             dataSucursal === null || 
-                             info.sucursal === dataSucursal;
-            }
-            
-            if (shouldSend) {
-                sendMessage(ws, message);
-                sentCount++;
-            } else {
-                filteredCount++;
-            }
+        // 요청한 클라이언트는 제외 (ws.id로 비교하여 정확성 보장)
+        if (excludeWsId && wsId === excludeWsId) {
+            filteredCount++;
+            return; // 제외
+        }
+        
+        let shouldSend = false;
+        
+        if (isSucursalIndependent) {
+            // codigos, todocodigos, tipos, color: sucursal 무관하게 모든 클라이언트에게 전송
+            shouldSend = true;
+        } else if (isIngresosTable) {
+            // ingresos: 데이터베이스와 sucursal 번호가 같은 경우에만 전송
+            // - 클라이언트가 특정 sucursal에 연결된 경우: 해당 sucursal 데이터만 전송
+            // - 클라이언트가 sucursal 없이 연결된 경우: 전송하지 않음 (ingresos는 반드시 sucursal 필요)
+            // - 데이터에 sucursal이 없는 경우: 전송하지 않음
+            shouldSend = info.sucursal !== null && 
+                         dataSucursal !== null && 
+                         info.sucursal === dataSucursal;
+        } else {
+            // 기타 테이블: 기본 sucursal 필터링
+            // - 클라이언트가 특정 sucursal에 연결된 경우: 해당 sucursal 데이터만 전송
+            // - 클라이언트가 sucursal 없이 연결된 경우 (null): 모든 데이터 전송
+            // - 데이터에 sucursal이 없는 경우: 모든 클라이언트에게 전송
+            shouldSend = info.sucursal === null || 
+                         dataSucursal === null || 
+                         info.sucursal === dataSucursal;
+        }
+        
+        if (shouldSend) {
+            sendMessage(ws, message);
+            sentCount++;
+        } else {
+            filteredCount++;
         }
     });
     
@@ -442,8 +469,28 @@ function broadcastToDbClients(dbKey, excludeClientId, data) {
 }
 
 // 특정 클라이언트를 제외한 다른 클라이언트들에게 브로드캐스트 (레거시 호환성)
+// excludeClientId는 clientId 또는 ws.id일 수 있음
+// ws.id로 비교하여 clientId 중복 문제 방지
 function broadcastToOthers(excludeClientId, eventName, data) {
     if (!wss) return;
+    
+    // excludeClientId에 해당하는 ws.id 찾기 (clientId 중복 방지)
+    let excludeWsId = null;
+    if (excludeClientId) {
+        wss.clients.forEach((ws) => {
+            const info = clientInfo.get(ws.id);
+            if (info) {
+                // ws.id가 excludeClientId와 일치하는지 확인 (가장 정확)
+                if (ws.id === excludeClientId) {
+                    excludeWsId = ws.id;
+                }
+                // clientId가 excludeClientId와 일치하는지 확인 (하지만 ws.id가 우선)
+                else if (info.clientId === excludeClientId && !excludeWsId) {
+                    excludeWsId = ws.id;
+                }
+            }
+        });
+    }
     
     const message = {
         type: eventName,
@@ -454,9 +501,8 @@ function broadcastToOthers(excludeClientId, eventName, data) {
     wss.clients.forEach((ws) => {
         const info = clientInfo.get(ws.id);
         if (info) {
-            const socketClientId = info.clientId || ws.id;
-            // 클라이언트 ID가 있고, 제외할 클라이언트 ID와 다르면 전송
-            if (socketClientId !== excludeClientId) {
+            // 요청한 클라이언트는 제외 (ws.id로 비교하여 정확성 보장)
+            if (!excludeWsId || ws.id !== excludeWsId) {
                 sendMessage(ws, message);
             }
         }
@@ -485,7 +531,25 @@ function getConnectedClientCount(dbKey, excludeClientId = null) {
     console.log(`[WebSocket] getConnectedClientCount: ${clientGroup.size} sockets registered for dbKey(${dbKey})`);
     
     // excludeClientId가 제공된 경우 해당 클라이언트를 제외한 개수 계산
+    // excludeClientId는 clientId 또는 ws.id일 수 있음
+    // ws.id로 비교하여 clientId 중복 문제 방지
     if (excludeClientId) {
+        // excludeClientId에 해당하는 ws.id 찾기 (clientId 중복 방지)
+        let excludeWsId = null;
+        clientGroup.forEach((ws, wsId) => {
+            const info = clientInfo.get(wsId);
+            if (info) {
+                // ws.id가 excludeClientId와 일치하는지 확인 (가장 정확)
+                if (wsId === excludeClientId) {
+                    excludeWsId = wsId;
+                }
+                // clientId가 excludeClientId와 일치하는지 확인 (하지만 ws.id가 우선)
+                else if (info.clientId === excludeClientId && !excludeWsId) {
+                    excludeWsId = wsId;
+                }
+            }
+        });
+        
         let count = 0;
         const socketDetails = [];
         clientGroup.forEach((ws, wsId) => {
@@ -493,12 +557,13 @@ function getConnectedClientCount(dbKey, excludeClientId = null) {
             if (info) {
                 const socketClientId = info.clientId || wsId;
                 socketDetails.push({ wsId, clientId: socketClientId, dbKey: info.dbKey });
-                if (socketClientId !== excludeClientId) {
+                // ws.id로 비교하여 정확성 보장
+                if (!excludeWsId || wsId !== excludeWsId) {
                     count++;
                 }
             }
         });
-        console.log(`[WebSocket] getConnectedClientCount: ${count} clients after excluding excludeClientId(${excludeClientId}), all socket info:`, socketDetails);
+        console.log(`[WebSocket] getConnectedClientCount: ${count} clients after excluding excludeClientId(${excludeClientId}, wsId=${excludeWsId || 'not found'}), all socket info:`, socketDetails);
         return count;
     }
     

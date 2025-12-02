@@ -30,6 +30,19 @@ function getDefaultDbHost() {
 }
 
 function parseDbHeader(req, res, next) {
+    // WebSocket 업그레이드 요청인 경우 DB 헤더 검증 건너뛰기
+    // WebSocket 연결은 register-client 메시지에서 DB 정보를 받음
+    const isWebSocketUpgrade = (req.headers.upgrade && 
+                                req.headers.upgrade.toLowerCase() === 'websocket') ||
+                                req.path === '/api/ws' || 
+                                req.url === '/api/ws' ||
+                                req.originalUrl === '/api/ws';
+    
+    if (isWebSocketUpgrade) {
+        // WebSocket 연결은 DB 헤더가 필요 없음 (연결 후 register-client에서 받음)
+        return next();
+    }
+    
     const defaultHost = getDefaultDbHost();
     
     // PUT, GET, POST 요청의 경우 host 헤더를 기본 호스트로 강제 설정
