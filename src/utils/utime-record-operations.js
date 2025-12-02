@@ -111,11 +111,13 @@ async function processRecordWithUtimeComparison(
         // 업데이트 수행
         const updated = await updateRecord(Model, filteredItem, whereCondition, keysToRemove, transaction);
         
-        // SAVEPOINT 해제
-        try {
-            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-        } catch (releaseErr) {
-            // 무시
+        // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
+        if (savepointName) {
+            try {
+                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+            } catch (releaseErr) {
+                // 무시
+            }
         }
         
         return {
@@ -126,11 +128,13 @@ async function processRecordWithUtimeComparison(
         };
     } else {
         // 서버 utime이 더 높거나 같으면 스킵
-        // SAVEPOINT 해제
-        try {
-            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-        } catch (releaseErr) {
-            // 무시
+        // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
+        if (savepointName) {
+            try {
+                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+            } catch (releaseErr) {
+                // 무시
+            }
         }
         
         return {
