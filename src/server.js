@@ -174,15 +174,48 @@ app.post('/api/health', async (req, res) => {
 
 // Operation 로깅 미들웨어 (요청 본문 파싱 후, DB 헤더 파싱 전에 적용)
 // POST, PUT, DELETE 요청의 operation을 먼저 확인하고 로그 출력
-app.use('/api', operationLogger);
+// WebSocket 경로(/api/ws)는 제외
+app.use('/api', (req, res, next) => {
+    // WebSocket 업그레이드 요청인 경우 Express 미들웨어 건너뛰기
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
+        (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
+        return next(); // WebSocket 서버로 전달
+    }
+    operationLogger(req, res, next);
+});
 
 // 응답 로깅 미들웨어 (모든 요청에 적용)
-app.use(responseLogger);
+// WebSocket 경로는 제외
+app.use((req, res, next) => {
+    // WebSocket 업그레이드 요청인 경우 Express 미들웨어 건너뛰기
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
+        (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
+        return next(); // WebSocket 서버로 전달
+    }
+    responseLogger(req, res, next);
+});
 
 // DB 헤더 파싱 미들웨어를 모든 API 라우트에 적용
-app.use('/api', parseDbHeader, loadBcolorview, routes);
+// WebSocket 경로(/api/ws)는 제외 (WebSocket 서버가 직접 처리)
+app.use('/api', (req, res, next) => {
+    // WebSocket 업그레이드 요청인 경우 Express 라우터 건너뛰기
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
+        (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
+        return next(); // WebSocket 서버로 전달
+    }
+    parseDbHeader(req, res, () => {
+        loadBcolorview(req, res, () => {
+            routes(req, res, next);
+        });
+    });
+});
 
 app.use((req, res) => {
+    // WebSocket 업그레이드 요청인 경우 404 응답하지 않음
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
+        (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
+        return; // WebSocket 서버가 처리하도록 함
+    }
     res.status(404).json({ error: 'Not Found' });
 });
 
