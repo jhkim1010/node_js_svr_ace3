@@ -1,61 +1,79 @@
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
+const { getBcolorviewValor1 } = require('../utils/bcolorview-helper');
 
 async function getItemsReport(req) {
-    const Codigos = getModelForRequest(req, 'Codigos');
-    const sequelize = Codigos.sequelize;
+    const Vdetalle = getModelForRequest(req, 'Vdetalle');
+    const sequelize = Vdetalle.sequelize;
 
-    // 쿼리 파라미터 파싱
-    const codigo = req.query.codigo || null;
-    const descripcion = req.query.descripcion || null;
-    const tipocodigo = req.query.tipocodigo || null;
-    const borrado = req.query.borrado === 'true' ? true : (req.query.borrado === 'false' ? false : null);
+    // 쿼리 파라미터 파싱 (날짜 범위)
+    const startDate = req.query.start_date || '2025-11-01';
+    const endDate = req.query.end_date || '2025-12-01';
 
-    // 필터 조건 구성
-    const whereConditions = {};
-    if (codigo) whereConditions.codigo = { [Sequelize.Op.like]: `%${codigo}%` };
-    if (descripcion) whereConditions.descripcion = { [Sequelize.Op.like]: `%${descripcion}%` };
-    if (tipocodigo) whereConditions.tipocodigo = { [Sequelize.Op.like]: `%${tipocodigo}%` };
-    if (borrado !== null) whereConditions.borrado = borrado;
+    // bcolorview 값 확인 (valor1이 '0' 또는 '1')
+    const bcolorviewValor1 = getBcolorviewValor1(req);
+    const isBcolorviewEnabled = bcolorviewValor1 === '1' || bcolorviewValor1 === 1;
 
-    // 아이템 조회
-    const items = await Codigos.findAll({
-        where: whereConditions,
-        order: [['codigo', 'ASC']],
-        limit: req.query.limit ? parseInt(req.query.limit, 10) : 1000,
-        raw: true
+    let query;
+    let queryParams = [startDate, endDate];
+
+    if (!isBcolorviewEnabled) {
+        // bcolorview가 0인 경우: codigo1, max(desc1) 사용
+        query = `
+            SELECT 
+                codigo1, 
+                MAX(desc1) as desc1, 
+                SUM(cant1) as TPrendas, 
+                SUM(precio) as TImporte, 
+                MIN(fecha1) as start_date, 
+                MAX(fecha1) as end_date,
+                sucursal
+            FROM vdetalle v
+            WHERE fecha1 BETWEEN $1 AND $2 
+                AND v.ref_id_codigo > 0
+            GROUP BY codigo1, sucursal 
+            ORDER BY TPrendas DESC
+        `;
+    } else {
+        // bcolorview가 1인 경우: todocodigos와 조인하여 tcodigo, tdesc 사용
+        query = `
+            SELECT 
+                t.tcodigo as codigo1,
+                t.tdesc as desc1,
+                SUM(cant1) as TPrendas, 
+                SUM(precio) as TImporte, 
+                MIN(fecha1) as start_date, 
+                MAX(fecha1) as end_date,
+                v.sucursal
+            FROM vdetalle v
+            INNER JOIN todocodigos t 
+                ON v.ref_id_todocodigo = t.id_todocodigo 
+            WHERE fecha1 BETWEEN $1 AND $2 
+                AND v.ref_id_codigo > 0 
+            GROUP BY t.tcodigo, t.tdesc, v.sucursal 
+            ORDER BY TPrendas DESC
+        `;
+    }
+
+    // SQL 쿼리 실행
+    const results = await sequelize.query(query, {
+        bind: queryParams,
+        type: Sequelize.QueryTypes.SELECT
     });
 
-    // 집계 정보
-    const totalItems = await Codigos.count({ where: whereConditions });
-    const activeItems = await Codigos.count({ where: { ...whereConditions, borrado: false } });
-    const deletedItems = await Codigos.count({ where: { ...whereConditions, borrado: true } });
-
-    // 가격 통계
-    const priceStats = await Codigos.findAll({
-        attributes: [
-            [sequelize.fn('AVG', sequelize.col('pre1')), 'avg_pre1'],
-            [sequelize.fn('AVG', sequelize.col('pre2')), 'avg_pre2'],
-            [sequelize.fn('AVG', sequelize.col('pre3')), 'avg_pre3'],
-            [sequelize.fn('MIN', sequelize.col('pre1')), 'min_pre1'],
-            [sequelize.fn('MAX', sequelize.col('pre1')), 'max_pre1']
-        ],
-        where: { ...whereConditions, borrado: false },
-        raw: true
-    });
+    // 결과가 배열인지 확인
+    const items = Array.isArray(results) ? results : [];
 
     return {
         filters: {
-            codigo: codigo || 'all',
-            descripcion: descripcion || 'all',
-            tipocodigo: tipocodigo || 'all',
-            borrado: borrado !== null ? borrado : 'all'
+            start_date: startDate,
+            end_date: endDate,
+            bcolorview: bcolorviewValor1 || '0'
         },
         summary: {
-            total_items: totalItems,
-            active_items: activeItems,
-            deleted_items: deletedItems,
-            price_statistics: priceStats[0] || {}
+            total_items: items.length,
+            total_prendas: items.reduce((sum, item) => sum + (parseInt(item.tprendas) || 0), 0),
+            total_importe: items.reduce((sum, item) => sum + (parseFloat(item.timporte) || 0), 0)
         },
         data: items
     };
