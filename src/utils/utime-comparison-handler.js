@@ -72,6 +72,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) {
                     const primaryKeyArray = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
                     
+                    if (modelName === 'Ingresos') {
+                        console.error(`[Ingresos DEBUG] 특수 처리 시작 - 항목 ${i + 1}/${req.body.data.length}`);
+                        console.error(`[Ingresos DEBUG] filteredItem keys: ${Object.keys(filteredItem).join(', ')}`);
+                        console.error(`[Ingresos DEBUG] ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`);
+                    }
+                    
                     // 1단계: primary key로 기존 레코드 조회
                     let canUsePrimaryKey = true;
                     const primaryKeyWhere = primaryKeyArray.reduce((acc, key) => {
@@ -85,6 +91,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }, {});
 
                     if (canUsePrimaryKey && Object.keys(primaryKeyWhere).length === primaryKeyArray.length) {
+                        if (modelName === 'Ingresos') {
+                            console.error(`[Ingresos DEBUG] Primary key로 조회 시도: ${JSON.stringify(primaryKeyWhere)}`);
+                        }
                         try {
                             const resultPk = await processRecordWithUtimeComparison(
                                 Model,
@@ -1531,22 +1540,41 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
                 }
             } catch (itemErr) {
-                // SAVEPOINT 롤백 시도
+                // 디버깅: Ingresos 에러 상세 로그
+                if (modelName === 'Ingresos') {
+                    const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
+                    const itemConstraintMatch = itemErrorMsg ? itemErrorMsg.match(/constraint "([^"]+)"/) : null;
+                    const itemConstraintName = itemConstraintMatch ? itemConstraintMatch[1] : null;
+                    
+                    console.error(`[Ingresos DEBUG] itemErr catch 블록 진입 - 항목 ${i + 1}/${req.body.data.length}`);
+                    console.error(`[Ingresos DEBUG] 에러 타입: ${itemErr.constructor.name}`);
+                    console.error(`[Ingresos DEBUG] 에러 메시지: ${itemErrorMsg}`);
+                    console.error(`[Ingresos DEBUG] Constraint: ${itemConstraintName || 'none'}`);
+                }
+                
+                // SAVEPOINT 롤백 시도 (해당 항목만 롤백)
                 try {
                     await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                 } catch (rollbackErr) {
                     // 무시
+                    if (modelName === 'Ingresos') {
+                        console.error(`[Ingresos DEBUG] SAVEPOINT 롤백 실패: ${rollbackErr.message}`);
+                    }
                 }
                 
+                // 에러를 errors 배열에 추가하고 계속 진행 (전체 트랜잭션 중단하지 않음)
+                const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
                 errors.push({ 
                     index: i, 
-                    error: itemErr.message,
+                    error: errorMsg,
                     errorType: itemErr.constructor.name,
+                    errorCode: itemErr.original ? itemErr.original.code : itemErr.code,
+                    constraintName: itemErrorMsg ? (itemErrorMsg.match(/constraint "([^"]+)"/) ? itemErrorMsg.match(/constraint "([^"]+)"/)[1] : null) : null,
                     data: req.body.data[i] 
                 });
-                // 에러 발생 시 즉시 중단하고 롤백 (원자성 보장)
-                await transaction.rollback();
-                throw itemErr;
+                
+                // 다음 항목 계속 처리 (전체 트랜잭션 롤백하지 않음)
+                continue;
             }
         }
         
