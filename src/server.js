@@ -19,11 +19,23 @@ const server = http.createServer(app);
 // 여기서는 로깅만 하고 실제 처리는 WebSocket 서버가 함
 let wssInitialized = false;
 server.on('upgrade', (request, socket, head) => {
-    console.log(`[HTTP Server] 🔄 Upgrade 이벤트: url=${request.url}, upgrade=${request.headers.upgrade}`);
+    const upgradeHeader = request.headers.upgrade || 'none';
+    const connectionHeader = request.headers.connection || 'none';
+    
+    console.log(`[HTTP Server] 🔄 Upgrade 이벤트 발생:`);
+    console.log(`   URL: ${request.url}`);
+    console.log(`   Upgrade 헤더: ${upgradeHeader}`);
+    console.log(`   Connection 헤더: ${connectionHeader}`);
+    console.log(`   Remote Address: ${socket.remoteAddress}`);
     
     // WebSocket 서버가 아직 초기화되지 않았으면 경고
     if (!wssInitialized && (request.url === '/api/ws' || request.url.startsWith('/api/ws'))) {
         console.warn(`[HTTP Server] ⚠️ WebSocket 서버가 아직 초기화되지 않았습니다.`);
+    }
+    
+    // WebSocket 요청인 경우 추가 정보 출력
+    if (upgradeHeader.toLowerCase() === 'websocket') {
+        console.log(`[HTTP Server] ✅ WebSocket 업그레이드 요청 확인됨`);
     }
 });
 

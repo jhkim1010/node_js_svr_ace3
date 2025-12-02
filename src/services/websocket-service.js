@@ -106,8 +106,15 @@ function initializeWebSocket(server) {
         // 고유 ID 할당
         ws.id = generateClientId();
         const remoteAddress = req.socket.remoteAddress || 'unknown';
+        const requestUrl = req.url || req.originalUrl || 'unknown';
         
-        console.log(`[WebSocket] ✅ 클라이언트 연결됨: id=${ws.id}, remoteAddress=${remoteAddress}`);
+        console.log(`[WebSocket] ✅ 클라이언트 연결됨: id=${ws.id}, remoteAddress=${remoteAddress}, url=${requestUrl}`);
+        console.log(`[WebSocket] 요청 헤더:`, {
+            upgrade: req.headers.upgrade,
+            connection: req.headers.connection,
+            'sec-websocket-key': req.headers['sec-websocket-key'] ? 'present' : 'missing',
+            'sec-websocket-version': req.headers['sec-websocket-version']
+        });
         
         // 클라이언트 정보 초기화
         clientInfo.set(ws.id, {
