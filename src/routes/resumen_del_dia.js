@@ -94,6 +94,7 @@ router.post('/', async (req, res) => {
                 [sequelize.fn('SUM', sequelize.col('tcredito')), 'total_credito_day'],
                 [sequelize.fn('SUM', sequelize.col('tbanco')), 'total_banco_day'],
                 [sequelize.fn('SUM', sequelize.col('tfavor')), 'total_favor_day'],
+                [sequelize.fn('MAX', sequelize.col('utime')), 'last_venta_hour'],
                 [sequelize.fn('SUM', sequelize.col('cntropas')), 'total_count_ropas'],
                 'sucursal'
             ],
@@ -221,6 +222,7 @@ router.post('/', async (req, res) => {
             total_credito_day: parseFloat(item.total_credito_day || 0),
             total_banco_day: parseFloat(item.total_banco_day || 0),
             total_favor_day: parseFloat(item.total_favor_day || 0),
+            last_venta_hour: item.last_venta_hour || null,
             total_count_ropas: parseFloat(item.total_count_ropas || 0)
         }));
         
