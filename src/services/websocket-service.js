@@ -1,6 +1,37 @@
 const WebSocket = require('ws');
 const { Pool } = require('pg');
 
+// 기본 DB 호스트 결정 (Docker 환경이면 host.docker.internal, 아니면 127.0.0.1)
+function isDockerEnvironment() {
+    try {
+        const fs = require('fs');
+        return process.env.DOCKER === 'true' || 
+               process.env.IN_DOCKER === 'true' ||
+               fs.existsSync('/.dockerenv') ||
+               process.env.HOSTNAME?.includes('docker') ||
+               process.cwd() === '/home/node/app';
+    } catch (e) {
+        return false;
+    }
+}
+
+function getDefaultDbHost() {
+    // 환경 변수 DB_HOST가 있으면 우선 사용
+    if (process.env.DB_HOST) {
+        return process.env.DB_HOST;
+    }
+    // Docker 환경이면 host.docker.internal 사용
+    if (isDockerEnvironment()) {
+        return 'host.docker.internal';
+    }
+    // 로컬 환경이면 127.0.0.1 사용
+    return '127.0.0.1';
+}
+
+function getDefaultDbPort() {
+    return process.env.DB_PORT || '5432';
+}
+
 // WebSocket 서버 인스턴스
 let wss = null;
 
@@ -122,9 +153,14 @@ function handleRegisterClient(ws, data) {
     let clientId = data.clientId || ws.id;
     let dbKey = data.dbKey;
     
+    // host와 port는 기본값으로 강제 설정
+    const defaultHost = getDefaultDbHost();
+    const defaultPort = getDefaultDbPort();
+    
     // dbKey가 없고 데이터베이스 정보가 제공된 경우 dbKey 생성
-    if (!dbKey && data.host && data.port && data.database && data.user) {
-        dbKey = getConnectionKey(data.host, data.port, data.database, data.user);
+    // host와 port는 기본값 사용 (클라이언트가 보낸 값 무시)
+    if (!dbKey && data.database && data.user) {
+        dbKey = getConnectionKey(defaultHost, defaultPort, data.database, data.user);
     }
     
     if (dbKey) {
@@ -183,7 +219,13 @@ function getConnectionKey(host, port, database, user) {
 }
 
 async function setupDbListener(host, port, database, user, password, ssl = false) {
-    const key = getConnectionKey(host, port, database, user);
+    // host와 port는 기본값으로 강제 설정
+    const defaultHost = getDefaultDbHost();
+    const defaultPort = getDefaultDbPort();
+    const actualHost = defaultHost;
+    const actualPort = defaultPort;
+    
+    const key = getConnectionKey(actualHost, actualPort, database, user);
     
     // 이미 리스너가 설정되어 있으면 스킵
     if (dbListeners.has(key)) {
@@ -192,8 +234,8 @@ async function setupDbListener(host, port, database, user, password, ssl = false
 
     // LISTEN 전용 연결 생성 (Sequelize 풀과 별도)
     const pool = new Pool({
-        host,
-        port: parseInt(port, 10),
+        host: actualHost,
+        port: parseInt(actualPort, 10),
         database,
         user,
         password,
