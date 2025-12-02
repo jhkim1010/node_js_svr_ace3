@@ -9,6 +9,11 @@ function responseLogger(req, res, next) {
         // 라우터 정보 추출 (테이블 이름)
         const path = req.originalUrl || req.path || req.url;
         
+        // resumen_del_dia 경로는 로깅하지 않음
+        if (path && (path.includes('/resumen_del_dia') || path.includes('/api/resumen_del_dia'))) {
+            return; // 로깅 건너뛰기
+        }
+        
         // path가 http:// 또는 https://로 시작하는지 확인
         if (path && (path.toLowerCase().startsWith('http://') || path.toLowerCase().startsWith('https://'))) {
             console.error(`\nERROR: Invalid path detected in response - path should not start with http:// or https://`);
