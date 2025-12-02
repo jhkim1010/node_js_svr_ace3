@@ -39,6 +39,17 @@ server.on('upgrade', (request, socket, head) => {
     }
 });
 
+// 모든 요청 로깅 (디버깅용)
+app.use((req, res, next) => {
+    // WebSocket 업그레이드 요청인 경우 상세 로깅
+    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+        console.log(`[Express] ⚠️ WebSocket 업그레이드 요청이 Express를 거치고 있습니다!`);
+        console.log(`   URL: ${req.url}, Path: ${req.path}, OriginalUrl: ${req.originalUrl}`);
+        console.log(`   Upgrade: ${req.headers.upgrade}, Connection: ${req.headers.connection}`);
+    }
+    next();
+});
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));  // BATCH_SYNC 대용량 데이터 처리를 위해 10MB로 증가
 app.use(express.static(path.resolve('./') + '/public'));
@@ -239,6 +250,8 @@ app.use((req, res) => {
     // WebSocket 업그레이드 요청인 경우 404 응답하지 않음
     if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
+        console.log(`[Express] ⚠️ 404 핸들러에서 WebSocket 요청 감지: ${req.url}`);
+        console.log(`   이 요청은 WebSocket 서버로 전달되어야 합니다.`);
         return; // WebSocket 서버가 처리하도록 함
     }
     res.status(404).json({ error: 'Not Found' });
