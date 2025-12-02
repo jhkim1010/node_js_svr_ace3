@@ -31,27 +31,20 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
         throw new Error('Sequelize instance not found in Model');
     }
     
-    const transaction = await sequelize.transaction();
-    
     const results = [];
     const errors = [];
     let createdCount = 0;
     let updatedCount = 0;
     let skippedCount = 0; // utime 비교로 스킵된 항목 수
     
-    try {
-        const uniqueKeys = getUniqueKeys(Model, primaryKey);
+    const uniqueKeys = getUniqueKeys(Model, primaryKey);
+    
+    // 각 항목을 독립적인 트랜잭션으로 하나씩 처리
+    for (let i = 0; i < req.body.data.length; i++) {
+        // 각 항목마다 새로운 트랜잭션 생성
+        const transaction = await sequelize.transaction();
         
-        for (let i = 0; i < req.body.data.length; i++) {
-            // 각 항목 처리 전에 SAVEPOINT 생성 (에러 발생 시 롤백용)
-            const savepointName = `sp_utime_${i}_${Date.now()}`;
-            try {
-                await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
-            } catch (spErr) {
-                // SAVEPOINT 생성 실패는 무시하고 계속 진행
-            }
-            
-            try {
+        try {
                 const item = req.body.data[i];
                 const cleanedData = removeSyncField(item);
                 const filteredItem = filterModelFields(Model, cleanedData);
@@ -102,7 +95,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 primaryKeyWhere,
                                 primaryKeyArray,
                                 transaction,
-                                savepointName,
+                                null, // savepointName 제거 (독립 트랜잭션 사용)
                                 sequelize
                             );
 
@@ -1196,11 +1189,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                             } else {
                                 // unique constraint 에러가 아니거나 primary key가 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
-                                try {
-                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
-                                } catch (rollbackErr) {
-                                    // 무시
-                                }
+                                // 독립 트랜잭션 사용 중이므로 SAVEPOINT 롤백 불필요
                                 throw createErr;
                             }
                         }
@@ -1230,16 +1219,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
                     }
                     try {
-                    const created = await Model.create(createData, { transaction });
-                    results.push({ index: i, action: 'created', data: created });
-                    createdCount++;
-                        
-                        // SAVEPOINT 해제
-                        try {
-                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                        } catch (releaseErr) {
-                            // 무시
-                        }
+                        const created = await Model.create(createData, { transaction });
+                        results.push({ index: i, action: 'created', data: created });
+                        createdCount++;
                     } catch (createErr) {
                         // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 모든 unique key로 레코드를 조회하여 utime 비교 수행
                         if (isUniqueConstraintError(createErr) && primaryKey) {
@@ -1507,12 +1489,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         });
                                         skippedCount++;
                                         
-                                        // SAVEPOINT 해제
-                                        try {
-                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                                        } catch (releaseErr) {
-                                            // 무시
-                                        }
+                                        // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
                                     }
                             } else {
                                 // 레코드를 찾을 수 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
@@ -1521,11 +1498,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     console.error(`[Ingresos DEBUG] 원래 에러: ${errorMsg}`);
                                 }
                                 
-                                try {
-                                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
-                                } catch (rollbackErr) {
-                                    // 무시
-                                }
+                                // 독립 트랜잭션 사용 중이므로 SAVEPOINT 롤백 불필요
                                 throw createErr;
                             }
                     } else {
@@ -1539,49 +1512,47 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
                     }
                 }
-            } catch (itemErr) {
-                // 디버깅: Ingresos 에러 상세 로그
-                if (modelName === 'Ingresos') {
-                    const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
-                    const itemConstraintMatch = itemErrorMsg ? itemErrorMsg.match(/constraint "([^"]+)"/) : null;
-                    const itemConstraintName = itemConstraintMatch ? itemConstraintMatch[1] : null;
-                    
-                    console.error(`[Ingresos DEBUG] itemErr catch 블록 진입 - 항목 ${i + 1}/${req.body.data.length}`);
-                    console.error(`[Ingresos DEBUG] 에러 타입: ${itemErr.constructor.name}`);
-                    console.error(`[Ingresos DEBUG] 에러 메시지: ${itemErrorMsg}`);
-                    console.error(`[Ingresos DEBUG] Constraint: ${itemConstraintName || 'none'}`);
-                }
-                
-                // SAVEPOINT 롤백 시도 (해당 항목만 롤백)
-                try {
-                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
-                } catch (rollbackErr) {
-                    // 무시
-                    if (modelName === 'Ingresos') {
-                        console.error(`[Ingresos DEBUG] SAVEPOINT 롤백 실패: ${rollbackErr.message}`);
-                    }
-                }
-                
-                // 에러를 errors 배열에 추가하고 계속 진행 (전체 트랜잭션 중단하지 않음)
-                const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
-                errors.push({ 
-                    index: i, 
-                    error: errorMsg,
-                    errorType: itemErr.constructor.name,
-                    errorCode: itemErr.original ? itemErr.original.code : itemErr.code,
-                    constraintName: itemErrorMsg ? (itemErrorMsg.match(/constraint "([^"]+)"/) ? itemErrorMsg.match(/constraint "([^"]+)"/)[1] : null) : null,
-                    data: req.body.data[i] 
-                });
-                
-                // 다음 항목 계속 처리 (전체 트랜잭션 롤백하지 않음)
-                continue;
+            // 항목 처리 성공 시 해당 트랜잭션 커밋
+            await transaction.commit();
+        } catch (itemErr) {
+            // 항목 처리 실패 시 해당 트랜잭션만 롤백
+            try {
+                await transaction.rollback();
+            } catch (rollbackErr) {
+                // 롤백 에러는 무시
             }
+            
+            // 디버깅: Ingresos 에러 상세 로그
+            if (modelName === 'Ingresos') {
+                const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
+                const itemConstraintMatch = itemErrorMsg ? itemErrorMsg.match(/constraint "([^"]+)"/) : null;
+                const itemConstraintName = itemConstraintMatch ? itemConstraintMatch[1] : null;
+                
+                console.error(`[Ingresos DEBUG] itemErr catch 블록 진입 - 항목 ${i + 1}/${req.body.data.length}`);
+                console.error(`[Ingresos DEBUG] 에러 타입: ${itemErr.constructor.name}`);
+                console.error(`[Ingresos DEBUG] 에러 메시지: ${itemErrorMsg}`);
+                console.error(`[Ingresos DEBUG] Constraint: ${itemConstraintName || 'none'}`);
+            }
+            
+            // 에러를 errors 배열에 추가하고 다음 항목 계속 처리
+            const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
+            const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
+            errors.push({ 
+                index: i, 
+                error: errorMsg,
+                errorType: itemErr.constructor.name,
+                errorCode: itemErr.original ? itemErr.original.code : itemErr.code,
+                constraintName: itemErrorMsg ? (itemErrorMsg.match(/constraint "([^"]+)"/) ? itemErrorMsg.match(/constraint "([^"]+)"/)[1] : null) : null,
+                data: req.body.data[i] 
+            });
+            
+            // 다음 항목 계속 처리 (각 항목은 독립적인 트랜잭션이므로)
+            continue;
         }
-        
-        // 모든 작업이 성공하면 트랜잭션 커밋
-        await transaction.commit();
-        
-        if (results.length > 0) {
+    }
+    
+    // 모든 항목 처리 완료 후 결과 반환
+    if (results.length > 0 || errors.length > 0) {
             const totalCount = req.body.data.length;
             
             const result = {
@@ -1607,19 +1578,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 skipped: skippedCount
             };
             
-            await require('./websocket-notifier').notifyBatchSync(req, Model, result);
-            return result;
-        } else {
-            throw new Error('All items failed to process');
-        }
-    } catch (err) {
-        // 에러 발생 시 트랜잭션 롤백
-        try {
-            await transaction.rollback();
-        } catch (rollbackErr) {
-            // 롤백 에러는 무시 (이미 롤백되었을 수 있음)
-        }
-        throw err;
+        await require('./websocket-notifier').notifyBatchSync(req, Model, result);
+        return result;
+    } else {
+        throw new Error('All items failed to process');
     }
 }
 
