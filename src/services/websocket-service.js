@@ -76,6 +76,15 @@ function initializeWebSocket(server) {
         perMessageDeflate: false // 압축 비활성화 (선택사항)
     });
 
+    // WebSocket 서버 이벤트 리스너
+    wss.on('listening', () => {
+        console.log(`[WebSocket] 서버 리스닝 중: 경로=/api/ws`);
+    });
+
+    wss.on('error', (error) => {
+        console.error(`[WebSocket] 서버 오류:`, error.message);
+    });
+
     wss.on('connection', (ws, req) => {
         // 고유 ID 할당
         ws.id = generateClientId();
@@ -137,6 +146,7 @@ function initializeWebSocket(server) {
         });
 
         // 연결 확인 메시지 전송
+        console.log(`[WebSocket] 연결 확인 메시지 전송 준비: id=${ws.id}, readyState=${ws.readyState}`);
         sendMessage(ws, {
             type: 'connected',
             clientId: ws.id,
@@ -195,12 +205,20 @@ function handleRegisterClient(ws, data) {
 
 // 메시지 전송 헬퍼
 function sendMessage(ws, data) {
-    if (ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
         try {
             ws.send(JSON.stringify(data));
+            // 연결 확인 메시지는 로그 출력 (디버깅용)
+            if (data.type === 'connected' || data.type === 'registered') {
+                console.log(`[WebSocket] 메시지 전송됨: type=${data.type}, clientId=${data.clientId || 'unknown'}`);
+            }
         } catch (err) {
             console.error(`[WebSocket] 메시지 전송 오류: ${err.message}`);
         }
+    } else {
+        const state = ws ? ws.readyState : 'null';
+        const stateNames = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED' };
+        console.warn(`[WebSocket] 메시지 전송 실패: WebSocket 상태가 OPEN이 아님 (readyState=${state} ${stateNames[state] || ''})`);
     }
 }
 
