@@ -72,13 +72,13 @@ router.post('/', async (req, res) => {
             otherDate = dateString;
         }
         
-        // 쿼리 1: vcodes 데이터 집계 (b_mercadopago is false) - Sucursal별 그룹화
-        // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is false
+        // 쿼리 1: vcodes 데이터 집계 - Sucursal별 그룹화
+        // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND clientenombre not like '%CAJA%'
         const vcodeWhereConditions = [
             { fecha: vcodeDate },
             { b_cancelado: false },
             { borrado: false },
-            { b_mercadopago: false }
+            { clientenombre: { [Sequelize.Op.notLike]: '%CAJA%' } }
         ];
         
         // sucursal 필터링 추가 (제공된 경우)
