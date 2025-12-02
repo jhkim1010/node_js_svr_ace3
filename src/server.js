@@ -14,17 +14,17 @@ const { displayBuildInfo } = require('./utils/build-info');
 const app = express();
 const server = http.createServer(app);
 
-// WebSocket 업그레이드 요청을 Express가 처리하기 전에 가로채기
-// 이렇게 하면 Express 미들웨어가 WebSocket 요청을 처리하지 않음
+// HTTP 서버의 upgrade 이벤트 로깅 (디버깅용)
+// 주의: ws 라이브러리가 자동으로 upgrade 이벤트를 처리하므로,
+// 여기서는 로깅만 하고 실제 처리는 WebSocket 서버가 함
+let wssInitialized = false;
 server.on('upgrade', (request, socket, head) => {
-    // /api/ws 경로인 경우 WebSocket 서버가 처리하도록 함
-    if (request.url === '/api/ws' || request.url.startsWith('/api/ws')) {
-        // WebSocket 서버가 아직 초기화되지 않았으면 나중에 처리하도록 대기
-        // 실제로는 initializeWebSocket에서 처리됨
-        return;
+    console.log(`[HTTP Server] 🔄 Upgrade 이벤트: url=${request.url}, upgrade=${request.headers.upgrade}`);
+    
+    // WebSocket 서버가 아직 초기화되지 않았으면 경고
+    if (!wssInitialized && (request.url === '/api/ws' || request.url.startsWith('/api/ws'))) {
+        console.warn(`[HTTP Server] ⚠️ WebSocket 서버가 아직 초기화되지 않았습니다.`);
     }
-    // 다른 경로는 Express가 처리하도록 함
-    socket.destroy();
 });
 
 app.use(cors());
@@ -263,6 +263,7 @@ async function start() {
             // HTTP 서버가 리스닝을 시작한 후 WebSocket 서버 초기화
             // 이렇게 하면 WebSocket 서버가 제대로 연결을 받을 수 있음
             initializeWebSocket(server);
+            wssInitialized = true; // WebSocket 서버 초기화 완료 표시
         });
     } catch (err) {
         console.error('Failed to start server:', err);

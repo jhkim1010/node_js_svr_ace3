@@ -99,10 +99,8 @@ function initializeWebSocket(server) {
         console.error(`[WebSocket] 오류 상세:`, error);
     });
     
-    // HTTP 서버의 upgrade 이벤트 확인
-    server.on('upgrade', (request, socket, head) => {
-        console.log(`[WebSocket] 🔄 HTTP upgrade 이벤트: url=${request.url}, headers.upgrade=${request.headers.upgrade}`);
-    });
+    // WebSocket 서버 초기화 완료 표시
+    console.log(`[WebSocket] ✅ WebSocket 서버 초기화 완료: 경로=/api/ws`);
 
     wss.on('connection', (ws, req) => {
         // 고유 ID 할당
