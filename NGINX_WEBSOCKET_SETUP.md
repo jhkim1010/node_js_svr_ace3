@@ -1,7 +1,12 @@
 # Nginx WebSocket 설정 가이드
 
+## ⚠️ 중요 변경사항
+**WebSocket 경로가 `/ws`에서 `/api/ws`로 변경되었습니다!**
+
+클라이언트는 이제 `wss://sync.coolsistema.com/api/ws`로 연결해야 합니다.
+
 ## 문제
-클라이언트가 `wss://sync.coolsistema.com/ws`로 연결할 때 **404 Not Found** 오류가 발생합니다.
+클라이언트가 `wss://sync.coolsistema.com/api/ws`로 연결할 때 **404 Not Found** 오류가 발생합니다.
 
 ## 원인
 Nginx 리버스 프록시가 WebSocket 업그레이드 요청을 처리하지 못하고 있습니다.
@@ -17,13 +22,46 @@ Nginx 설정 파일을 열어서 WebSocket 경로(`/ws`)에 대한 프록시 설
 - `/etc/nginx/nginx.conf`
 - `/etc/nginx/conf.d/default.conf`
 
-### 2. WebSocket Location 블록 추가
+### 2. 방법 1: 기존 /api location에 WebSocket 지원 추가 (권장)
+
+기존 `/api` location 블록을 다음과 같이 수정하세요:
+
+```nginx
+location /api {
+    proxy_pass http://localhost:3030;
+    proxy_http_version 1.1;
+    
+    # WebSocket 업그레이드 지원 추가
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    
+    # 기본 프록시 헤더
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache_bypass $http_upgrade;
+    
+    # WebSocket 타임아웃 (긴 연결 유지)
+    proxy_read_timeout 86400s;
+    proxy_send_timeout 86400s;
+    proxy_buffering off;
+}
+
+# http 블록에 추가 (server 블록 밖)
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+```
+
+### 2-1. 방법 2: 별도 WebSocket Location 블록 추가
 
 기존 `server` 블록 안에 다음 설정을 추가하세요:
 
 ```nginx
 # WebSocket 경로 프록시 설정
-location /ws {
+location /api/ws {
     proxy_pass http://localhost:3030;  # Node.js 서버 포트 (실제 포트로 변경)
     proxy_http_version 1.1;
     
@@ -71,7 +109,7 @@ server {
     }
 
     # WebSocket 경로 (중요!)
-    location /ws {
+    location /api/ws {
         proxy_pass http://localhost:3030;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -123,7 +161,7 @@ sudo tail -f /var/log/nginx/error.log
 ```python
 import websocket
 ws = websocket.WebSocket()
-ws.connect("wss://sync.coolsistema.com/ws")
+ws.connect("wss://sync.coolsistema.com/api/ws")  # 경로 변경: /ws → /api/ws
 ```
 
 연결이 성공하면 서버 로그에 다음 메시지가 표시됩니다:

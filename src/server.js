@@ -214,7 +214,7 @@ async function start() {
         // HTTP 및 WebSocket 서버 시작
         server.listen(config.port, () => {
             console.log(`Server listening on http://localhost:${config.port}`);
-            console.log(`WebSocket server ready on ws://localhost:${config.port}`);
+            console.log(`WebSocket server ready on ws://localhost:${config.port}/api/ws`);
             console.log('Ready to accept requests with DB connection info in headers');
         });
     } catch (err) {

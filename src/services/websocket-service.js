@@ -69,10 +69,10 @@ function getTableChannels() {
 }
 
 function initializeWebSocket(server) {
-    // WebSocket 서버 생성 (경로: /ws)
+    // WebSocket 서버 생성 (경로: /api/ws - nginx /api 프록시와 호환)
     wss = new WebSocket.Server({ 
         server,
-        path: '/ws',
+        path: '/api/ws',
         perMessageDeflate: false // 압축 비활성화 (선택사항)
     });
 
@@ -144,7 +144,7 @@ function initializeWebSocket(server) {
         });
     });
 
-    console.log(`[WebSocket] 서버 초기화 완료: 경로=/ws`);
+    console.log(`[WebSocket] 서버 초기화 완료: 경로=/api/ws`);
     return wss;
 }
 
