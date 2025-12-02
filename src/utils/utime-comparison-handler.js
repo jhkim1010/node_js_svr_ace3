@@ -1,10 +1,11 @@
-// utime 비교를 통한 업데이트 처리 핸들러 (codigos, todocodigos 전용)
+// utime 비교를 통한 업데이트 처리 핸들러
 const { Sequelize } = require('sequelize');
 const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKey, buildWhereCondition, isUniqueConstraintError } = require('./batch-sync-handler');
 const { processBatchedArray } = require('./batch-processor');
 const { convertUtimeToString, convertUtimeToSequelizeLiteral } = require('./utime-helpers');
 const { findRecordByPrimaryKey, processRecordWithUtimeComparison, handlePrimaryKeyConflict } = require('./utime-record-operations');
 const { logErrorWithLocation, logInfoWithLocation } = require('./log-utils');
+const { getTableHandlerConfig, requiresSpecialHandling } = require('./table-handler-config');
 
 /**
  * utime을 비교하여 클라이언트 utime이 더 높을 때만 업데이트하는 핸들러
@@ -58,14 +59,17 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 // 클라이언트에서 온 utime 값 (문자열로 직접 비교, timezone 변환 없음)
                 const clientUtimeStr = convertUtimeToString(filteredItem.utime);
 
+                // 테이블별 설정 가져오기
+                const tableConfig = getTableHandlerConfig(modelName);
+                
                 /**
-                 * Codigos, Todocodigos 전용: 새로운 처리 순서
+                 * 특수 처리 테이블: 새로운 처리 순서
                  * 1) primary key로 기존 레코드 조회 후 utime 비교 → UPDATE / SKIP
                  * 2) 기존 레코드 없으면 INSERT 시도
-                 * 3) INSERT 중 UNIQUE 에러 → 어떤 unique constraint 인지 출력 후 SKIP
+                 * 3) INSERT 중 UNIQUE 에러 → 모든 unique key로 레코드 조회 후 utime 비교 → UPDATE / SKIP
                  * 4) INSERT 중 FOREIGN KEY 에러 → 어떤 외래키 인지 출력 후 SKIP
                  */
-                if (['Codigos', 'Todocodigos', 'Clientes', 'Color', 'Tipos', 'Gastos', 'Vtags'].includes(modelName)) {
+                if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) {
                     const primaryKeyArray = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
                     
                     // 1단계: primary key로 기존 레코드 조회
@@ -131,10 +135,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 const constraintMatch = pkErrorMsg.match(/constraint "([^"]+)"/i);
                                 const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
                                 
-                                // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시 (데이터 손실이므로 ERROR)
-                                if (['Codigos', 'Todocodigos'].includes(modelName)) {
-                                    const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
-                                    const descripcion = filteredItem.descripcion || 'N/A';
+                                // 테이블 설정에 따라 skip 처리
+                                if (tableConfig.logSkipReason) {
+                                    const codigo = filteredItem.codigo || filteredItem.id_todocodigo || filteredItem.ingreso_id || 'N/A';
+                                    const descripcion = filteredItem.descripcion || filteredItem.desc3 || 'N/A';
                                     logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
                                 }
                                 
@@ -144,15 +148,20 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     // 무시
                                 }
                                 
-                                results.push({
-                                    index: i,
-                                    action: 'skipped',
-                                    reason: 'unique_constraint_violation',
-                                    constraint: constraintName,
-                                    error: pkErrorMsg
-                                });
-                                skippedCount++;
-                                continue;
+                                if (tableConfig.skipOnUniqueConstraintError) {
+                                    results.push({
+                                        index: i,
+                                        action: 'skipped',
+                                        reason: 'unique_constraint_violation',
+                                        constraint: constraintName,
+                                        error: pkErrorMsg
+                                    });
+                                    skippedCount++;
+                                    continue;
+                                } else {
+                                    // skip하지 않는 경우 에러로 처리
+                                    throw pkErr;
+                                }
                             } else {
                                 // unique constraint 에러가 아니면 다시 throw
                                 throw pkErr;
@@ -325,21 +334,26 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             }
 
                             // Primary key로 retry 실패하거나 primary key를 사용할 수 없는 경우
-                            // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시 (데이터 손실이므로 ERROR)
-                            if (['Codigos', 'Todocodigos'].includes(modelName)) {
-                                const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
-                                const descripcion = filteredItem.descripcion || 'N/A';
+                            // 테이블 설정에 따라 skip 처리
+                            if (tableConfig.logSkipReason) {
+                                const codigo = filteredItem.codigo || filteredItem.id_todocodigo || filteredItem.ingreso_id || 'N/A';
+                                const descripcion = filteredItem.descripcion || filteredItem.desc3 || 'N/A';
                                 logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
                             }
 
-                            results.push({
-                                index: i,
-                                action: 'skipped',
-                                reason: 'unique_constraint_violation',
-                                constraint: constraintName,
-                                error: errorMsg
-                            });
-                            skippedCount++;
+                            if (tableConfig.skipOnUniqueConstraintError) {
+                                results.push({
+                                    index: i,
+                                    action: 'skipped',
+                                    reason: 'unique_constraint_violation',
+                                    constraint: constraintName,
+                                    error: errorMsg
+                                });
+                                skippedCount++;
+                            } else {
+                                // skip하지 않는 경우 에러로 처리
+                                throw createErr;
+                            }
 
                             // 이후 작업은 다음 루프로 진행 (새 SAVEPOINT를 생성)
                         }
@@ -361,10 +375,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const referencedTable = tableMatch ? tableMatch[1] : '알 수 없는 테이블';
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
-                            // Codigos, Todocodigos 테이블에 대해서 skip 이유 표시 (데이터 손실이므로 ERROR)
-                            if (['Codigos', 'Todocodigos'].includes(modelName)) {
-                                const codigo = filteredItem.codigo || filteredItem.id_todocodigo || 'N/A';
-                                const descripcion = filteredItem.descripcion || 'N/A';
+                            // 테이블 설정에 따라 skip 이유 표시
+                            if (tableConfig.logSkipReason) {
+                                const codigo = filteredItem.codigo || filteredItem.id_todocodigo || filteredItem.ingreso_id || 'N/A';
+                                const descripcion = filteredItem.descripcion || filteredItem.desc3 || 'N/A';
                                 logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: foreign key constraint (${fkColumn}=${invalidValue} → ${referencedTable})`);
                             }
 
