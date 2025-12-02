@@ -1246,7 +1246,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             let retryWhereCondition = null;
                             let retryKeysToRemove = null;
                             
-                            // 1. Primary key로 먼저 시도
+                            // 1. Primary key로 먼저 시도 (복합 key인 경우 전체 조합으로 시도)
                             const primaryKeyValue = Array.isArray(primaryKey) 
                                 ? primaryKey.map(key => filteredItem[key]).filter(v => v !== undefined && v !== null)
                                 : filteredItem[primaryKey];
@@ -1278,7 +1278,32 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                             }
                             
-                            // 2. Primary key로 찾지 못했으면 모든 unique key로 시도
+                            // 2. Primary key가 복합 key인 경우, 각 개별 키로도 시도 (ingreso.pr 같은 단일 primary key constraint 대응)
+                            if (!retryRecord && Array.isArray(primaryKey) && primaryKey.length > 1) {
+                                for (const singleKey of primaryKey) {
+                                    if (filteredItem[singleKey] !== undefined && filteredItem[singleKey] !== null) {
+                                        const singleKeyWhere = { [singleKey]: filteredItem[singleKey] };
+                                        retryRecord = await Model.findOne({ 
+                                            where: singleKeyWhere, 
+                                            transaction,
+                                            attributes: {
+                                                include: [
+                                                    [Sequelize.literal(`utime::text`), 'utime_str']
+                                                ]
+                                            },
+                                            raw: true
+                                        });
+                                        
+                                        if (retryRecord) {
+                                            retryWhereCondition = singleKeyWhere;
+                                            retryKeysToRemove = [singleKey];
+                                            break; // 레코드를 찾았으면 루프 종료
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 3. Primary key로 찾지 못했으면 모든 unique key로 시도
                             if (!retryRecord) {
                                 for (const uniqueKey of uniqueKeys) {
                                     // Primary key는 이미 시도했으므로 건너뛰기
