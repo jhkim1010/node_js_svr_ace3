@@ -5,6 +5,7 @@ const path = require('path');
 const config = require('./config');
 const routes = require('./routes');
 const { parseDbHeader } = require('./middleware/db-header');
+const { loadBcolorview } = require('./middleware/bcolorview-loader');
 const { responseLogger } = require('./middleware/response-logger');
 const { operationLogger } = require('./middleware/operation-logger');
 const { initializeWebSocket } = require('./services/websocket-service');
@@ -179,7 +180,7 @@ app.use('/api', operationLogger);
 app.use(responseLogger);
 
 // DB 헤더 파싱 미들웨어를 모든 API 라우트에 적용
-app.use('/api', parseDbHeader, routes);
+app.use('/api', parseDbHeader, loadBcolorview, routes);
 
 app.use((req, res) => {
     res.status(404).json({ error: 'Not Found' });

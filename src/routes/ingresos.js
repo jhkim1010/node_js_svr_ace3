@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
-const { handleSingleItem } = require('../utils/single-item-handler');
+const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
+const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
@@ -37,23 +37,26 @@ router.post('/', async (req, res) => {
     try {
         const Ingresos = getModelForRequest(req, 'Ingresos');
         
-        // BATCH_SYNC 작업 처리
-        if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            const result = await handleBatchSync(req, res, Ingresos, 'ingreso_id', 'Ingresos');
+        // BATCH_SYNC 또는 배열 데이터 처리 (utime 비교를 통한 UPDATE/SKIP 결정)
+        if ((req.body.operation === 'BATCH_SYNC' || Array.isArray(req.body.data)) && Array.isArray(req.body.data) && req.body.data.length > 0) {
+            const result = await handleUtimeComparisonArrayData(req, res, Ingresos, 'ingreso_id', 'Ingresos');
             await notifyBatchSync(req, Ingresos, result);
             return res.status(200).json(result);
         }
         
-        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
-        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleArrayData(req, res, Ingresos, 'ingreso_id', 'Ingresos');
-            return res.status(200).json(result);
-        }
+        // 일반 단일 생성 요청 처리 (배열로 변환하여 utime 비교 핸들러 사용)
+        const singleItem = req.body.new_data || req.body;
+        req.body.data = [singleItem];
+        req.body.operation = req.body.operation || 'BATCH_SYNC';
+        const result = await handleUtimeComparisonArrayData(req, res, Ingresos, 'ingreso_id', 'Ingresos');
         
-        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Ingresos, 'ingreso_id', 'Ingresos');
-        await notifyDbChange(req, Ingresos, result.action === 'created' ? 'create' : 'update', result.data);
-        res.status(result.action === 'created' ? 201 : 200).json(result.data);
+        if (result.results && result.results.length > 0) {
+            const firstResult = result.results[0];
+            await notifyDbChange(req, Ingresos, firstResult.action === 'created' ? 'create' : (firstResult.action === 'updated' ? 'update' : 'skip'), firstResult.data);
+            res.status(firstResult.action === 'created' ? 201 : 200).json(firstResult.data);
+        } else {
+            throw new Error('Failed to process ingreso');
+        }
     } catch (err) {
         handleInsertUpdateError(err, req, 'Ingresos', 'ingreso_id', 'ingresos');
         res.status(400).json({ 
@@ -75,11 +78,11 @@ router.put('/:id', async (req, res) => {
     try {
         const Ingresos = getModelForRequest(req, 'Ingresos');
         
-        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
+        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우, utime 비교를 통한 UPDATE/SKIP 결정)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleArrayData, Ingresos, 'ingreso_id', 'Ingresos');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Ingresos, 'ingreso_id', 'Ingresos');
             await notifyBatchSync(req, Ingresos, result);
             return res.status(200).json(result);
         }

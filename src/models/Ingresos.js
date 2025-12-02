@@ -48,8 +48,8 @@ function defineIngresosModel(sequelize) {
     schema: 'public',
     timestamps: false,
     indexes: [
-        { unique: true, name: 'id_ingreso.uniq', fields: ['ingreso_id'] },
-        { unique: true, name: 'ingreso_seq.uniq', fields: ['ingreso_id'] },
+        // 복합 unique key: ingreso_id + sucursal
+        { unique: true, name: 'ingresos_ingreso_id_sucursal_uniq', fields: ['ingreso_id', 'sucursal'] },
         { name: 'item_id_codigo_ingresos', fields: ['ref_id_codigo'] },
         { name: 'item_ingresos', fields: ['codigo'] },
         { name: 'item_ingresos_borrado', fields: ['codigo', 'borrado'] },

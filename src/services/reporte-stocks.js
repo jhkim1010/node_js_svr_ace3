@@ -2,24 +2,16 @@ const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
 
 async function getStocksReport(req) {
+    // bcolorview는 미들웨어에서 이미 로드됨 (req.bcolorview, req.bcolorviewValor1)
+    const bcolorview = req.bcolorview || false;
+    const valor1 = req.bcolorviewValor1 || null;
+
+    // Parametros 모델은 더 이상 필요 없지만, sequelize는 다른 모델에서 가져옴
     const Parametros = getModelForRequest(req, 'Parametros');
     const sequelize = Parametros.sequelize;
 
     // 쿼리 파라미터 파싱
     const sucursal = req.query.sucursal ? parseInt(req.query.sucursal, 10) : null;
-
-    // 1. 먼저 parametros 테이블에서 valor1 값 조회
-    const parametro = await Parametros.findOne({
-        where: {
-            progname: 'SControl',
-            pname: 'bcolorview',
-            opcion: '1'
-        },
-        raw: true
-    });
-
-    const valor1 = parametro ? parametro.valor1 : null;
-    const bcolorview = valor1 === '1' || valor1 === 1;
 
     // 2. valor1 값에 따라 다른 테이블 조회
     let query;
