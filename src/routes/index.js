@@ -16,6 +16,7 @@ const onlineVentasRouter = require('./online_ventas');
 const logsRouter = require('./logs');
 const vendedoresRouter = require('./vendedores');
 const resumenDelDiaRouter = require('./resumen_del_dia');
+const reporteRouter = require('./reporte');
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.use('/online_ventas', onlineVentasRouter);
 router.use('/logs', logsRouter);
 router.use('/vendedores', vendedoresRouter);
 router.use('/resumen_del_dia', resumenDelDiaRouter);
+router.use('/reporte', reporteRouter);
 
 module.exports = router;
 
