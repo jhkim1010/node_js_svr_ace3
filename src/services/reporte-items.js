@@ -7,8 +7,11 @@ async function getItemsReport(req) {
     const sequelize = Vdetalle.sequelize;
 
     // 쿼리 파라미터 파싱 (날짜 범위)
-    const startDate = req.query.start_date || '2025-11-01';
-    const endDate = req.query.end_date || '2025-12-01';
+    // fecha_inicio, fecha_fin 또는 start_date, end_date 모두 지원
+    // 기본값: 오늘 날짜 (YYYY-MM-DD 형식)
+    const today = new Date().toISOString().split('T')[0];
+    const startDate = req.query.fecha_inicio || req.query.start_date || today;
+    const endDate = req.query.fecha_fin || req.query.end_date || today;
 
     // bcolorview 값 확인 (valor1이 '0' 또는 '1')
     const bcolorviewValor1 = getBcolorviewValor1(req);
@@ -66,6 +69,8 @@ async function getItemsReport(req) {
 
     return {
         filters: {
+            fecha_inicio: startDate,
+            fecha_fin: endDate,
             start_date: startDate,
             end_date: endDate,
             bcolorview: bcolorviewValor1 || '0'
