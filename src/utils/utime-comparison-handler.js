@@ -1432,14 +1432,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             throw createErr;
                         }
                     } else {
-                            // unique constraint 에러가 아니거나 primary key가 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
-                            try {
-                                await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
-                            } catch (rollbackErr) {
-                                // 무시
-                            }
-                            throw createErr;
+                        // unique constraint 에러가 아니거나 primary key가 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                        try {
+                            await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                        } catch (rollbackErr) {
+                            // 무시
                         }
+                        throw createErr;
                     }
                 }
             } catch (itemErr) {
