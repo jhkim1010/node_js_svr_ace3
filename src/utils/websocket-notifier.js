@@ -90,11 +90,13 @@ async function notifyDbChange(req, Model, operation, data) {
         console.log(`[WebSocket] req.dbConfig:`, req.dbConfig);
         
         // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
-        broadcastToDbClients(dbKey, clientId, 'db-change', {
+        // sucursal 필터링은 broadcastToDbClients 내부에서 처리됨
+        broadcastToDbClients(dbKey, clientId, {
             table: tableName,
             operation: operationLabel,
             data: plainData,
-            connectedClients: connectedClientCount
+            connectedClients: connectedClientCount,
+            sucursal: req.dbConfig.sucursal // sucursal 정보 전달
         });
     } catch (err) {
         // WebSocket notification failure is silently ignored (CRUD operation is already completed)
@@ -150,11 +152,13 @@ async function notifyBatchSync(req, Model, result) {
             console.log(`[WebSocket] BATCH_SYNC Notification - Table: ${tableName}, Operation: BATCH_SYNC, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
             
             // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
-            broadcastToDbClients(dbKey, clientId, 'db-change', {
+            // sucursal 필터링은 broadcastToDbClients 내부에서 처리됨
+            broadcastToDbClients(dbKey, clientId, {
                 table: tableName,
                 operation: 'BATCH_SYNC',
                 data: successData,
-                connectedClients: connectedClientCount
+                connectedClients: connectedClientCount,
+                sucursal: req.dbConfig.sucursal // sucursal 정보 전달
             });
         }
     } catch (err) {
