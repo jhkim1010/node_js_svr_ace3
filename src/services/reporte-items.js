@@ -10,8 +10,20 @@ async function getItemsReport(req) {
     // fecha_inicio, fecha_fin 또는 start_date, end_date 모두 지원
     // 기본값: 오늘 날짜 (YYYY-MM-DD 형식)
     const today = new Date().toISOString().split('T')[0];
+    
+    // 파라미터 인식 로그 출력
+    console.log('\n[Items 보고서] 날짜 파라미터 인식:');
+    console.log(`  - req.query.fecha_inicio: ${req.query.fecha_inicio || '없음'}`);
+    console.log(`  - req.query.fecha_fin: ${req.query.fecha_fin || '없음'}`);
+    console.log(`  - req.query.start_date: ${req.query.start_date || '없음'}`);
+    console.log(`  - req.query.end_date: ${req.query.end_date || '없음'}`);
+    console.log(`  - 오늘 날짜 (기본값): ${today}`);
+    
     const startDate = req.query.fecha_inicio || req.query.start_date || today;
     const endDate = req.query.fecha_fin || req.query.end_date || today;
+    
+    console.log(`  - 최종 사용 startDate: ${startDate}`);
+    console.log(`  - 최종 사용 endDate: ${endDate}\n`);
 
     // bcolorview 값 확인 (valor1이 '0' 또는 '1')
     const bcolorviewValor1 = getBcolorviewValor1(req);
