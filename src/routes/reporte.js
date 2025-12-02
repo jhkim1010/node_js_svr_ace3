@@ -62,10 +62,8 @@ router.get('/stocks', async (req, res) => {
 
 // Items 보고서
 router.get('/items', async (req, res) => {
-    logReportRequest(req, 'Items');
     try {
         const result = await getItemsReport(req);
-        logReportResponse('Items', result);
         res.json(result);
     } catch (err) {
         const errorResponse = {

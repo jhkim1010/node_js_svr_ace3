@@ -38,8 +38,9 @@ router.post('/', async (req, res) => {
         const Ingresos = getModelForRequest(req, 'Ingresos');
         
         // BATCH_SYNC 또는 배열 데이터 처리 (utime 비교를 통한 UPDATE/SKIP 결정)
+        // Ingresos는 복합 unique key ['ingreso_id', 'sucursal'] 사용
         if ((req.body.operation === 'BATCH_SYNC' || Array.isArray(req.body.data)) && Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleUtimeComparisonArrayData(req, res, Ingresos, 'ingreso_id', 'Ingresos');
+            const result = await handleUtimeComparisonArrayData(req, res, Ingresos, ['ingreso_id', 'sucursal'], 'Ingresos');
             await notifyBatchSync(req, Ingresos, result);
             return res.status(200).json(result);
         }
@@ -48,7 +49,7 @@ router.post('/', async (req, res) => {
         const singleItem = req.body.new_data || req.body;
         req.body.data = [singleItem];
         req.body.operation = req.body.operation || 'BATCH_SYNC';
-        const result = await handleUtimeComparisonArrayData(req, res, Ingresos, 'ingreso_id', 'Ingresos');
+        const result = await handleUtimeComparisonArrayData(req, res, Ingresos, ['ingreso_id', 'sucursal'], 'Ingresos');
         
         if (result.results && result.results.length > 0) {
             const firstResult = result.results[0];
@@ -58,7 +59,7 @@ router.post('/', async (req, res) => {
             throw new Error('Failed to process ingreso');
         }
     } catch (err) {
-        handleInsertUpdateError(err, req, 'Ingresos', 'ingreso_id', 'ingresos');
+        handleInsertUpdateError(err, req, 'Ingresos', ['ingreso_id', 'sucursal'], 'ingresos');
         res.status(400).json({ 
             error: 'Failed to create ingreso', 
             details: err.message,
@@ -79,10 +80,11 @@ router.put('/:id', async (req, res) => {
         const Ingresos = getModelForRequest(req, 'Ingresos');
         
         // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우, utime 비교를 통한 UPDATE/SKIP 결정)
+        // Ingresos는 복합 unique key ['ingreso_id', 'sucursal'] 사용
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Ingresos, 'ingreso_id', 'Ingresos');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Ingresos, ['ingreso_id', 'sucursal'], 'Ingresos');
             await notifyBatchSync(req, Ingresos, result);
             return res.status(200).json(result);
         }
