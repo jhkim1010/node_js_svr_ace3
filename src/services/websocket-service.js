@@ -69,20 +69,39 @@ function getTableChannels() {
 }
 
 function initializeWebSocket(server) {
+    console.log(`[WebSocket] 초기화 시작: HTTP 서버 상태 확인 중...`);
+    
+    // HTTP 서버가 리스닝 중인지 확인
+    if (!server || !server.listening) {
+        console.warn(`[WebSocket] 경고: HTTP 서버가 아직 리스닝 중이 아닙니다.`);
+    }
+    
     // WebSocket 서버 생성 (경로: /api/ws - nginx /api 프록시와 호환)
-    wss = new WebSocket.Server({ 
-        server,
-        path: '/api/ws',
-        perMessageDeflate: false // 압축 비활성화 (선택사항)
-    });
+    try {
+        wss = new WebSocket.Server({ 
+            server,
+            path: '/api/ws',
+            perMessageDeflate: false // 압축 비활성화 (선택사항)
+        });
+        console.log(`[WebSocket] ✅ WebSocket 서버 생성 완료: 경로=/api/ws`);
+    } catch (err) {
+        console.error(`[WebSocket] ❌ WebSocket 서버 생성 실패:`, err.message);
+        throw err;
+    }
 
     // WebSocket 서버 이벤트 리스너
     wss.on('listening', () => {
-        console.log(`[WebSocket] 서버 리스닝 중: 경로=/api/ws`);
+        console.log(`[WebSocket] ✅ 서버 리스닝 중: 경로=/api/ws`);
     });
 
     wss.on('error', (error) => {
-        console.error(`[WebSocket] 서버 오류:`, error.message);
+        console.error(`[WebSocket] ❌ 서버 오류:`, error.message);
+        console.error(`[WebSocket] 오류 상세:`, error);
+    });
+    
+    // HTTP 서버의 upgrade 이벤트 확인
+    server.on('upgrade', (request, socket, head) => {
+        console.log(`[WebSocket] 🔄 HTTP upgrade 이벤트: url=${request.url}, headers.upgrade=${request.headers.upgrade}`);
     });
 
     wss.on('connection', (ws, req) => {

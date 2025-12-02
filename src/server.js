@@ -14,6 +14,19 @@ const { displayBuildInfo } = require('./utils/build-info');
 const app = express();
 const server = http.createServer(app);
 
+// WebSocket 업그레이드 요청을 Express가 처리하기 전에 가로채기
+// 이렇게 하면 Express 미들웨어가 WebSocket 요청을 처리하지 않음
+server.on('upgrade', (request, socket, head) => {
+    // /api/ws 경로인 경우 WebSocket 서버가 처리하도록 함
+    if (request.url === '/api/ws' || request.url.startsWith('/api/ws')) {
+        // WebSocket 서버가 아직 초기화되지 않았으면 나중에 처리하도록 대기
+        // 실제로는 initializeWebSocket에서 처리됨
+        return;
+    }
+    // 다른 경로는 Express가 처리하도록 함
+    socket.destroy();
+});
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));  // BATCH_SYNC 대용량 데이터 처리를 위해 10MB로 증가
 app.use(express.static(path.resolve('./') + '/public'));
@@ -241,14 +254,15 @@ async function start() {
         // 빌드 정보 표시
         displayBuildInfo();
         
-        // WebSocket 서버 초기화
-        initializeWebSocket(server);
-        
-        // HTTP 및 WebSocket 서버 시작
+        // HTTP 서버 시작
         server.listen(config.port, () => {
             console.log(`Server listening on http://localhost:${config.port}`);
             console.log(`WebSocket server ready on ws://localhost:${config.port}/api/ws`);
             console.log('Ready to accept requests with DB connection info in headers');
+            
+            // HTTP 서버가 리스닝을 시작한 후 WebSocket 서버 초기화
+            // 이렇게 하면 WebSocket 서버가 제대로 연결을 받을 수 있음
+            initializeWebSocket(server);
         });
     } catch (err) {
         console.error('Failed to start server:', err);
