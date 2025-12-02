@@ -60,16 +60,51 @@ router.post('/', async (req, res) => {
         }
     } catch (err) {
         handleInsertUpdateError(err, req, 'Ingresos', ['ingreso_id', 'sucursal'], 'ingresos');
-        res.status(400).json({ 
-            error: 'Failed to create ingreso', 
-            details: err.message,
+        
+        // 더 상세한 오류 정보 추출
+        const errorMsg = err.original ? err.original.message : err.message;
+        const errorCode = err.original ? err.original.code : err.code;
+        const constraintMatch = errorMsg ? errorMsg.match(/constraint "([^"]+)"/) : null;
+        const constraintName = constraintMatch ? constraintMatch[1] : null;
+        
+        // 요청 데이터에서 primary key 값 추출
+        const bodyData = req.body.new_data || req.body.data || req.body;
+        let attemptedKeys = null;
+        if (bodyData) {
+            const dataToCheck = Array.isArray(bodyData) ? bodyData[0] : bodyData;
+            if (dataToCheck && typeof dataToCheck === 'object') {
+                attemptedKeys = {
+                    ingreso_id: dataToCheck.ingreso_id !== undefined ? dataToCheck.ingreso_id : null,
+                    sucursal: dataToCheck.sucursal !== undefined ? dataToCheck.sucursal : null
+                };
+            }
+        }
+        
+        // 오류 응답 구성
+        const errorResponse = {
+            error: 'Failed to create ingreso',
+            details: errorMsg,
             errorType: err.constructor.name,
+            errorCode: errorCode || null,
+            constraintName: constraintName || null,
+            attemptedKeys: attemptedKeys,
+            primaryKey: ['ingreso_id', 'sucursal'],
             validationErrors: err.errors ? err.errors.map(e => ({
                 field: e.path,
                 value: e.value,
                 message: e.message
             })) : undefined
-        });
+        };
+        
+        // constraint 관련 추가 정보
+        if (constraintName === 'ingreso.pr' || constraintName === 'ingresos_ingreso_id_sucursal_uniq') {
+            errorResponse.constraintType = constraintName === 'ingreso.pr' ? 'primary_key' : 'unique_key';
+            errorResponse.message = constraintName === 'ingreso.pr' 
+                ? 'Primary key (ingreso_id) already exists. The system will attempt to update the existing record based on utime comparison.'
+                : 'Unique key (ingreso_id, sucursal) already exists. The system will attempt to update the existing record based on utime comparison.';
+        }
+        
+        res.status(400).json(errorResponse);
     }
 });
 

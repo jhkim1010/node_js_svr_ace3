@@ -136,42 +136,100 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
         const primaryKeyConstraintPattern = `${tableName}.pr`;
         if (constraintName === primaryKeyConstraintPattern || errorMsg.includes(primaryKeyConstraintPattern)) {
             const keyDisplay = Array.isArray(primaryKey) ? primaryKey.join(', ') : primaryKey;
-            console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: Primary key (${keyDisplay}) duplicate`);
+            const isCompositeKey = Array.isArray(primaryKey) && primaryKey.length > 1;
+            
+            console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: Primary key constraint violation`);
             console.error(`   Problem Source: ${errorClassification.description}`);
-            console.error(`   Reason: The ${keyDisplay} value already exists in the database. Use UPDATE instead of INSERT, or use a different ${keyDisplay} value.`);
+            console.error(`   Constraint Name: ${constraintName}`);
+            console.error(`   Primary Key: ${keyDisplay}`);
+            
+            if (isCompositeKey) {
+                console.error(`   Note: This is a composite primary key. The system will attempt to find the record using individual keys and update based on utime comparison.`);
+            } else {
+                console.error(`   Reason: The ${keyDisplay} value already exists in the database. The system will attempt to update the existing record based on utime comparison.`);
+            }
             
             // 요청 본문에서 primary key 값 찾기
             const bodyData = req.body.new_data || req.body.data || req.body;
             if (bodyData) {
                 if (Array.isArray(bodyData)) {
-                    // 배열인 경우 중복된 id_ga 찾기
-                    const duplicateKeys = [];
-                    const seenKeys = new Set();
-                    bodyData.forEach((item, index) => {
-                        if (item && item[primaryKeyStr] !== undefined && item[primaryKeyStr] !== null) {
-                            const keyValue = item[primaryKeyStr];
-                            if (seenKeys.has(keyValue)) {
-                                duplicateKeys.push({ index, value: keyValue });
-                            } else {
-                                seenKeys.add(keyValue);
+                    // 배열인 경우 복합 키 중복 확인
+                    if (isCompositeKey) {
+                        const duplicateKeys = [];
+                        const seenKeys = new Set();
+                        bodyData.forEach((item, index) => {
+                            if (item && typeof item === 'object') {
+                                const keyValues = primaryKey.map(key => item[key]).filter(v => v !== undefined && v !== null);
+                                if (keyValues.length === primaryKey.length) {
+                                    const keyStr = keyValues.join('|');
+                                    if (seenKeys.has(keyStr)) {
+                                        duplicateKeys.push({ index, values: keyValues });
+                                    } else {
+                                        seenKeys.add(keyStr);
+                                    }
+                                }
+                            }
+                        });
+                        
+                        if (duplicateKeys.length > 0) {
+                            console.error(`   ⚠️  중복된 복합 키 값이 요청 배열에 포함되어 있습니다:`);
+                            duplicateKeys.forEach(dup => {
+                                const keyDisplay = primaryKey.map((key, i) => `${key}=${dup.values[i]}`).join(', ');
+                                console.error(`      - 배열 인덱스 ${dup.index}: ${keyDisplay}`);
+                            });
+                        }
+                        
+                        // 첫 번째 항목의 primary key 값 표시
+                        if (bodyData.length > 0 && bodyData[0] && typeof bodyData[0] === 'object') {
+                            const firstItemKeys = primaryKey.map(key => {
+                                const value = bodyData[0][key];
+                                return value !== undefined ? `${key}=${value}` : null;
+                            }).filter(v => v !== null);
+                            if (firstItemKeys.length > 0) {
+                                console.error(`   Attempted primary key values (first item): ${firstItemKeys.join(', ')}`);
                             }
                         }
-                    });
-                    
-                    if (duplicateKeys.length > 0) {
-                        console.error(`   ⚠️  중복된 ${primaryKeyStr} 값이 요청 배열에 포함되어 있습니다:`);
-                        duplicateKeys.forEach(dup => {
-                            console.error(`      - 배열 인덱스 ${dup.index}: ${primaryKeyStr} = ${dup.value}`);
+                    } else {
+                        // 단일 키인 경우 기존 로직
+                        const duplicateKeys = [];
+                        const seenKeys = new Set();
+                        bodyData.forEach((item, index) => {
+                            if (item && item[primaryKeyStr] !== undefined && item[primaryKeyStr] !== null) {
+                                const keyValue = item[primaryKeyStr];
+                                if (seenKeys.has(keyValue)) {
+                                    duplicateKeys.push({ index, value: keyValue });
+                                } else {
+                                    seenKeys.add(keyValue);
+                                }
+                            }
                         });
-                        console.error(`   해결 방법: 요청 배열에서 중복된 항목을 제거하거나, 서버에서 이미 존재하는 레코드는 UPDATE로 처리됩니다.`);
+                        
+                        if (duplicateKeys.length > 0) {
+                            console.error(`   ⚠️  중복된 ${primaryKeyStr} 값이 요청 배열에 포함되어 있습니다:`);
+                            duplicateKeys.forEach(dup => {
+                                console.error(`      - 배열 인덱스 ${dup.index}: ${primaryKeyStr} = ${dup.value}`);
+                            });
+                        }
+                        
+                        if (bodyData.length > 0 && bodyData[0] && bodyData[0][primaryKeyStr] !== undefined) {
+                            console.error(`   Attempted ${primaryKeyStr} value (first item): ${bodyData[0][primaryKeyStr]}`);
+                        }
                     }
-                    
-                    // 첫 번째 항목의 primary key 값 표시
-                    if (bodyData.length > 0 && bodyData[0] && bodyData[0][primaryKeyStr] !== undefined) {
-                        console.error(`   Attempted ${primaryKeyStr} value (first item): ${bodyData[0][primaryKeyStr]}`);
+                } else if (bodyData && typeof bodyData === 'object') {
+                    // 단일 객체인 경우
+                    if (isCompositeKey) {
+                        const keyValues = primaryKey.map(key => {
+                            const value = bodyData[key];
+                            return value !== undefined ? `${key}=${value}` : null;
+                        }).filter(v => v !== null);
+                        if (keyValues.length > 0) {
+                            console.error(`   Attempted primary key values: ${keyValues.join(', ')}`);
+                        }
+                    } else {
+                        if (bodyData[primaryKeyStr] !== undefined) {
+                            console.error(`   Attempted ${primaryKeyStr} value: ${bodyData[primaryKeyStr]}`);
+                        }
                     }
-                } else if (bodyData[primaryKeyStr] !== undefined) {
-                    console.error(`   Attempted ${primaryKeyStr} value: ${bodyData[primaryKeyStr]}`);
                 }
             }
         } else {

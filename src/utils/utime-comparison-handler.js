@@ -1234,11 +1234,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     } catch (createErr) {
                         // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 모든 unique key로 레코드를 조회하여 utime 비교 수행
                         if (isUniqueConstraintError(createErr) && primaryKey) {
+                            const errorMsg = createErr.original ? createErr.original.message : createErr.message;
+                            const constraintMatch = errorMsg ? errorMsg.match(/constraint "([^"]+)"/) : null;
+                            const constraintName = constraintMatch ? constraintMatch[1] : null;
+                            
+                            // 디버깅: constraint 정보 출력
+                            if (modelName === 'Ingresos') {
+                                console.error(`[Ingresos DEBUG] INSERT 실패 - Constraint: ${constraintName || 'unknown'}`);
+                                console.error(`[Ingresos DEBUG] Attempted keys: ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`);
+                            }
+                            
                             try {
                                 // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
                                 // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
+                                if (modelName === 'Ingresos') {
+                                    console.error(`[Ingresos DEBUG] SAVEPOINT 롤백 실패: ${rollbackErr.message}`);
+                                }
                             }
                             
                             // 모든 unique key (primary key + 복합 unique key 포함)로 레코드 조회 시도
@@ -1261,6 +1274,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     }, {})
                                     : { [primaryKey]: filteredItem[primaryKey] };
                                 
+                                if (modelName === 'Ingresos') {
+                                    console.error(`[Ingresos DEBUG] 복합 key로 조회 시도: ${JSON.stringify(primaryKeyWhere)}`);
+                                }
+                                
                                 retryRecord = await Model.findOne({ 
                                     where: primaryKeyWhere, 
                                     transaction,
@@ -1275,14 +1292,29 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 if (retryRecord) {
                                     retryWhereCondition = primaryKeyWhere;
                                     retryKeysToRemove = primaryKey;
+                                    if (modelName === 'Ingresos') {
+                                        console.error(`[Ingresos DEBUG] 복합 key로 레코드 찾음: ingreso_id=${retryRecord.ingreso_id}, sucursal=${retryRecord.sucursal}`);
+                                    }
+                                } else {
+                                    if (modelName === 'Ingresos') {
+                                        console.error(`[Ingresos DEBUG] 복합 key로 레코드 못 찾음`);
+                                    }
                                 }
                             }
                             
                             // 2. Primary key가 복합 key인 경우, 각 개별 키로도 시도 (ingreso.pr 같은 단일 primary key constraint 대응)
                             if (!retryRecord && Array.isArray(primaryKey) && primaryKey.length > 1) {
+                                if (modelName === 'Ingresos') {
+                                    console.error(`[Ingresos DEBUG] 개별 키로 조회 시도 시작`);
+                                }
                                 for (const singleKey of primaryKey) {
                                     if (filteredItem[singleKey] !== undefined && filteredItem[singleKey] !== null) {
                                         const singleKeyWhere = { [singleKey]: filteredItem[singleKey] };
+                                        
+                                        if (modelName === 'Ingresos') {
+                                            console.error(`[Ingresos DEBUG] 개별 키로 조회: ${singleKey}=${filteredItem[singleKey]}`);
+                                        }
+                                        
                                         retryRecord = await Model.findOne({ 
                                             where: singleKeyWhere, 
                                             transaction,
@@ -1297,7 +1329,14 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         if (retryRecord) {
                                             retryWhereCondition = singleKeyWhere;
                                             retryKeysToRemove = [singleKey];
+                                            if (modelName === 'Ingresos') {
+                                                console.error(`[Ingresos DEBUG] 개별 키(${singleKey})로 레코드 찾음: ingreso_id=${retryRecord.ingreso_id}, sucursal=${retryRecord.sucursal}`);
+                                            }
                                             break; // 레코드를 찾았으면 루프 종료
+                                        } else {
+                                            if (modelName === 'Ingresos') {
+                                                console.error(`[Ingresos DEBUG] 개별 키(${singleKey})로 레코드 못 찾음`);
+                                            }
                                         }
                                     }
                                 }
@@ -1358,7 +1397,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     } else if (retryRecord.utime) {
                                         if (retryRecord.utime instanceof Date) {
                                             const rawRecord = await Model.findOne({ 
-                                                where: primaryKeyWhere, 
+                                                where: retryWhereCondition, 
                                                 transaction,
                                                 attributes: [[Sequelize.literal(`utime::text`), 'utime']],
                                                 raw: true
@@ -1369,6 +1408,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         } else {
                                             serverUtimeStr = String(retryRecord.utime).trim();
                                         }
+                                    }
+                                    
+                                    if (modelName === 'Ingresos') {
+                                        console.error(`[Ingresos DEBUG] utime 비교: client=${clientUtimeStr}, server=${serverUtimeStr}`);
                                     }
                                     
                                     // utime 비교
@@ -1382,6 +1425,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         shouldUpdate = clientUtimeStr > serverUtimeStr;
                                     } else {
                                         shouldUpdate = false;
+                                    }
+                                    
+                                    if (modelName === 'Ingresos') {
+                                        console.error(`[Ingresos DEBUG] shouldUpdate=${shouldUpdate}`);
                                     }
                                     
                                     if (shouldUpdate) {
@@ -1408,19 +1455,39 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             updateData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
                                         }
                                         
-                                        await Model.update(updateData, { where: retryWhereCondition, transaction });
-                                        const updated = await Model.findOne({ where: retryWhereCondition, transaction });
-                                        results.push({ index: i, action: 'updated', data: updated });
-                                        updatedCount++;
+                                        if (modelName === 'Ingresos') {
+                                            console.error(`[Ingresos DEBUG] UPDATE 시도: where=${JSON.stringify(retryWhereCondition)}`);
+                                        }
                                         
-                                        // SAVEPOINT 해제
                                         try {
-                                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
-                                        } catch (releaseErr) {
-                                            // 무시
+                                            await Model.update(updateData, { where: retryWhereCondition, transaction });
+                                            const updated = await Model.findOne({ where: retryWhereCondition, transaction });
+                                            results.push({ index: i, action: 'updated', data: updated });
+                                            updatedCount++;
+                                            
+                                            if (modelName === 'Ingresos') {
+                                                console.error(`[Ingresos DEBUG] UPDATE 성공`);
+                                            }
+                                            
+                                            // SAVEPOINT 해제
+                                            try {
+                                                await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                                            } catch (releaseErr) {
+                                                // 무시
+                                            }
+                                        } catch (updateErr) {
+                                            if (modelName === 'Ingresos') {
+                                                console.error(`[Ingresos DEBUG] UPDATE 실패: ${updateErr.message}`);
+                                                console.error(`[Ingresos DEBUG] UPDATE 에러 상세: ${JSON.stringify(updateErr, null, 2)}`);
+                                            }
+                                            throw updateErr;
                                         }
                                     } else {
                                         // 서버 utime이 더 높거나 같으면 스킵
+                                        if (modelName === 'Ingresos') {
+                                            console.error(`[Ingresos DEBUG] SKIP (server utime이 더 최신)`);
+                                        }
+                                        
                                         results.push({ 
                                             index: i, 
                                             action: 'skipped', 
@@ -1440,6 +1507,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     }
                             } else {
                                 // 레코드를 찾을 수 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
+                                if (modelName === 'Ingresos') {
+                                    console.error(`[Ingresos DEBUG] 레코드를 찾을 수 없음 - 원래 에러 재발생`);
+                                    console.error(`[Ingresos DEBUG] 원래 에러: ${errorMsg}`);
+                                }
+                                
                                 try {
                                     await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                                 } catch (rollbackErr) {
