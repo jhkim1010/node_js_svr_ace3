@@ -41,19 +41,28 @@ async function handleSingleItem(req, res, Model, primaryKey, modelName) {
                 const updated = Array.isArray(availableUniqueKey)
                     ? await Model.findOne({ where: whereCondition, transaction })
                     : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                await transaction.commit();
+                // 트랜잭션이 아직 완료되지 않았는지 확인
+                if (transaction && !transaction.finished) {
+                    await transaction.commit();
+                }
                 return { action: 'updated', data: updated };
             } else {
                 // 레코드가 없으면 INSERT 시도
                 try {
                     const created = await Model.create(filteredItem, { transaction });
-                    await transaction.commit();
+                    // 트랜잭션이 아직 완료되지 않았는지 확인
+                    if (transaction && !transaction.finished) {
+                        await transaction.commit();
+                    }
                     return { action: 'created', data: created };
                 } catch (createErr) {
                     // unique constraint 에러가 발생하면 트랜잭션 롤백 후 UPDATE로 재시도
                     if (isUniqueConstraintError(createErr)) {
                         // 트랜잭션 롤백 (abort된 트랜잭션에서 재시도 불가)
-                        await transaction.rollback();
+                        // 트랜잭션이 아직 완료되지 않았는지 확인
+                        if (transaction && !transaction.finished) {
+                            await transaction.rollback();
+                        }
                         
                         // 새로운 트랜잭션으로 재시도
                         const retryTransaction = await sequelize.transaction();
@@ -99,22 +108,42 @@ async function handleSingleItem(req, res, Model, primaryKey, modelName) {
                                 const updated = Array.isArray(retryUniqueKey)
                                     ? await Model.findOne({ where: retryWhereCondition, transaction: retryTransaction })
                                     : await Model.findByPk(filteredItem[retryUniqueKey], { transaction: retryTransaction });
-                                await retryTransaction.commit();
+                                // 트랜잭션이 아직 완료되지 않았는지 확인
+                                if (retryTransaction && !retryTransaction.finished) {
+                                    await retryTransaction.commit();
+                                }
                                 return { action: 'updated', data: updated };
                             } else {
                                 // 레코드를 찾을 수 없으면 다시 INSERT 시도 (동시성 문제로 인해 발생할 수 있음)
                                 try {
                                     const created = await Model.create(filteredItem, { transaction: retryTransaction });
-                                    await retryTransaction.commit();
+                                    // 트랜잭션이 아직 완료되지 않았는지 확인
+                                    if (retryTransaction && !retryTransaction.finished) {
+                                        await retryTransaction.commit();
+                                    }
                                     return { action: 'created', data: created };
                                 } catch (retryCreateErr) {
                                     // 재시도 INSERT도 실패하면 원래 에러를 다시 던짐
-                                    await retryTransaction.rollback();
+                                    // 트랜잭션 롤백 (안전하게 처리)
+                                    try {
+                                        if (retryTransaction && !retryTransaction.finished) {
+                                            await retryTransaction.rollback();
+                                        }
+                                    } catch (rollbackErr) {
+                                        console.error(`[Transaction Rollback Error] ${rollbackErr.message}`);
+                                    }
                                     throw createErr;
                                 }
                             }
                         } catch (retryErr) {
-                            await retryTransaction.rollback();
+                            // 재시도 트랜잭션 롤백 (안전하게 처리)
+                            try {
+                                if (retryTransaction && !retryTransaction.finished) {
+                                    await retryTransaction.rollback();
+                                }
+                            } catch (rollbackErr) {
+                                console.error(`[Transaction Rollback Error] ${rollbackErr.message}`);
+                            }
                             throw retryErr;
                         }
                     }
@@ -125,11 +154,26 @@ async function handleSingleItem(req, res, Model, primaryKey, modelName) {
         } else {
             // unique key가 없으면 INSERT 시도
             const created = await Model.create(filteredItem, { transaction });
-            await transaction.commit();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.commit();
+            }
             return { action: 'created', data: created };
         }
     } catch (err) {
-        await transaction.rollback();
+        // 에러 발생 시 트랜잭션 롤백
+        // 트랜잭션이 아직 활성 상태인지 확인하고 롤백
+        // 이렇게 하면 "idle in transaction" 상태를 방지할 수 있음
+        try {
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
+        } catch (rollbackErr) {
+            // 롤백 에러는 무시 (이미 롤백되었을 수 있음)
+            // 하지만 로그는 남겨서 디버깅에 도움이 되도록 함
+            console.error(`[Transaction Rollback Error] ${rollbackErr.message}`);
+        }
         throw err;
     }
 }

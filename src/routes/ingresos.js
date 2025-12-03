@@ -134,15 +134,21 @@ router.put('/:id', async (req, res) => {
         try {
             const [count] = await Ingresos.update(dataToUpdate, { where: { ingreso_id: id }, transaction });
             if (count === 0) {
-                await transaction.rollback();
+                if (transaction && !transaction.finished) {
+                    await transaction.rollback();
+                }
                 return res.status(404).json({ error: 'Not found' });
             }
             const updated = await Ingresos.findByPk(id, { transaction });
-            await transaction.commit();
+            if (transaction && !transaction.finished) {
+                await transaction.commit();
+            }
             await notifyDbChange(req, Ingresos, 'update', updated);
             res.json(updated);
         } catch (err) {
-            await transaction.rollback();
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
             throw err;
         }
     } catch (err) {
@@ -163,15 +169,21 @@ router.delete('/:id', async (req, res) => {
         try {
             const toDelete = await Ingresos.findByPk(id, { transaction });
             if (!toDelete) {
-                await transaction.rollback();
+                if (transaction && !transaction.finished) {
+                    await transaction.rollback();
+                }
                 return res.status(404).json({ error: 'Not found' });
             }
             const count = await Ingresos.destroy({ where: { ingreso_id: id }, transaction });
-            await transaction.commit();
+            if (transaction && !transaction.finished) {
+                await transaction.commit();
+            }
             await notifyDbChange(req, Ingresos, 'delete', toDelete);
             res.status(204).end();
         } catch (err) {
-            await transaction.rollback();
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
             throw err;
         }
     } catch (err) {

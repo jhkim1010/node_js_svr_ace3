@@ -283,10 +283,16 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
         
         // 에러가 있으면 트랜잭션 롤백
         if (errors.length > 0) {
-            await transaction.rollback();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
         } else {
             // 모든 작업이 성공하면 트랜잭션 커밋
-            await transaction.commit();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.commit();
+            }
         }
         
         const totalCount = req.body.data.length;
@@ -316,7 +322,18 @@ async function handleBatchSync(req, res, Model, primaryKey, modelName) {
         return result;
     } catch (err) {
         // 에러 발생 시 트랜잭션 롤백
-        await transaction.rollback();
+        // 트랜잭션이 아직 활성 상태인지 확인하고 롤백
+        // 이렇게 하면 "idle in transaction" 상태를 방지할 수 있음
+        try {
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
+        } catch (rollbackErr) {
+            // 롤백 에러는 무시 (이미 롤백되었을 수 있음)
+            // 하지만 로그는 남겨서 디버깅에 도움이 되도록 함
+            console.error(`[Transaction Rollback Error] ${rollbackErr.message}`);
+        }
         throw err;
     }
 }
@@ -534,13 +551,17 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
                 data: req.body.data[i] 
             });
             // 에러 발생 시 즉시 중단하고 롤백 (원자성 보장)
-            await transaction.rollback();
+            // 롤백 후 throw하지 않고, 바깥 catch 블록에서 롤백하도록 함
+            // 이렇게 하면 중복 롤백을 방지하고 트랜잭션이 확실히 종료됨
             throw itemErr;
         }
         }
         
         // 모든 작업이 성공하면 트랜잭션 커밋
-        await transaction.commit();
+        // 트랜잭션이 아직 완료되지 않았는지 확인
+        if (transaction && !transaction.finished) {
+            await transaction.commit();
+        }
         
         if (results.length > 0) {
             const totalCount = req.body.data.length;
@@ -572,11 +593,18 @@ async function handleArrayData(req, res, Model, primaryKey, modelName) {
             throw new Error('All items failed to process');
         }
     } catch (err) {
-        // 에러 발생 시 트랜잭션 롤백 (이미 롤백된 경우 무시)
+        // 에러 발생 시 트랜잭션 롤백
+        // 트랜잭션이 아직 활성 상태인지 확인하고 롤백
+        // 이렇게 하면 "idle in transaction" 상태를 방지할 수 있음
         try {
-            await transaction.rollback();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
         } catch (rollbackErr) {
             // 롤백 에러는 무시 (이미 롤백되었을 수 있음)
+            // 하지만 로그는 남겨서 디버깅에 도움이 되도록 함
+            console.error(`[Transaction Rollback Error] ${rollbackErr.message}`);
         }
         throw err;
     }

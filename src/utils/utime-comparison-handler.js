@@ -108,7 +108,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 if (resultPk.action === 'updated') {
                                     results.push({ index: i, action: 'updated', data: resultPk.data });
                                     updatedCount++;
-                                    await transaction.commit();
+                                    // 트랜잭션이 아직 완료되지 않았는지 확인
+                                    if (transaction && !transaction.finished) {
+                                        await transaction.commit();
+                                    }
                                     continue;
                                 }
                                 
@@ -122,7 +125,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         data: resultPk.data
                                     });
                                     skippedCount++;
-                                    await transaction.commit();
+                                    // 트랜잭션이 아직 완료되지 않았는지 확인
+                                    if (transaction && !transaction.finished) {
+                                        await transaction.commit();
+                                    }
                                     continue;
                                 }
                             }
@@ -1537,14 +1543,22 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
                 }
             // 항목 처리 성공 시 해당 트랜잭션 커밋
-            await transaction.commit();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.commit();
+            }
             } catch (itemErr) {
             // 항목 처리 실패 시 해당 트랜잭션만 롤백
+            // 트랜잭션이 아직 완료되지 않았는지 확인하고 롤백
+            // 이렇게 하면 "idle in transaction" 상태를 방지할 수 있음
                 try {
-                await transaction.rollback();
+                    if (transaction && !transaction.finished) {
+                        await transaction.rollback();
+                    }
                 } catch (rollbackErr) {
-                // 롤백 에러는 무시
-            }
+                    // 롤백 에러는 무시하지만 로그는 남김
+                    console.error(`[Transaction Rollback Error] Item ${i + 1}: ${rollbackErr.message}`);
+                }
             
             // 디버깅: Ingresos 에러 상세 로그
             if (modelName === 'Ingresos') {

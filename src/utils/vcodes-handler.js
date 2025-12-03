@@ -165,9 +165,15 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
         }
         
         if (errors.length > 0) {
-            await transaction.rollback();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
         } else {
-            await transaction.commit();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.commit();
+            }
         }
         
         const totalCount = req.body.data.length;
@@ -195,7 +201,16 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
         
         return result;
     } catch (err) {
-        await transaction.rollback();
+        // 에러 발생 시 트랜잭션 롤백
+        // 트랜잭션이 아직 활성 상태인지 확인하고 롤백
+        // 이렇게 하면 "idle in transaction" 상태를 방지할 수 있음
+        try {
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
+        } catch (rollbackErr) {
+            console.error(`[Transaction Rollback Error] ${rollbackErr.message}`);
+        }
         throw err;
     }
 }
@@ -383,9 +398,15 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
         }
         
         if (errors.length > 0) {
-            await transaction.rollback();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
         } else {
-            await transaction.commit();
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.commit();
+            }
         }
         
         const totalCount = req.body.data.length;
@@ -412,7 +433,16 @@ async function handleVcodesArrayData(req, res, Model, primaryKey, modelName) {
         
         return result;
     } catch (err) {
-        await transaction.rollback();
+        // 에러 발생 시 트랜잭션 롤백
+        // 트랜잭션이 아직 활성 상태인지 확인하고 롤백
+        // 이렇게 하면 "idle in transaction" 상태를 방지할 수 있음
+        try {
+            if (transaction && !transaction.finished) {
+                await transaction.rollback();
+            }
+        } catch (rollbackErr) {
+            console.error(`[Transaction Rollback Error] ${rollbackErr.message}`);
+        }
         throw err;
     }
 }
