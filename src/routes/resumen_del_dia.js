@@ -94,7 +94,7 @@ router.post('/', async (req, res) => {
                 [sequelize.fn('SUM', sequelize.col('tcredito')), 'total_credito_day'],
                 [sequelize.fn('SUM', sequelize.col('tbanco')), 'total_banco_day'],
                 [sequelize.fn('SUM', sequelize.col('tfavor')), 'total_favor_day'],
-                [sequelize.fn('MAX', sequelize.col('utime')), 'last_venta_hour'],
+                [sequelize.fn('MAX', sequelize.col('hora')), 'last_venta_hour'],
                 [sequelize.fn('SUM', sequelize.col('cntropas')), 'total_count_ropas'],
                 'sucursal'
             ],
