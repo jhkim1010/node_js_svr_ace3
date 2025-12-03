@@ -285,57 +285,135 @@ async function checkPostgresConnectionCount() {
         
         const serverTotal = parseInt(serverResults[0].total_connections, 10);
         
-        // 데이터베이스별 연결 수 조회 (idle과 active 구분)
-        // datname이 NULL인 경우도 포함하여 전체 수와 일치시킴
+        // 모든 상태별 연결 수 조회 (디버깅용)
+        const [stateResults] = await firstSequelize.query(`
+            SELECT 
+                COALESCE(state, '<NULL>') as state,
+                count(*) as count
+            FROM pg_stat_activity
+            GROUP BY state
+            ORDER BY count DESC
+        `);
+        
+        // 데이터베이스별 연결 수 조회 (모든 상태 포함)
+        // idle in transaction (aborted)도 포함하여 정확한 집계
         const [dbResults] = await firstSequelize.query(`
             SELECT 
                 COALESCE(datname::text, '<NULL>') as database_name,
-                count(*) FILTER (WHERE state != 'idle' AND state != 'idle in transaction') as active_count,
-                count(*) FILTER (WHERE state = 'idle' OR state = 'idle in transaction') as idle_count,
+                count(*) FILTER (WHERE state = 'active') as active_count,
+                count(*) FILTER (WHERE state = 'idle') as idle_count,
+                count(*) FILTER (WHERE state = 'idle in transaction') as idle_in_transaction_count,
+                count(*) FILTER (WHERE state = 'idle in transaction (aborted)') as idle_in_transaction_aborted_count,
+                count(*) FILTER (WHERE state IS NOT NULL AND state NOT IN ('idle', 'idle in transaction', 'idle in transaction (aborted)', 'active')) as other_state_count,
                 count(*) as total_count
             FROM pg_stat_activity 
             GROUP BY datname
             ORDER BY total_count DESC
         `);
         
-        const connectionDetails = dbResults.map(r => ({
-            database: r.database_name,
-            active: parseInt(r.active_count, 10),
-            idle: parseInt(r.idle_count, 10),
-            total: parseInt(r.total_count, 10)
-        }));
+        const connectionDetails = dbResults.map(r => {
+            const active = parseInt(r.active_count, 10);
+            const idle = parseInt(r.idle_count, 10);
+            const idleInTransaction = parseInt(r.idle_in_transaction_count, 10);
+            const idleInTransactionAborted = parseInt(r.idle_in_transaction_aborted_count, 10);
+            const other = parseInt(r.other_state_count, 10);
+            const total = parseInt(r.total_count, 10);
+            
+            return {
+                database: r.database_name,
+                active: active,
+                idle: idle,
+                idleInTransaction: idleInTransaction,
+                idleInTransactionAborted: idleInTransactionAborted,
+                other: other,
+                total: total
+            };
+        });
         
         // 데이터베이스별 합계 검증
         const dbTotal = connectionDetails.reduce((sum, d) => sum + d.total, 0);
         const dbActive = connectionDetails.reduce((sum, d) => sum + d.active, 0);
         const dbIdle = connectionDetails.reduce((sum, d) => sum + d.idle, 0);
+        const dbIdleInTransaction = connectionDetails.reduce((sum, d) => sum + d.idleInTransaction, 0);
+        const dbIdleInTransactionAborted = connectionDetails.reduce((sum, d) => sum + d.idleInTransactionAborted, 0);
+        const dbOther = connectionDetails.reduce((sum, d) => sum + d.other, 0);
         
-        // 전체 active와 idle 수 계산 (모든 행 포함)
+        // 전체 active와 idle 수 계산 (모든 상태 포함)
         const [totalStats] = await firstSequelize.query(`
             SELECT 
-                count(*) FILTER (WHERE state != 'idle' AND state != 'idle in transaction') as total_active,
-                count(*) FILTER (WHERE state = 'idle' OR state = 'idle in transaction') as total_idle
+                count(*) FILTER (WHERE state = 'active') as total_active,
+                count(*) FILTER (WHERE state = 'idle') as total_idle,
+                count(*) FILTER (WHERE state = 'idle in transaction') as total_idle_in_transaction,
+                count(*) FILTER (WHERE state = 'idle in transaction (aborted)') as total_idle_in_transaction_aborted,
+                count(*) FILTER (WHERE state IS NOT NULL AND state NOT IN ('idle', 'idle in transaction', 'idle in transaction (aborted)', 'active')) as total_other
             FROM pg_stat_activity
         `);
         
         const totalActive = parseInt(totalStats[0].total_active, 10);
         const totalIdle = parseInt(totalStats[0].total_idle, 10);
+        const totalIdleInTransaction = parseInt(totalStats[0].total_idle_in_transaction, 10);
+        const totalIdleInTransactionAborted = parseInt(totalStats[0].total_idle_in_transaction_aborted, 10);
+        const totalOther = parseInt(totalStats[0].total_other, 10);
         
-        console.log(`\n[PostgreSQL 연결 수] 총 접속자: ${serverTotal}개 (Active: ${totalActive}개, Idle: ${totalIdle}개)`);
+        // idle in transaction (aborted)는 문제가 있는 연결이므로 경고 표시
+        const totalIdleCombined = totalIdle + totalIdleInTransaction;
+        
+        // 상태별 상세 정보 출력
+        console.log(`\n[PostgreSQL 연결 수] 총 접속자: ${serverTotal}개`);
+        console.log(`   - Active: ${totalActive}개`);
+        console.log(`   - Idle: ${totalIdle}개`);
+        console.log(`   - Idle in Transaction: ${totalIdleInTransaction}개`);
+        if (totalIdleInTransactionAborted > 0) {
+            console.warn(`   - ⚠️ Idle in Transaction (Aborted): ${totalIdleInTransactionAborted}개 (트랜잭션 미완료 문제!)`);
+        }
+        if (totalOther > 0) {
+            console.log(`   - 기타 상태: ${totalOther}개`);
+        }
+        
+        // 상태별 상세 정보 출력
+        if (stateResults.length > 0) {
+            console.log(`\n[상태별 상세 정보]`);
+            stateResults.forEach(state => {
+                console.log(`   - ${state.state}: ${state.count}개`);
+            });
+        }
+        
+        // 데이터베이스별 상세 정보 출력
         if (connectionDetails.length > 0) {
+            console.log(`\n[데이터베이스별 연결 수]`);
             connectionDetails.forEach(detail => {
                 if (detail.total > 0) {  // 0개인 데이터베이스는 출력하지 않음
-                    console.log(`   - ${detail.database}: ${detail.active}개 (${detail.idle})`);
+                    const parts = [
+                        `Active: ${detail.active}`,
+                        `Idle: ${detail.idle}`,
+                        `Idle in TX: ${detail.idleInTransaction}`
+                    ];
+                    if (detail.idleInTransactionAborted > 0) {
+                        parts.push(`⚠️ Idle in TX (Aborted): ${detail.idleInTransactionAborted}`);
+                    }
+                    if (detail.other > 0) {
+                        parts.push(`기타: ${detail.other}`);
+                    }
+                    console.log(`   - ${detail.database}: 총 ${detail.total}개 (${parts.join(', ')})`);
                 }
             });
         }
         
         // 검증: 데이터베이스별 합계가 전체와 일치하는지 확인
-        if (dbTotal !== serverTotal || dbActive !== totalActive || dbIdle !== totalIdle) {
-            console.warn(`[PostgreSQL 연결 수] ⚠️ 합계 불일치 감지:`);
-            console.warn(`   전체: ${serverTotal}개 (Active: ${totalActive}, Idle: ${totalIdle})`);
-            console.warn(`   DB별 합계: ${dbTotal}개 (Active: ${dbActive}, Idle: ${dbIdle})`);
-            console.warn(`   차이: ${serverTotal - dbTotal}개 (Active: ${totalActive - dbActive}, Idle: ${totalIdle - dbIdle})`);
+        const calculatedTotal = totalActive + totalIdle + totalIdleInTransaction + totalIdleInTransactionAborted + totalOther;
+        if (dbTotal !== serverTotal || calculatedTotal !== serverTotal) {
+            console.warn(`\n[PostgreSQL 연결 수] ⚠️ 합계 불일치 감지:`);
+            console.warn(`   전체: ${serverTotal}개`);
+            console.warn(`   계산된 합계: ${calculatedTotal}개 (Active: ${totalActive}, Idle: ${totalIdle}, Idle in TX: ${totalIdleInTransaction}, Idle in TX (Aborted): ${totalIdleInTransactionAborted}, 기타: ${totalOther})`);
+            console.warn(`   DB별 합계: ${dbTotal}개`);
+            console.warn(`   차이: ${serverTotal - dbTotal}개`);
+        }
+        
+        // idle in transaction (aborted) 경고
+        if (totalIdleInTransactionAborted > 0) {
+            console.warn(`\n[PostgreSQL 연결 수] ⚠️ 경고: ${totalIdleInTransactionAborted}개의 연결이 "idle in transaction (aborted)" 상태입니다.`);
+            console.warn(`   이는 트랜잭션이 시작되었지만 롤백되지 않은 상태를 의미합니다.`);
+            console.warn(`   애플리케이션 코드에서 트랜잭션 커밋/롤백을 확인하세요.`);
         }
         
         console.log(`[PostgreSQL 연결 수] 조회 시간: ${new Date().toLocaleString('ko-KR')}\n`);
@@ -344,6 +422,10 @@ async function checkPostgresConnectionCount() {
             total: serverTotal,
             active: totalActive,
             idle: totalIdle,
+            idleInTransaction: totalIdleInTransaction,
+            idleInTransactionAborted: totalIdleInTransactionAborted,
+            other: totalOther,
+            stateBreakdown: stateResults.map(s => ({ state: s.state, count: parseInt(s.count, 10) })),
             details: connectionDetails
         };
     } catch (err) {
