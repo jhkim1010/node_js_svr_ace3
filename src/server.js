@@ -14,37 +14,6 @@ const { displayBuildInfo } = require('./utils/build-info');
 const app = express();
 const server = http.createServer();
 
-// WebSocket 서버를 Express 앱 연결 전에 먼저 초기화
-// 이렇게 하면 WebSocket 요청이 Express 미들웨어를 거치지 않음
-let wssInitialized = false;
-
-// HTTP 서버의 upgrade 이벤트를 먼저 처리하여 Express 미들웨어가 WebSocket 요청을 가로채지 않도록 함
-// ws 라이브러리가 자동으로 upgrade 이벤트를 처리하므로, 여기서는 로깅만 함
-server.on('upgrade', (request, socket, head) => {
-    const upgradeHeader = request.headers.upgrade || 'none';
-    const connectionHeader = request.headers.connection || 'none';
-    
-    console.log(`[HTTP Server] 🔄 Upgrade 이벤트 발생:`);
-    console.log(`   URL: ${request.url}`);
-    console.log(`   Upgrade 헤더: ${upgradeHeader}`);
-    console.log(`   Connection 헤더: ${connectionHeader}`);
-    console.log(`   Remote Address: ${socket.remoteAddress}`);
-    
-    // WebSocket 서버가 아직 초기화되지 않았으면 경고
-    if (!wssInitialized && (request.url === '/api/ws' || request.url === '/ws' || 
-        request.url.startsWith('/api/ws') || request.url.startsWith('/ws'))) {
-        console.warn(`[HTTP Server] ⚠️ WebSocket 서버가 아직 초기화되지 않았습니다.`);
-    }
-    
-    // WebSocket 요청인 경우 추가 정보 출력
-    if (upgradeHeader.toLowerCase() === 'websocket') {
-        console.log(`[HTTP Server] ✅ WebSocket 업그레이드 요청 확인됨`);
-    }
-    
-    // WebSocket 요청인 경우 Express 미들웨어로 전달하지 않음
-    // ws 라이브러리가 자동으로 처리함
-});
-
 // Express 앱을 HTTP 서버에 연결
 // 일반 HTTP 요청은 Express가 처리하고, upgrade 요청은 WebSocket 서버가 처리함
 server.on('request', app);
@@ -305,7 +274,6 @@ async function start() {
             // HTTP 서버가 리스닝을 시작한 후 WebSocket 서버 초기화
             // 이렇게 하면 WebSocket 서버가 제대로 연결을 받을 수 있음
             initializeWebSocket(server);
-            wssInitialized = true; // WebSocket 서버 초기화 완료 표시
         });
     } catch (err) {
         console.error('Failed to start server:', err);

@@ -106,12 +106,17 @@ function initializeWebSocket(server) {
     console.log(`[WebSocket] connection 이벤트 리스너 등록 완료`);
 
     wss.on('connection', (ws, req) => {
-        console.log(`[WebSocket] 🔵 connection 이벤트 발생!`);
         // 고유 ID 할당
         ws.id = generateClientId();
         const remoteAddress = req.socket.remoteAddress || 'unknown';
         const requestUrl = req.url || req.originalUrl || 'unknown';
         
+        console.log(`[WebSocket] 🔵 connection 이벤트 발생!`);
+        console.log(`[HTTP Server] 🔄 Upgrade 이벤트 처리 완료:`);
+        console.log(`   URL: ${requestUrl}`);
+        console.log(`   Upgrade 헤더: ${req.headers.upgrade || 'none'}`);
+        console.log(`   Connection 헤더: ${req.headers.connection || 'none'}`);
+        console.log(`   Remote Address: ${remoteAddress}`);
         console.log(`[WebSocket] 📍 연결 요청 받음: url=${requestUrl}, remoteAddress=${remoteAddress}`);
         
         // 경로 확인: /ws 또는 /api/ws만 허용
