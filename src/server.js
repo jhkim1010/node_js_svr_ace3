@@ -18,12 +18,15 @@ const server = http.createServer(app);
 // HTTP 서버의 upgrade 이벤트에서 직접 처리됨
 
 // WebSocket 경로를 가장 먼저 처리하여 Express 미들웨어가 가로채지 않도록 함
+// 중요: Express가 WebSocket 요청을 처리하지 않도록 함
 app.use(['/ws', '/api/ws'], (req, res, next) => {
     // WebSocket upgrade 요청인 경우 Express에서 처리하지 않음
     if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
         console.log(`[Express] ⚠️ WebSocket 요청이 Express를 거치고 있습니다!`);
         console.log(`   URL: ${req.url}, Upgrade: ${req.headers.upgrade}`);
-        // 응답을 종료하지 않고 그냥 건너뛰기 (ws 라이브러리가 처리함)
+        console.log(`   이것은 ws 라이브러리가 upgrade를 처리하지 못했다는 의미입니다.`);
+        // 아무 응답도 보내지 않음 (ws 라이브러리가 처리해야 함)
+        // 하지만 이미 Express가 요청을 받았으므로, 연결을 유지하되 응답하지 않음
         return;
     }
     next();
@@ -244,9 +247,12 @@ app.use((req, res) => {
     // 이 요청은 HTTP 서버의 upgrade 이벤트에서 처리되어야 함
     if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || req.originalUrl === '/ws' ||
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
-        // 이미 위의 미들웨어에서 처리되어야 하는데 여기까지 왔다면 로그만 출력
-        // 응답을 종료하되, 상태 코드를 보내지 않음
-        return res.end();
+        // WebSocket 요청은 Express에서 처리하지 않음
+        // 응답을 보내지 않고 그냥 종료 (ws 라이브러리가 처리함)
+        if (!res.headersSent) {
+            res.destroy(); // 연결 종료
+        }
+        return;
     }
     res.status(404).json({ error: 'Not Found' });
 });

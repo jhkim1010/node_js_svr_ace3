@@ -76,15 +76,27 @@ function initializeWebSocket(server) {
         console.warn(`[WebSocket] 경고: HTTP 서버가 아직 리스닝 중이 아닙니다.`);
     }
     
-    // WebSocket 서버 생성 (path 옵션으로 /ws와 /api/ws 명시)
-    // path 옵션을 사용하면 해당 경로만 처리하고, Express가 가로채지 않음
+    // WebSocket 서버 생성
+    // path 옵션을 사용하여 특정 경로만 처리하도록 설정
+    // 이렇게 하면 Express가 해당 경로의 요청을 처리하기 전에 ws 라이브러리가 처리함
     try {
-        // /ws와 /api/ws 모두 지원하기 위해 verifyClient로 경로 확인
+        // /ws와 /api/ws 모두 지원
+        // path 옵션을 사용하지 않고 verifyClient로 경로 확인
         wss = new WebSocket.Server({ 
             server,
             perMessageDeflate: false, // 압축 비활성화 (선택사항)
             verifyClient: (info) => {
                 const path = info.req.url;
+                const upgrade = info.req.headers.upgrade;
+                const connection = info.req.headers.connection;
+                
+                console.log(`[WebSocket] 🔍 verifyClient 호출:`);
+                console.log(`   path: ${path}`);
+                console.log(`   upgrade: ${upgrade}`);
+                console.log(`   connection: ${connection}`);
+                console.log(`   headers: ${JSON.stringify(Object.keys(info.req.headers))}`);
+                
+                // 경로 확인
                 const isWebSocketPath = path === '/ws' || path === '/api/ws';
                 
                 if (!isWebSocketPath) {
@@ -92,12 +104,13 @@ function initializeWebSocket(server) {
                     return false;
                 }
                 
-                // 헤더 확인
-                const upgrade = info.req.headers.upgrade;
-                const connection = info.req.headers.connection;
+                // Upgrade 헤더 확인
+                if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
+                    console.log(`[WebSocket] ⚠️ 유효하지 않은 Upgrade 헤더: ${upgrade}`);
+                    return false;
+                }
                 
-                console.log(`[WebSocket] verifyClient 호출: path=${path}, upgrade=${upgrade}, connection=${connection}`);
-                
+                console.log(`[WebSocket] ✅ verifyClient 통과: path=${path}`);
                 return true;
             }
         });
