@@ -1,0 +1,49 @@
+server {
+    listen 80;
+    server_name sync.coolsistema.com;
+
+    location / {
+        return 301 https://sync.coolsistema.com$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name sync.coolsistema.com;  # ⚠️ 세미콜론 추가 필요!
+
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_certificate /etc/ssl/certs/coolsistema/ca_bundle.crt;
+    ssl_certificate_key /etc/ssl/certs/coolsistema/coolsistema.key;
+    access_log /var/log/nginx/minio_acces.log;
+    error_log /var/log/nginx/minio_error.log;
+
+    location / {
+        proxy_pass http://127.0.0.1:3030;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /api {
+        proxy_pass http://localhost:3030;
+        proxy_http_version 1.1;
+        
+        # WebSocket 업그레이드 지원 (필수!)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        
+        # 기본 프록시 헤더 추가
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        
+        # WebSocket 타임아웃 설정 (긴 연결 유지)
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        proxy_buffering off;
+    }
+}
+

@@ -101,12 +101,18 @@ function initializeWebSocket(server) {
     
     // WebSocket 서버 초기화 완료 표시
     console.log(`[WebSocket] ✅ WebSocket 서버 초기화 완료: 경로=/ws, /api/ws 지원`);
+    
+    // connection 이벤트가 발생하는지 확인하기 위한 디버깅
+    console.log(`[WebSocket] connection 이벤트 리스너 등록 완료`);
 
     wss.on('connection', (ws, req) => {
+        console.log(`[WebSocket] 🔵 connection 이벤트 발생!`);
         // 고유 ID 할당
         ws.id = generateClientId();
         const remoteAddress = req.socket.remoteAddress || 'unknown';
         const requestUrl = req.url || req.originalUrl || 'unknown';
+        
+        console.log(`[WebSocket] 📍 연결 요청 받음: url=${requestUrl}, remoteAddress=${remoteAddress}`);
         
         // 경로 확인: /ws 또는 /api/ws만 허용
         if (requestUrl !== '/ws' && requestUrl !== '/api/ws') {

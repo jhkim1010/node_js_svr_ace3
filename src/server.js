@@ -12,11 +12,14 @@ const { initializeWebSocket } = require('./services/websocket-service');
 const { displayBuildInfo } = require('./utils/build-info');
 
 const app = express();
-const server = http.createServer(app);
+const server = http.createServer();
+
+// WebSocket 서버를 Express 앱 연결 전에 먼저 초기화
+// 이렇게 하면 WebSocket 요청이 Express 미들웨어를 거치지 않음
+let wssInitialized = false;
 
 // HTTP 서버의 upgrade 이벤트를 먼저 처리하여 Express 미들웨어가 WebSocket 요청을 가로채지 않도록 함
 // ws 라이브러리가 자동으로 upgrade 이벤트를 처리하므로, 여기서는 로깅만 함
-let wssInitialized = false;
 server.on('upgrade', (request, socket, head) => {
     const upgradeHeader = request.headers.upgrade || 'none';
     const connectionHeader = request.headers.connection || 'none';
@@ -42,20 +45,12 @@ server.on('upgrade', (request, socket, head) => {
     // ws 라이브러리가 자동으로 처리함
 });
 
-// WebSocket 경로를 가장 먼저 처리하여 Express 미들웨어가 가로채지 않도록 함
-// Express가 요청을 처리하기 전에 WebSocket 요청을 차단
-// /ws와 /api/ws 모두 지원
-app.use(['/ws', '/api/ws'], (req, res, next) => {
-    // WebSocket 업그레이드 요청인 경우 Express에서 처리하지 않음
-    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-        console.log(`[Express] WebSocket 요청 감지: ${req.url} - Express 미들웨어 건너뛰기`);
-        // 응답을 종료하여 Express가 더 이상 처리하지 않도록 함
-        // HTTP 서버의 upgrade 이벤트에서 처리됨
-        return res.end();
-    }
-    // 일반 HTTP 요청인 경우에만 다음 미들웨어로 전달
-    next();
-});
+// Express 앱을 HTTP 서버에 연결
+// 일반 HTTP 요청은 Express가 처리하고, upgrade 요청은 WebSocket 서버가 처리함
+server.on('request', app);
+
+// WebSocket 경로는 Express 미들웨어를 거치지 않음
+// HTTP 서버의 upgrade 이벤트에서 직접 처리됨
 
 // 모든 요청 로깅 (디버깅용)
 // WebSocket 업그레이드 요청은 Express 미들웨어를 거치지 않아야 함
