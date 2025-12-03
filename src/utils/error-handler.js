@@ -6,6 +6,18 @@ const { classifyError, diagnoseConnectionRefusedError } = require('./error-class
 const { sendDatabaseErrorAlert } = require('../services/monitoring-service');
 
 /**
+ * 연결 한계 도달 오류 메시지 간소화
+ * @param {string} errorMsg - 원본 에러 메시지
+ * @returns {string} 간소화된 에러 메시지
+ */
+function simplifyConnectionLimitError(errorMsg) {
+    if (errorMsg && errorMsg.includes('remaining connection slots are reserved for non-replication superuser connections')) {
+        return 'database 연결 한계도달';
+    }
+    return errorMsg;
+}
+
+/**
  * 에러를 처리하고 로그를 출력하는 함수
  * @param {Error} err - 발생한 에러
  * @param {Object} req - Express request 객체
@@ -14,7 +26,8 @@ const { sendDatabaseErrorAlert } = require('../services/monitoring-service');
  * @param {string} tableName - 테이블 이름 (예: 'gastos', 'vcodes')
  */
 function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
-    const errorMsg = err.original ? err.original.message : err.message;
+    let errorMsg = err.original ? err.original.message : err.message;
+    errorMsg = simplifyConnectionLimitError(errorMsg);
     const errorClassification = classifyError(err);
     
     // 연결 거부 오류인 경우 상세 진단
@@ -49,17 +62,49 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
         dbConfig.port || 5432
     );
     
-    if (connectionDiagnosis) {
-        console.error(`\n❌ ${modelName} 연결 거부 오류 발생`);
-        console.error(`   연결 정보: ${connectionDiagnosis.connectionInfo.host}:${connectionDiagnosis.connectionInfo.port}`);
-        console.error(`   환경: ${connectionDiagnosis.connectionInfo.environment}`);
-        console.error(`   진단 요약: ${connectionDiagnosis.diagnosis.summary}`);
-        console.error(`   가장 가능성 높은 원인: ${connectionDiagnosis.diagnosis.mostLikelyCause}`);
-        console.error(`\n   가능한 원인:`);
-        connectionDiagnosis.diagnosis.possibleCauses.forEach((cause, index) => {
-            console.error(`   ${index + 1}. [${cause.probability}] ${cause.cause}`);
-            console.error(`      ${cause.description}`);
-        });
+    // 연결 오류인 경우 상세 정보 출력
+    if (errorClassification.source === 'SERVER_DB' && errorClassification.description === 'Database connection problem') {
+        const targetHost = dbConfig.host || getDefaultDbHost();
+        const targetPort = dbConfig.port || 5432;
+        const errorCode = err.original ? err.original.code : err.code;
+        const errorName = err.constructor.name;
+        const originalErrorMsg = err.original ? err.original.message : err.message;
+        
+        console.error(`\n❌ ${modelName} 데이터베이스 연결 오류 발생`);
+        console.error(`   에러 타입: ${errorName}`);
+        console.error(`   에러 코드: ${errorCode || 'N/A'}`);
+        console.error(`   에러 메시지: ${originalErrorMsg}`);
+        console.error(`   연결 시도: ${targetHost}:${targetPort}`);
+        console.error(`   데이터베이스: ${database}`);
+        console.error(`   테이블: ${tableName || 'N/A'}`);
+        
+        if (connectionDiagnosis) {
+            console.error(`   환경: ${connectionDiagnosis.connectionInfo.environment}`);
+            console.error(`   진단 요약: ${connectionDiagnosis.diagnosis.summary}`);
+            console.error(`   가장 가능성 높은 원인: ${connectionDiagnosis.diagnosis.mostLikelyCause}`);
+            console.error(`\n   가능한 원인:`);
+            connectionDiagnosis.diagnosis.possibleCauses.forEach((cause, index) => {
+                console.error(`   ${index + 1}. [${cause.probability}] ${cause.cause}`);
+                console.error(`      ${cause.description}`);
+            });
+        } else {
+            // 연결 거부가 아닌 다른 연결 오류인 경우
+            console.error(`   원인 분석:`);
+            if (originalErrorMsg.toLowerCase().includes('timeout')) {
+                console.error(`   - 연결 타임아웃: 데이터베이스 서버가 응답하지 않거나 네트워크가 느립니다.`);
+            } else if (originalErrorMsg.toLowerCase().includes('enotfound') || originalErrorMsg.toLowerCase().includes('host not found')) {
+                console.error(`   - 호스트를 찾을 수 없음: 호스트 주소(${targetHost})가 올바른지 확인하세요.`);
+            } else if (originalErrorMsg.toLowerCase().includes('econnrefused')) {
+                console.error(`   - 연결 거부: PostgreSQL 서버가 ${targetHost}:${targetPort}에서 실행 중인지 확인하세요.`);
+            } else {
+                console.error(`   - 연결 실패: 데이터베이스 서버 상태와 네트워크 연결을 확인하세요.`);
+            }
+            console.error(`   - 확인 사항:`);
+            console.error(`     1. PostgreSQL 서버가 실행 중인지 확인`);
+            console.error(`     2. 호스트 주소(${targetHost})와 포트(${targetPort})가 올바른지 확인`);
+            console.error(`     3. 방화벽이나 네트워크 설정 확인`);
+            console.error(`     4. Docker 환경인 경우 호스트 주소 설정 확인 (host.docker.internal 등)`);
+        }
         console.error('');
         return; // 연결 오류는 여기서 처리 완료
     }
@@ -442,7 +487,8 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
  * @returns {Object} 에러 응답 객체
  */
 function buildDatabaseErrorResponse(err, req, operation = 'database operation') {
-    const errorMsg = err.original ? err.original.message : err.message;
+    let errorMsg = err.original ? err.original.message : err.message;
+    errorMsg = simplifyConnectionLimitError(errorMsg);
     const errorCode = err.original ? err.original.code : err.code;
     const errorName = err.original ? err.original.name : err.name;
     
@@ -482,11 +528,59 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
             return '127.0.0.1';
         }
     };
+    const targetHost = dbConfig.host || getDefaultDbHost();
+    const targetPort = dbConfig.port || 5432;
     const connectionDiagnosis = diagnoseConnectionRefusedError(
         err, 
-        dbConfig.host || getDefaultDbHost(), 
-        dbConfig.port || 5432
+        targetHost, 
+        targetPort
     );
+    
+    // 연결 오류인지 확인
+    const errorClassification = classifyError(err);
+    const isConnectionError = errorClassification.source === 'SERVER_DB' && 
+                             errorClassification.description === 'Database connection problem';
+    
+    // 연결 오류인 경우 상세 정보 출력
+    if (isConnectionError) {
+        const originalErrorMsg = err.original ? err.original.message : err.message;
+        console.error(`\n❌ 데이터베이스 연결 오류 발생 (${operation})`);
+        console.error(`   에러 타입: ${errorName}`);
+        console.error(`   에러 코드: ${errorCode || 'N/A'}`);
+        console.error(`   에러 메시지: ${originalErrorMsg}`);
+        console.error(`   연결 시도: ${targetHost}:${targetPort}`);
+        console.error(`   데이터베이스: ${database}`);
+        console.error(`   테이블: ${tableName || 'N/A'}`);
+        
+        if (connectionDiagnosis) {
+            console.error(`   환경: ${connectionDiagnosis.connectionInfo.environment}`);
+            console.error(`   진단 요약: ${connectionDiagnosis.diagnosis.summary}`);
+            console.error(`   가장 가능성 높은 원인: ${connectionDiagnosis.diagnosis.mostLikelyCause}`);
+            console.error(`\n   가능한 원인:`);
+            connectionDiagnosis.diagnosis.possibleCauses.forEach((cause, index) => {
+                console.error(`   ${index + 1}. [${cause.probability}] ${cause.cause}`);
+                console.error(`      ${cause.description}`);
+            });
+        } else {
+            // 연결 거부가 아닌 다른 연결 오류인 경우
+            console.error(`   원인 분석:`);
+            if (originalErrorMsg.toLowerCase().includes('timeout')) {
+                console.error(`   - 연결 타임아웃: 데이터베이스 서버가 응답하지 않거나 네트워크가 느립니다.`);
+            } else if (originalErrorMsg.toLowerCase().includes('enotfound') || originalErrorMsg.toLowerCase().includes('host not found')) {
+                console.error(`   - 호스트를 찾을 수 없음: 호스트 주소(${targetHost})가 올바른지 확인하세요.`);
+            } else if (originalErrorMsg.toLowerCase().includes('econnrefused')) {
+                console.error(`   - 연결 거부: PostgreSQL 서버가 ${targetHost}:${targetPort}에서 실행 중인지 확인하세요.`);
+            } else {
+                console.error(`   - 연결 실패: 데이터베이스 서버 상태와 네트워크 연결을 확인하세요.`);
+            }
+            console.error(`   - 확인 사항:`);
+            console.error(`     1. PostgreSQL 서버가 실행 중인지 확인`);
+            console.error(`     2. 호스트 주소(${targetHost})와 포트(${targetPort})가 올바른지 확인`);
+            console.error(`     3. 방화벽이나 네트워크 설정 확인`);
+            console.error(`     4. Docker 환경인 경우 호스트 주소 설정 확인 (host.docker.internal 등)`);
+        }
+        console.error('');
+    }
     
     // 외래키 제약 조건 위반 감지
     const isForeignKeyError = err.constructor.name.includes('ForeignKeyConstraintError') ||
@@ -499,6 +593,9 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
     if (connectionDiagnosis) {
         // 연결 거부 오류인 경우 더 명확한 메시지
         message = `Database connection refused: ${connectionDiagnosis.diagnosis.summary}`;
+    } else if (isConnectionError) {
+        // 연결 오류인 경우 간단한 메시지
+        message = `Database connection failed: ${errorMsg}`;
     } else if (isForeignKeyError) {
         // 외래키 오류인 경우 더 명확한 메시지
         const keyMatch = errorMsg.match(/Key \(([^)]+)\)=\(([^)]+)\)/i);
@@ -508,6 +605,10 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
         }
     }
     
+    // 원본 에러 메시지도 간소화 (details 필드용)
+    const originalErrorMsg = err.original ? err.original.message : err.message;
+    const simplifiedOriginalError = simplifyConnectionLimitError(originalErrorMsg);
+    
     const errorResponse = {
         error: `Failed to ${operation}`,
         message: message,
@@ -515,7 +616,7 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
         errorType: err.constructor.name,
         errorCode: errorCode,
         errorName: errorName,
-        originalError: err.original ? err.original.message : null
+        originalError: simplifiedOriginalError
     };
     
     // 연결 거부 오류인 경우 상세 진단 정보 추가 (해결 방법 제외)

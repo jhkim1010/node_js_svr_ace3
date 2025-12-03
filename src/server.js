@@ -205,7 +205,11 @@ app.post('/api/health', async (req, res) => {
             username: username
         });
     } catch (err) {
-        const errorMessage = err.original ? err.original.message : err.message;
+        let errorMessage = err.original ? err.original.message : err.message;
+        // 연결 한계 도달 오류 메시지 간소화
+        if (errorMessage && errorMessage.includes('remaining connection slots are reserved for non-replication superuser connections')) {
+            errorMessage = 'database 연결 한계도달';
+        }
         const errorCode = err.original ? err.original.code : err.code;
         const errorName = err.original ? err.original.name : err.name;
         
@@ -336,8 +340,15 @@ app.use((err, req, res, next) => {
         });
     }
     
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal Server Error', details: err.message });
+    // 연결 한계 도달 오류 메시지 간소화
+    let errorDetails = err.message;
+    if (errorDetails && errorDetails.includes('remaining connection slots are reserved for non-replication superuser connections')) {
+        errorDetails = 'database 연결 한계도달';
+        console.error('database 연결 한계도달');
+    } else {
+        console.error('Unhandled error:', err);
+    }
+    res.status(500).json({ error: 'Internal Server Error', details: errorDetails });
 });
 
 async function start() {

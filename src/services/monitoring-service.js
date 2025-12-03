@@ -229,7 +229,11 @@ async function sendDatabaseErrorAlert(err, database, table, operation = 'unknown
         return;
     }
     
-    const errorMsg = err.original ? err.original.message : err.message;
+    let errorMsg = err.original ? err.original.message : err.message;
+    // 연결 한계 도달 오류 메시지 간소화
+    if (errorMsg && errorMsg.includes('remaining connection slots are reserved for non-replication superuser connections')) {
+        errorMsg = 'database 연결 한계도달';
+    }
     const errorCode = err.original ? err.original.code : err.code;
     const errorType = err.constructor.name || 'UnknownError';
     
@@ -252,6 +256,7 @@ async function sendDatabaseErrorAlert(err, database, table, operation = 'unknown
     // 데이터베이스 오류는 쿨다운 없이 전송 (중요한 오류이므로)
     console.log(`[Monitoring] 🚨 데이터베이스 오류 알림 전송`);
     console.log(`[Monitoring] 데이터베이스: ${database}, 테이블: ${table}, 작업: ${operation}`);
+    console.log(`[Monitoring] 오류 메시지: ${errorMsg}`);
     
     const success = await sendTelegramMessage(message);
     if (!success) {
