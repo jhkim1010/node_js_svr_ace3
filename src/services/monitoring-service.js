@@ -165,6 +165,10 @@ function checkWebSocketConnections(getWebSocketServer) {
 
 // 모니터링 시작
 function startMonitoring(getWebSocketServer) {
+    // 모니터링 일시 중지
+    console.log(`[Monitoring] 모니터링이 일시 중지되었습니다.`);
+    return;
+    
     if (!MONITORING_CONFIG.enabled) {
         console.log(`[Monitoring] 모니터링이 비활성화되어 있습니다.`);
         return;
