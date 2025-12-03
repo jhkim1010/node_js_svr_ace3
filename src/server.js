@@ -8,8 +8,9 @@ const { parseDbHeader } = require('./middleware/db-header');
 const { loadBcolorview } = require('./middleware/bcolorview-loader');
 const { responseLogger } = require('./middleware/response-logger');
 const { operationLogger } = require('./middleware/operation-logger');
-const { initializeWebSocket } = require('./services/websocket-service');
+const { initializeWebSocket, getWebSocketServer } = require('./services/websocket-service');
 const { displayBuildInfo } = require('./utils/build-info');
+const { startMonitoring, getMonitoringStatus } = require('./services/monitoring-service');
 
 const app = express();
 // HTTP 서버를 Express 없이 생성하여 ws 라이브러리가 upgrade 이벤트를 처리할 수 있도록 함
@@ -82,6 +83,23 @@ app.get('/api/health', (req, res) => {
             serverTime: new Date().toISOString(),
             buildDate: buildDate,
             version: require('../package.json').version || '1.0.0'
+        });
+    } catch (err) {
+        res.status(500).json({
+            ok: false,
+            error: 'Internal server error',
+            message: err.message
+        });
+    }
+});
+
+// 모니터링 상태 조회 (헤더 필요 없음)
+app.get('/api/monitoring/status', (req, res) => {
+    try {
+        const status = getMonitoringStatus(getWebSocketServer);
+        res.json({
+            ok: true,
+            ...status
         });
     } catch (err) {
         res.status(500).json({
@@ -289,6 +307,35 @@ app.use((err, req, res, next) => {
             limit: `${(err.limit / 1024 / 1024).toFixed(2)}MB`
         });
     }
+    
+    // 데이터베이스 오류인 경우 Telegram 알림 전송
+    const dbConfig = req.dbConfig || {};
+    const database = dbConfig.database || '알 수 없음';
+    let tableName = null;
+    if (req.path) {
+        const pathParts = req.path.split('/');
+        const lastPart = pathParts[pathParts.length - 1];
+        if (lastPart && lastPart !== 'api') {
+            tableName = lastPart;
+        }
+    }
+    
+    // 데이터베이스 관련 오류인지 확인
+    const isDatabaseError = err.original || 
+                            err.message?.includes('database') ||
+                            err.message?.includes('connection') ||
+                            err.message?.includes('constraint') ||
+                            err.message?.includes('foreign key') ||
+                            err.message?.includes('unique constraint') ||
+                            err.constructor.name?.includes('Sequelize');
+    
+    if (isDatabaseError) {
+        const { sendDatabaseErrorAlert } = require('./services/monitoring-service');
+        sendDatabaseErrorAlert(err, database, tableName, 'Unhandled database error').catch(() => {
+            // 알림 전송 실패는 조용히 무시
+        });
+    }
+    
     console.error('Unhandled error:', err);
     res.status(500).json({ error: 'Internal Server Error', details: err.message });
 });
@@ -307,6 +354,9 @@ async function start() {
             console.log(`Server listening on http://localhost:${config.port}`);
             console.log(`WebSocket server ready on ws://localhost:${config.port}/ws and ws://localhost:${config.port}/api/ws`);
             console.log('Ready to accept requests with DB connection info in headers');
+            
+            // 모니터링 시작 (WebSocket 서버가 초기화된 후)
+            startMonitoring(getWebSocketServer);
         });
     } catch (err) {
         console.error('Failed to start server:', err);

@@ -168,7 +168,8 @@ function initializeWebSocket(server) {
             }
         });
 
-        // ping/pong으로 연결 유지 (30초마다)
+        // ping/pong으로 연결 유지 (60초마다 - 1000개 이상 연결 시 성능 최적화)
+        // 30초에서 60초로 증가하여 ping 빈도 감소 (연결 유지에는 충분함)
         const pingInterval = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
                 try {
@@ -180,7 +181,7 @@ function initializeWebSocket(server) {
             } else {
                 clearInterval(pingInterval);
             }
-        }, 30000);
+        }, 60000); // 60초로 증가 (1000개 이상 연결 시 성능 최적화)
 
         // 연결 종료 처리
         ws.on('close', (code, reason) => {
@@ -291,6 +292,7 @@ function handleRegisterClient(ws, data) {
 }
 
 // 메시지 전송 헬퍼
+// 1000개 이상 연결 시 성능 최적화: 에러 로깅 최소화
 function sendMessage(ws, data) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         try {
@@ -300,13 +302,14 @@ function sendMessage(ws, data) {
                 console.log(`[WebSocket] 메시지 전송됨: type=${data.type}, clientId=${data.clientId || 'unknown'}`);
             }
         } catch (err) {
-            console.error(`[WebSocket] 메시지 전송 오류: ${err.message}`);
+            // 에러 로깅 최소화 (1000개 이상 연결 시 로그 폭주 방지)
+            // 중요한 에러만 로깅
+            if (err.code !== 'ECONNRESET' && err.code !== 'EPIPE') {
+                console.error(`[WebSocket] 메시지 전송 오류: ${err.message}`);
+            }
         }
-    } else {
-        const state = ws ? ws.readyState : 'null';
-        const stateNames = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED' };
-        console.warn(`[WebSocket] 메시지 전송 실패: WebSocket 상태가 OPEN이 아님 (readyState=${state} ${stateNames[state] || ''})`);
     }
+    // 상태가 OPEN이 아닌 경우 로그 출력하지 않음 (1000개 이상 연결 시 로그 폭주 방지)
 }
 
 // 오류 메시지 전송 헬퍼
@@ -421,6 +424,11 @@ async function setupDbListener(host, port, database, user, password, ssl = false
 }
 
 function getWebSocketServer() {
+    return wss;
+}
+
+// WebSocket 서버 인스턴스 반환 (모니터링용)
+function getWebSocketServerInstance() {
     return wss;
 }
 

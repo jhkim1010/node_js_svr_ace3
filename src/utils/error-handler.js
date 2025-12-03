@@ -3,6 +3,7 @@
  * unique constraint 에러를 감지하고 명확한 메시지를 출력
  */
 const { classifyError, diagnoseConnectionRefusedError } = require('./error-classifier');
+const { sendDatabaseErrorAlert } = require('../services/monitoring-service');
 
 /**
  * 에러를 처리하고 로그를 출력하는 함수
@@ -18,6 +19,15 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
     
     // 연결 거부 오류인 경우 상세 진단
     const dbConfig = req.dbConfig || {};
+    
+    // 데이터베이스 이름 추출
+    const database = dbConfig.database || '알 수 없음';
+    
+    // Telegram 알림 전송 (비동기, 에러는 무시)
+    sendDatabaseErrorAlert(err, database, tableName, `INSERT/UPDATE ${modelName}`).catch(() => {
+        // 알림 전송 실패는 조용히 무시 (데이터베이스 오류 처리에 영향 없음)
+    });
+    
     // 기본 호스트 결정 (Docker 환경 감지)
     const getDefaultDbHost = () => {
         if (process.env.DB_HOST) return process.env.DB_HOST;
@@ -437,6 +447,26 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
     const errorName = err.original ? err.original.name : err.name;
     
     const dbConfig = req.dbConfig || {};
+    
+    // 데이터베이스 이름 추출
+    const database = dbConfig.database || '알 수 없음';
+    
+    // 테이블 이름 추출 (경로에서 추출 시도)
+    let tableName = null;
+    if (req.path) {
+        // 경로에서 테이블 이름 추출 (예: /api/gastos -> gastos)
+        const pathParts = req.path.split('/');
+        const lastPart = pathParts[pathParts.length - 1];
+        if (lastPart && lastPart !== 'api') {
+            tableName = lastPart;
+        }
+    }
+    
+    // Telegram 알림 전송 (비동기, 에러는 무시)
+    sendDatabaseErrorAlert(err, database, tableName, operation).catch(() => {
+        // 알림 전송 실패는 조용히 무시 (데이터베이스 오류 처리에 영향 없음)
+    });
+    
     // 기본 호스트 결정 (Docker 환경 감지)
     const getDefaultDbHost = () => {
         if (process.env.DB_HOST) return process.env.DB_HOST;
