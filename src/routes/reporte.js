@@ -42,10 +42,8 @@ function logReportResponse(reportName, result) {
 
 // Stocks 보고서
 router.get('/stocks', async (req, res) => {
-    logReportRequest(req, 'Stocks');
     try {
         const result = await getStocksReport(req);
-        logReportResponse('Stocks', result);
         res.json(result);
     } catch (err) {
         const errorResponse = {
@@ -80,10 +78,8 @@ router.get('/items', async (req, res) => {
 
 // Clientes 보고서
 router.get('/clientes', async (req, res) => {
-    logReportRequest(req, 'Clientes');
     try {
         const result = await getClientesReport(req);
-        logReportResponse('Clientes', result);
         res.json(result);
     } catch (err) {
         const errorResponse = {
@@ -100,10 +96,8 @@ router.get('/clientes', async (req, res) => {
 
 // Gastos 보고서
 router.get('/gastos', async (req, res) => {
-    logReportRequest(req, 'Gastos');
     try {
         const result = await getGastosReport(req);
-        logReportResponse('Gastos', result);
         res.json(result);
     } catch (err) {
         const errorResponse = {
@@ -120,10 +114,8 @@ router.get('/gastos', async (req, res) => {
 
 // Ventas 보고서
 router.get('/ventas', async (req, res) => {
-    logReportRequest(req, 'Ventas');
     try {
         const result = await getVentasReport(req);
-        logReportResponse('Ventas', result);
         res.json(result);
     } catch (err) {
         const errorResponse = {
@@ -140,10 +132,8 @@ router.get('/ventas', async (req, res) => {
 
 // Alertas 보고서
 router.get('/alertas', async (req, res) => {
-    logReportRequest(req, 'Alertas');
     try {
         const result = await getAlertasReport(req);
-        logReportResponse('Alertas', result);
         res.json(result);
     } catch (err) {
         const errorResponse = {

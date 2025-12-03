@@ -14,6 +14,11 @@ function responseLogger(req, res, next) {
             return; // 로깅 건너뛰기
         }
         
+        // 보고서 경로는 로깅하지 않음
+        if (path && (path.includes('/reporte/') || path.includes('/api/reporte/'))) {
+            return; // 로깅 건너뛰기
+        }
+        
         // path가 http:// 또는 https://로 시작하는지 확인
         if (path && (path.toLowerCase().startsWith('http://') || path.toLowerCase().startsWith('https://'))) {
             console.error(`\nERROR: Invalid path detected in response - path should not start with http:// or https://`);
