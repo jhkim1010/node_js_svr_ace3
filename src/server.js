@@ -14,9 +14,8 @@ const { displayBuildInfo } = require('./utils/build-info');
 const app = express();
 const server = http.createServer(app);
 
-// HTTP 서버의 upgrade 이벤트 로깅 (디버깅용)
-// 주의: ws 라이브러리가 자동으로 upgrade 이벤트를 처리하므로,
-// 여기서는 로깅만 하고 실제 처리는 WebSocket 서버가 함
+// HTTP 서버의 upgrade 이벤트를 먼저 처리하여 Express 미들웨어가 WebSocket 요청을 가로채지 않도록 함
+// ws 라이브러리가 자동으로 upgrade 이벤트를 처리하므로, 여기서는 로깅만 함
 let wssInitialized = false;
 server.on('upgrade', (request, socket, head) => {
     const upgradeHeader = request.headers.upgrade || 'none';
@@ -37,15 +36,31 @@ server.on('upgrade', (request, socket, head) => {
     if (upgradeHeader.toLowerCase() === 'websocket') {
         console.log(`[HTTP Server] ✅ WebSocket 업그레이드 요청 확인됨`);
     }
+    
+    // WebSocket 요청인 경우 Express 미들웨어로 전달하지 않음
+    // ws 라이브러리가 자동으로 처리함
 });
 
 // 모든 요청 로깅 (디버깅용)
+// WebSocket 업그레이드 요청은 Express 미들웨어를 거치지 않아야 함
 app.use((req, res, next) => {
-    // WebSocket 업그레이드 요청인 경우 상세 로깅
+    // WebSocket 업그레이드 요청인 경우 Express 미들웨어 건너뛰기
     if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-        console.log(`[Express] ⚠️ WebSocket 업그레이드 요청이 Express를 거치고 있습니다!`);
+        console.log(`[Express] ⚠️ WebSocket 업그레이드 요청이 Express를 거치고 있습니다! (이것은 정상이 아닙니다)`);
         console.log(`   URL: ${req.url}, Path: ${req.path}, OriginalUrl: ${req.originalUrl}`);
         console.log(`   Upgrade: ${req.headers.upgrade}, Connection: ${req.headers.connection}`);
+        // WebSocket 요청은 Express에서 처리하지 않음
+        return res.end(); // 응답 종료
+    }
+    next();
+});
+
+// WebSocket 경로를 가장 먼저 처리하여 Express 미들웨어가 가로채지 않도록 함
+app.use('/api/ws', (req, res, next) => {
+    // WebSocket 업그레이드 요청인 경우 Express에서 처리하지 않음
+    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+        // HTTP 서버의 upgrade 이벤트에서 처리되도록 응답 종료
+        return res.end();
     }
     next();
 });
@@ -248,11 +263,13 @@ app.use('/api', (req, res, next) => {
 
 app.use((req, res) => {
     // WebSocket 업그레이드 요청인 경우 404 응답하지 않음
+    // 이 요청은 HTTP 서버의 upgrade 이벤트에서 처리되어야 함
     if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
         console.log(`[Express] ⚠️ 404 핸들러에서 WebSocket 요청 감지: ${req.url}`);
         console.log(`   이 요청은 WebSocket 서버로 전달되어야 합니다.`);
-        return; // WebSocket 서버가 처리하도록 함
+        // 응답을 종료하되, 상태 코드를 보내지 않음 (이미 upgrade 이벤트에서 처리됨)
+        return res.end();
     }
     res.status(404).json({ error: 'Not Found' });
 });
