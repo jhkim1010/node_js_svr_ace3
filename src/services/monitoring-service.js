@@ -28,9 +28,6 @@ const alertState = {
 
 // Telegram 메시지 전송
 async function sendTelegramMessage(message) {
-    // 텔레그램 메시지 전송 일시 중지
-    return false;
-    
     if (!MONITORING_CONFIG.telegram.enabled || !MONITORING_CONFIG.telegram.botToken || !MONITORING_CONFIG.telegram.chatId) {
         return false;
     }
@@ -238,19 +235,44 @@ async function sendDatabaseErrorAlert(err, database, table, operation = 'unknown
     const errorCode = err.original ? err.original.code : err.code;
     const errorType = err.constructor.name || 'UnknownError';
     
+    // POST 실패인 경우 특별히 강조
+    const isPostFailure = operation.toLowerCase().includes('insert') || 
+                         operation.toLowerCase().includes('create') ||
+                         operation.toLowerCase().includes('post');
+    
     // 오류 메시지 길이 제한 (Telegram 메시지 최대 길이: 4096자)
-    const maxMessageLength = 3500; // 여유를 두고 3500자로 제한
+    const maxMessageLength = 3000; // 여유를 두고 3000자로 제한
     let truncatedErrorMsg = errorMsg;
     if (truncatedErrorMsg.length > maxMessageLength) {
         truncatedErrorMsg = truncatedErrorMsg.substring(0, maxMessageLength) + '... (truncated)';
     }
     
-    const message = `🚨 <b>데이터베이스 오류 발생</b>\n\n` +
+    // 에러 원인 분석
+    let errorCause = '';
+    if (errorMsg.includes('foreign key constraint')) {
+        errorCause = '🔗 외래키 제약 조건 위반';
+    } else if (errorMsg.includes('unique constraint') || errorMsg.includes('duplicate key')) {
+        errorCause = '🔑 중복 키 오류';
+    } else if (errorMsg.includes('not null') || errorMsg.includes('null value')) {
+        errorCause = '⚠️ 필수 필드 누락';
+    } else if (errorMsg.includes('connection') || errorMsg.includes('timeout')) {
+        errorCause = '🔌 데이터베이스 연결 오류';
+    } else if (errorMsg.includes('value too long')) {
+        errorCause = '📏 데이터 길이 초과';
+    } else {
+        errorCause = '❓ 기타 오류';
+    }
+    
+    const emoji = isPostFailure ? '🚨' : '⚠️';
+    const title = isPostFailure ? 'POST 실패 - 데이터베이스 오류' : '데이터베이스 오류 발생';
+    
+    const message = `${emoji} <b>${title}</b>\n\n` +
                    `📊 <b>데이터베이스:</b> ${database || '알 수 없음'}\n` +
                    `📋 <b>테이블:</b> ${table || '알 수 없음'}\n` +
                    `⚙️ <b>작업:</b> ${operation}\n` +
                    `❌ <b>오류 타입:</b> ${errorType}\n` +
                    (errorCode ? `🔢 <b>오류 코드:</b> ${errorCode}\n` : '') +
+                   `\n${errorCause}\n` +
                    `\n💬 <b>오류 메시지:</b>\n<code>${truncatedErrorMsg.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>\n` +
                    `\n⏰ <b>시간:</b> ${new Date().toLocaleString('ko-KR')}`;
     
@@ -414,6 +436,50 @@ async function checkPostgresConnectionCount() {
             console.warn(`\n[PostgreSQL 연결 수] ⚠️ 경고: ${totalIdleInTransactionAborted}개의 연결이 "idle in transaction (aborted)" 상태입니다.`);
             console.warn(`   이는 트랜잭션이 시작되었지만 롤백되지 않은 상태를 의미합니다.`);
             console.warn(`   애플리케이션 코드에서 트랜잭션 커밋/롤백을 확인하세요.`);
+            
+            // Telegram 알림 전송
+            const alertMessage = `⚠️ <b>PostgreSQL 트랜잭션 경고</b>\n\n` +
+                               `🔗 <b>문제:</b> ${totalIdleInTransactionAborted}개의 연결이 "idle in transaction (aborted)" 상태입니다.\n` +
+                               `\n📊 <b>상태 요약:</b>\n` +
+                               `   - 총 연결: ${serverTotal}개\n` +
+                               `   - Active: ${totalActive}개\n` +
+                               `   - Idle: ${totalIdle}개\n` +
+                               `   - Idle in Transaction: ${totalIdleInTransaction}개\n` +
+                               `   - ⚠️ Idle in Transaction (Aborted): ${totalIdleInTransactionAborted}개\n` +
+                               `\n💡 <b>원인:</b> 트랜잭션이 시작되었지만 롤백되지 않은 상태입니다.\n` +
+                               `\n⏰ <b>시간:</b> ${new Date().toLocaleString('ko-KR')}`;
+            
+            await sendTelegramMessage(alertMessage).catch(() => {
+                // 알림 전송 실패는 무시
+            });
+        }
+        
+        // 연결 수가 너무 많을 때 경고 (샘플 코드처럼)
+        const maxConnections = parseInt(process.env.MAX_CONNECTIONS) || 100;
+        const connectionUsage = (serverTotal / maxConnections) * 100;
+        
+        if (connectionUsage >= 80) {
+            const alertMessage = `⚠️ <b>PostgreSQL 연결 사용률 경고</b>\n\n` +
+                               `📊 <b>사용률:</b> ${connectionUsage.toFixed(1)}%\n` +
+                               `   - 총 연결: ${serverTotal}개 / ${maxConnections}개\n` +
+                               `   - Active: ${totalActive}개\n` +
+                               `   - Idle: ${totalIdle}개\n` +
+                               `   - Idle in Transaction: ${totalIdleInTransaction}개\n` +
+                               (totalIdleInTransactionAborted > 0 ? `   - ⚠️ Idle in TX (Aborted): ${totalIdleInTransactionAborted}개\n` : '') +
+                               `\n⏰ <b>시간:</b> ${new Date().toLocaleString('ko-KR')}`;
+            
+            // 쿨다운 체크 (5분)
+            const alertKey = 'connection_usage';
+            const now = Date.now();
+            const lastAlertTime = alertState.lastAlertTime[alertKey] || 0;
+            const cooldownPeriod = 5 * 60 * 1000; // 5분
+            
+            if (now - lastAlertTime >= cooldownPeriod) {
+                alertState.lastAlertTime[alertKey] = now;
+                await sendTelegramMessage(alertMessage).catch(() => {
+                    // 알림 전송 실패는 무시
+                });
+            }
         }
         
         console.log(`[PostgreSQL 연결 수] 조회 시간: ${new Date().toLocaleString('ko-KR')}\n`);
