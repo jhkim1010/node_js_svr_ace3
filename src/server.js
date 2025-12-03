@@ -15,8 +15,16 @@ const app = express();
 const server = http.createServer();
 
 // Express 앱을 HTTP 서버에 연결
-// 일반 HTTP 요청은 Express가 처리하고, upgrade 요청은 WebSocket 서버가 처리함
-server.on('request', app);
+// upgrade 요청은 WebSocket 서버가 처리하고, 일반 HTTP 요청만 Express가 처리함
+server.on('request', (req, res) => {
+    // WebSocket upgrade 요청인 경우 Express가 처리하지 않음
+    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+        // WebSocket 서버가 처리하도록 요청을 무시
+        return;
+    }
+    // 일반 HTTP 요청만 Express가 처리
+    app(req, res);
+});
 
 // WebSocket 경로는 Express 미들웨어를 거치지 않음
 // HTTP 서버의 upgrade 이벤트에서 직접 처리됨
@@ -265,15 +273,15 @@ async function start() {
         // 빌드 정보 표시
         displayBuildInfo();
         
+        // WebSocket 서버를 먼저 초기화 (Express 연결 전)
+        // 이렇게 하면 WebSocket 요청이 Express를 거치지 않음
+        initializeWebSocket(server);
+        
         // HTTP 서버 시작
         server.listen(config.port, () => {
             console.log(`Server listening on http://localhost:${config.port}`);
             console.log(`WebSocket server ready on ws://localhost:${config.port}/ws and ws://localhost:${config.port}/api/ws`);
             console.log('Ready to accept requests with DB connection info in headers');
-            
-            // HTTP 서버가 리스닝을 시작한 후 WebSocket 서버 초기화
-            // 이렇게 하면 WebSocket 서버가 제대로 연결을 받을 수 있음
-            initializeWebSocket(server);
         });
     } catch (err) {
         console.error('Failed to start server:', err);

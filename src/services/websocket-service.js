@@ -76,12 +76,30 @@ function initializeWebSocket(server) {
         console.warn(`[WebSocket] 경고: HTTP 서버가 아직 리스닝 중이 아닙니다.`);
     }
     
-    // WebSocket 서버 생성 (path 옵션 없이 모든 경로 지원, 연결 핸들러에서 경로 확인)
-    // /ws와 /api/ws 모두 지원
+    // WebSocket 서버 생성 (path 옵션으로 /ws와 /api/ws 명시)
+    // path 옵션을 사용하면 해당 경로만 처리하고, Express가 가로채지 않음
     try {
+        // /ws와 /api/ws 모두 지원하기 위해 verifyClient로 경로 확인
         wss = new WebSocket.Server({ 
             server,
-            perMessageDeflate: false // 압축 비활성화 (선택사항)
+            perMessageDeflate: false, // 압축 비활성화 (선택사항)
+            verifyClient: (info) => {
+                const path = info.req.url;
+                const isWebSocketPath = path === '/ws' || path === '/api/ws';
+                
+                if (!isWebSocketPath) {
+                    console.log(`[WebSocket] ⚠️ 지원하지 않는 경로로 연결 시도: ${path}`);
+                    return false;
+                }
+                
+                // 헤더 확인
+                const upgrade = info.req.headers.upgrade;
+                const connection = info.req.headers.connection;
+                
+                console.log(`[WebSocket] verifyClient 호출: path=${path}, upgrade=${upgrade}, connection=${connection}`);
+                
+                return true;
+            }
         });
         console.log(`[WebSocket] ✅ WebSocket 서버 생성 완료: 경로=/ws, /api/ws 지원`);
     } catch (err) {
