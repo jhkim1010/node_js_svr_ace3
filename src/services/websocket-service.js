@@ -88,13 +88,6 @@ function initializeWebSocket(server) {
             verifyClient: (info) => {
                 const path = info.req.url;
                 const upgrade = info.req.headers.upgrade;
-                const connection = info.req.headers.connection;
-                
-                console.log(`[WebSocket] 🔍 verifyClient 호출:`);
-                console.log(`   path: ${path}`);
-                console.log(`   upgrade: ${upgrade}`);
-                console.log(`   connection: ${connection}`);
-                console.log(`   headers: ${JSON.stringify(Object.keys(info.req.headers))}`);
                 
                 // 경로 확인
                 const isWebSocketPath = path === '/ws' || path === '/api/ws';
@@ -110,7 +103,6 @@ function initializeWebSocket(server) {
                     return false;
                 }
                 
-                console.log(`[WebSocket] ✅ verifyClient 통과: path=${path}`);
                 return true;
             }
         });
@@ -142,14 +134,6 @@ function initializeWebSocket(server) {
         const remoteAddress = req.socket.remoteAddress || 'unknown';
         const requestUrl = req.url || req.originalUrl || 'unknown';
         
-        console.log(`[WebSocket] 🔵 connection 이벤트 발생!`);
-        console.log(`[HTTP Server] 🔄 Upgrade 이벤트 처리 완료:`);
-        console.log(`   URL: ${requestUrl}`);
-        console.log(`   Upgrade 헤더: ${req.headers.upgrade || 'none'}`);
-        console.log(`   Connection 헤더: ${req.headers.connection || 'none'}`);
-        console.log(`   Remote Address: ${remoteAddress}`);
-        console.log(`[WebSocket] 📍 연결 요청 받음: url=${requestUrl}, remoteAddress=${remoteAddress}`);
-        
         // 경로 확인: /ws 또는 /api/ws만 허용
         if (requestUrl !== '/ws' && requestUrl !== '/api/ws') {
             console.log(`[WebSocket] ⚠️ 지원하지 않는 경로로 연결 시도: ${requestUrl}`);
@@ -158,12 +142,6 @@ function initializeWebSocket(server) {
         }
         
         console.log(`[WebSocket] ✅ 클라이언트 연결됨: id=${ws.id}, remoteAddress=${remoteAddress}, url=${requestUrl}`);
-        console.log(`[WebSocket] 요청 헤더:`, {
-            upgrade: req.headers.upgrade,
-            connection: req.headers.connection,
-            'sec-websocket-key': req.headers['sec-websocket-key'] ? 'present' : 'missing',
-            'sec-websocket-version': req.headers['sec-websocket-version']
-        });
         
         // 클라이언트 정보 초기화
         clientInfo.set(ws.id, {
@@ -190,13 +168,44 @@ function initializeWebSocket(server) {
             }
         });
 
+        // ping/pong으로 연결 유지 (30초마다)
+        const pingInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                try {
+                    ws.ping();
+                } catch (err) {
+                    console.error(`[WebSocket] ping 전송 오류 (id=${ws.id}):`, err.message);
+                    clearInterval(pingInterval);
+                }
+            } else {
+                clearInterval(pingInterval);
+            }
+        }, 30000);
+
         // 연결 종료 처리
         ws.on('close', (code, reason) => {
+            // ping 인터벌 정리
+            clearInterval(pingInterval);
+            
             const info = clientInfo.get(ws.id);
             const clientId = info ? info.clientId : 'unknown';
             const dbKey = info ? info.dbKey : null;
             
-            console.log(`[WebSocket] ❌ 클라이언트 연결 해제: id=${ws.id}, clientId=${clientId}, code=${code}, reason=${reason || 'none'}`);
+            // 연결 해제 코드 설명
+            const codeDescriptions = {
+                1000: 'Normal Closure',
+                1001: 'Going Away',
+                1002: 'Protocol Error',
+                1003: 'Unsupported Data',
+                1006: 'Abnormal Closure (no close frame)',
+                1007: 'Invalid Data',
+                1008: 'Policy Violation',
+                1009: 'Message Too Big',
+                1010: 'Extension Error',
+                1011: 'Internal Error'
+            };
+            
+            console.log(`[WebSocket] ❌ 클라이언트 연결 해제: id=${ws.id}, clientId=${clientId}, code=${code} (${codeDescriptions[code] || 'Unknown'}), reason=${reason || 'none'}`);
             
             // 연결 해제 시 데이터베이스 그룹에서 제거
             if (dbKey && dbClientGroups.has(dbKey)) {
@@ -216,10 +225,15 @@ function initializeWebSocket(server) {
         // 오류 처리
         ws.on('error', (error) => {
             console.error(`[WebSocket] 클라이언트 오류 (id=${ws.id}):`, error.message);
+            console.error(`[WebSocket] 오류 상세:`, error);
+        });
+
+        // pong 응답 처리
+        ws.on('pong', () => {
+            // 클라이언트가 살아있음을 확인 (ping에 대한 응답)
         });
 
         // 연결 확인 메시지 전송
-        console.log(`[WebSocket] 연결 확인 메시지 전송 준비: id=${ws.id}, readyState=${ws.readyState}`);
         sendMessage(ws, {
             type: 'connected',
             clientId: ws.id,
