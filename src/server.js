@@ -41,6 +41,20 @@ server.on('upgrade', (request, socket, head) => {
     // ws 라이브러리가 자동으로 처리함
 });
 
+// WebSocket 경로를 가장 먼저 처리하여 Express 미들웨어가 가로채지 않도록 함
+// Express가 요청을 처리하기 전에 WebSocket 요청을 차단
+app.use('/api/ws', (req, res, next) => {
+    // WebSocket 업그레이드 요청인 경우 Express에서 처리하지 않음
+    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+        console.log(`[Express] WebSocket 요청 감지: ${req.url} - Express 미들웨어 건너뛰기`);
+        // 응답을 종료하여 Express가 더 이상 처리하지 않도록 함
+        // HTTP 서버의 upgrade 이벤트에서 처리됨
+        return res.end();
+    }
+    // 일반 HTTP 요청인 경우에만 다음 미들웨어로 전달
+    next();
+});
+
 // 모든 요청 로깅 (디버깅용)
 // WebSocket 업그레이드 요청은 Express 미들웨어를 거치지 않아야 함
 app.use((req, res, next) => {
@@ -51,16 +65,6 @@ app.use((req, res, next) => {
         console.log(`   Upgrade: ${req.headers.upgrade}, Connection: ${req.headers.connection}`);
         // WebSocket 요청은 Express에서 처리하지 않음
         return res.end(); // 응답 종료
-    }
-    next();
-});
-
-// WebSocket 경로를 가장 먼저 처리하여 Express 미들웨어가 가로채지 않도록 함
-app.use('/api/ws', (req, res, next) => {
-    // WebSocket 업그레이드 요청인 경우 Express에서 처리하지 않음
-    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-        // HTTP 서버의 upgrade 이벤트에서 처리되도록 응답 종료
-        return res.end();
     }
     next();
 });
@@ -266,9 +270,8 @@ app.use((req, res) => {
     // 이 요청은 HTTP 서버의 upgrade 이벤트에서 처리되어야 함
     if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
-        console.log(`[Express] ⚠️ 404 핸들러에서 WebSocket 요청 감지: ${req.url}`);
-        console.log(`   이 요청은 WebSocket 서버로 전달되어야 합니다.`);
-        // 응답을 종료하되, 상태 코드를 보내지 않음 (이미 upgrade 이벤트에서 처리됨)
+        // 이미 위의 미들웨어에서 처리되어야 하는데 여기까지 왔다면 로그만 출력
+        // 응답을 종료하되, 상태 코드를 보내지 않음
         return res.end();
     }
     res.status(404).json({ error: 'Not Found' });
