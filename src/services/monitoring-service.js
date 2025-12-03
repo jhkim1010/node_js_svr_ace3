@@ -27,6 +27,9 @@ const alertState = {
 
 // Telegram 메시지 전송
 async function sendTelegramMessage(message) {
+    // 텔레그램 메시지 전송 일시 중지
+    return false;
+    
     if (!MONITORING_CONFIG.telegram.enabled || !MONITORING_CONFIG.telegram.botToken || !MONITORING_CONFIG.telegram.chatId) {
         return false;
     }
