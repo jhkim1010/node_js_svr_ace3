@@ -12,7 +12,20 @@ const { initializeWebSocket } = require('./services/websocket-service');
 const { displayBuildInfo } = require('./utils/build-info');
 
 const app = express();
-const server = http.createServer(app);
+// HTTP 서버를 Express 없이 생성하여 ws 라이브러리가 upgrade 이벤트를 처리할 수 있도록 함
+const server = http.createServer();
+
+// 일반 HTTP 요청만 Express가 처리하도록 설정
+server.on('request', (req, res) => {
+    // WebSocket upgrade 요청은 Express가 처리하지 않음
+    // ws 라이브러리가 upgrade 이벤트에서 처리함
+    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+        // Express가 처리하지 않도록 함 (ws 라이브러리가 처리함)
+        return;
+    }
+    // 일반 HTTP 요청만 Express가 처리
+    app(req, res);
+});
 
 // WebSocket 경로는 Express 미들웨어를 거치지 않음
 // HTTP 서버의 upgrade 이벤트에서 직접 처리됨
