@@ -289,7 +289,7 @@ async function checkPostgresConnectionCount() {
         // datname이 NULL인 경우도 포함하여 전체 수와 일치시킴
         const [dbResults] = await firstSequelize.query(`
             SELECT 
-                COALESCE(datname, 'NULL') as database_name,
+                COALESCE(datname::text, '<NULL>') as database_name,
                 count(*) FILTER (WHERE state != 'idle' AND state != 'idle in transaction') as active_count,
                 count(*) FILTER (WHERE state = 'idle' OR state = 'idle in transaction') as idle_count,
                 count(*) as total_count
@@ -305,6 +305,11 @@ async function checkPostgresConnectionCount() {
             total: parseInt(r.total_count, 10)
         }));
         
+        // 데이터베이스별 합계 검증
+        const dbTotal = connectionDetails.reduce((sum, d) => sum + d.total, 0);
+        const dbActive = connectionDetails.reduce((sum, d) => sum + d.active, 0);
+        const dbIdle = connectionDetails.reduce((sum, d) => sum + d.idle, 0);
+        
         // 전체 active와 idle 수 계산 (모든 행 포함)
         const [totalStats] = await firstSequelize.query(`
             SELECT 
@@ -319,9 +324,20 @@ async function checkPostgresConnectionCount() {
         console.log(`\n[PostgreSQL 연결 수] 총 접속자: ${serverTotal}개 (Active: ${totalActive}개, Idle: ${totalIdle}개)`);
         if (connectionDetails.length > 0) {
             connectionDetails.forEach(detail => {
-                console.log(`   - ${detail.database}: ${detail.active}개 (${detail.idle})`);
+                if (detail.total > 0) {  // 0개인 데이터베이스는 출력하지 않음
+                    console.log(`   - ${detail.database}: ${detail.active}개 (${detail.idle})`);
+                }
             });
         }
+        
+        // 검증: 데이터베이스별 합계가 전체와 일치하는지 확인
+        if (dbTotal !== serverTotal || dbActive !== totalActive || dbIdle !== totalIdle) {
+            console.warn(`[PostgreSQL 연결 수] ⚠️ 합계 불일치 감지:`);
+            console.warn(`   전체: ${serverTotal}개 (Active: ${totalActive}, Idle: ${totalIdle})`);
+            console.warn(`   DB별 합계: ${dbTotal}개 (Active: ${dbActive}, Idle: ${dbIdle})`);
+            console.warn(`   차이: ${serverTotal - dbTotal}개 (Active: ${totalActive - dbActive}, Idle: ${totalIdle - dbIdle})`);
+        }
+        
         console.log(`[PostgreSQL 연결 수] 조회 시간: ${new Date().toLocaleString('ko-KR')}\n`);
         
         return {

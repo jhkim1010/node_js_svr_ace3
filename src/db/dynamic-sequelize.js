@@ -56,7 +56,7 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
         dialect: 'postgres',
         dialectOptions: ssl ? { ssl: { rejectUnauthorized: false } } : {},
         pool: {
-            max: 200,             // 최대 연결 수 증가 (동시 처리 항목 수 증가 대응)
+            max: 400,             // 최대 연결 수 증가 (동시 처리 항목 수 증가 대응)
             min: 0,               // 최소 연결 수 (0으로 설정하여 사용하지 않을 때 연결을 닫음)
             idle: 10000,          // 유휴 연결 유지 시간 (10초 - 연결 재사용 최적화)
             acquire: 60000,       // 연결 획득 대기 시간 (60초 - 연결 대기 시간 증가)
