@@ -1,5 +1,6 @@
 const https = require('https');
 const http = require('http');
+const { connectionPool } = require('../db/dynamic-sequelize');
 
 // 알림 설정 (환경 변수로 구성)
 const MONITORING_CONFIG = {
@@ -264,6 +265,100 @@ async function sendDatabaseErrorAlert(err, database, table, operation = 'unknown
     }
 }
 
+// PostgreSQL 총 접속자 수 조회
+async function checkPostgresConnectionCount() {
+    try {
+        // 연결 풀이 비어있으면 조회 불가
+        if (connectionPool.size === 0) {
+            console.log(`[PostgreSQL 연결 수] 연결 풀이 비어있어 조회할 수 없습니다.`);
+            return null;
+        }
+        
+        // 첫 번째 연결을 사용하여 전체 PostgreSQL 서버의 연결 수 조회
+        const firstSequelize = Array.from(connectionPool.values())[0];
+        
+        // 전체 서버의 총 연결 수 조회 (모든 데이터베이스 합산)
+        const [serverResults] = await firstSequelize.query(`
+            SELECT count(*) as total_connections 
+            FROM pg_stat_activity 
+            WHERE datname IS NOT NULL
+        `);
+        
+        const serverTotal = parseInt(serverResults[0].total_connections, 10);
+        
+        // 데이터베이스별 연결 수 조회 (idle과 active 구분)
+        const [dbResults] = await firstSequelize.query(`
+            SELECT 
+                datname as database_name,
+                count(*) FILTER (WHERE state != 'idle' AND state != 'idle in transaction') as active_count,
+                count(*) FILTER (WHERE state = 'idle' OR state = 'idle in transaction') as idle_count,
+                count(*) as total_count
+            FROM pg_stat_activity 
+            WHERE datname IS NOT NULL 
+            GROUP BY datname
+            ORDER BY total_count DESC
+        `);
+        
+        const connectionDetails = dbResults.map(r => ({
+            database: r.database_name,
+            active: parseInt(r.active_count, 10),
+            idle: parseInt(r.idle_count, 10),
+            total: parseInt(r.total_count, 10)
+        }));
+        
+        // 전체 active와 idle 수 계산
+        const totalActive = connectionDetails.reduce((sum, d) => sum + d.active, 0);
+        const totalIdle = connectionDetails.reduce((sum, d) => sum + d.idle, 0);
+        
+        console.log(`\n[PostgreSQL 연결 수] 총 접속자: ${serverTotal}개 (Active: ${totalActive}개, Idle: ${totalIdle}개)`);
+        if (connectionDetails.length > 0) {
+            connectionDetails.forEach(detail => {
+                console.log(`   - ${detail.database}: ${detail.active}개 (${detail.idle})`);
+            });
+        }
+        console.log(`[PostgreSQL 연결 수] 조회 시간: ${new Date().toLocaleString('ko-KR')}\n`);
+        
+        return {
+            total: serverTotal,
+            details: connectionDetails
+        };
+    } catch (err) {
+        console.error(`[Monitoring] PostgreSQL 연결 수 조회 오류: ${err.message}`);
+        return null;
+    }
+}
+
+// PostgreSQL 연결 수 모니터링 시작 (10분마다)
+function startPostgresConnectionMonitoring() {
+    // 10분 = 600,000 밀리초
+    const interval = 10 * 60 * 1000;
+    
+    console.log(`[Monitoring] PostgreSQL 연결 수 모니터링 시작 (10분마다)`);
+    
+    // 즉시 한 번 실행
+    checkPostgresConnectionCount();
+    
+    // 10분마다 실행
+    const postgresMonitoringInterval = setInterval(async () => {
+        try {
+            await checkPostgresConnectionCount();
+        } catch (err) {
+            console.error(`[Monitoring] PostgreSQL 연결 수 모니터링 오류: ${err.message}`);
+        }
+    }, interval);
+    
+    // 프로세스 종료 시 인터벌 정리
+    process.on('SIGTERM', () => {
+        clearInterval(postgresMonitoringInterval);
+    });
+    
+    process.on('SIGINT', () => {
+        clearInterval(postgresMonitoringInterval);
+    });
+    
+    return postgresMonitoringInterval;
+}
+
 // 모니터링 상태 조회
 function getMonitoringStatus(getWebSocketServer) {
     const memInfo = checkMemoryUsage();
@@ -299,6 +394,8 @@ module.exports = {
     sendAlert,
     sendDatabaseErrorAlert,
     checkMemoryUsage,
-    checkWebSocketConnections
+    checkWebSocketConnections,
+    startPostgresConnectionMonitoring,
+    checkPostgresConnectionCount
 };
 

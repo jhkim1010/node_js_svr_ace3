@@ -10,7 +10,7 @@ const { responseLogger } = require('./middleware/response-logger');
 const { operationLogger } = require('./middleware/operation-logger');
 const { initializeWebSocket, getWebSocketServer } = require('./services/websocket-service');
 const { displayBuildInfo } = require('./utils/build-info');
-const { startMonitoring, getMonitoringStatus } = require('./services/monitoring-service');
+const { startMonitoring, getMonitoringStatus, startPostgresConnectionMonitoring } = require('./services/monitoring-service');
 
 const app = express();
 // HTTP 서버를 Express 없이 생성하여 ws 라이브러리가 upgrade 이벤트를 처리할 수 있도록 함
@@ -368,6 +368,9 @@ async function start() {
             
             // 모니터링 시작 (WebSocket 서버가 초기화된 후)
             startMonitoring(getWebSocketServer);
+            
+            // PostgreSQL 연결 수 모니터링 시작 (10분마다)
+            startPostgresConnectionMonitoring();
         });
     } catch (err) {
         console.error('Failed to start server:', err);
