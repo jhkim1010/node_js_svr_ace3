@@ -76,14 +76,14 @@ function initializeWebSocket(server) {
         console.warn(`[WebSocket] 경고: HTTP 서버가 아직 리스닝 중이 아닙니다.`);
     }
     
-    // WebSocket 서버 생성 (경로: /api/ws - nginx /api 프록시와 호환)
+    // WebSocket 서버 생성 (path 옵션 없이 모든 경로 지원, 연결 핸들러에서 경로 확인)
+    // /ws와 /api/ws 모두 지원
     try {
         wss = new WebSocket.Server({ 
             server,
-            path: '/api/ws',
             perMessageDeflate: false // 압축 비활성화 (선택사항)
         });
-        console.log(`[WebSocket] ✅ WebSocket 서버 생성 완료: 경로=/api/ws`);
+        console.log(`[WebSocket] ✅ WebSocket 서버 생성 완료: 경로=/ws, /api/ws 지원`);
     } catch (err) {
         console.error(`[WebSocket] ❌ WebSocket 서버 생성 실패:`, err.message);
         throw err;
@@ -91,7 +91,7 @@ function initializeWebSocket(server) {
 
     // WebSocket 서버 이벤트 리스너
     wss.on('listening', () => {
-        console.log(`[WebSocket] ✅ 서버 리스닝 중: 경로=/api/ws`);
+        console.log(`[WebSocket] ✅ 서버 리스닝 중: 경로=/ws, /api/ws 지원`);
     });
 
     wss.on('error', (error) => {
@@ -100,13 +100,20 @@ function initializeWebSocket(server) {
     });
     
     // WebSocket 서버 초기화 완료 표시
-    console.log(`[WebSocket] ✅ WebSocket 서버 초기화 완료: 경로=/api/ws`);
+    console.log(`[WebSocket] ✅ WebSocket 서버 초기화 완료: 경로=/ws, /api/ws 지원`);
 
     wss.on('connection', (ws, req) => {
         // 고유 ID 할당
         ws.id = generateClientId();
         const remoteAddress = req.socket.remoteAddress || 'unknown';
         const requestUrl = req.url || req.originalUrl || 'unknown';
+        
+        // 경로 확인: /ws 또는 /api/ws만 허용
+        if (requestUrl !== '/ws' && requestUrl !== '/api/ws') {
+            console.log(`[WebSocket] ⚠️ 지원하지 않는 경로로 연결 시도: ${requestUrl}`);
+            ws.close(1008, 'Unsupported path');
+            return;
+        }
         
         console.log(`[WebSocket] ✅ 클라이언트 연결됨: id=${ws.id}, remoteAddress=${remoteAddress}, url=${requestUrl}`);
         console.log(`[WebSocket] 요청 헤더:`, {
@@ -178,7 +185,7 @@ function initializeWebSocket(server) {
         });
     });
 
-    console.log(`[WebSocket] 서버 초기화 완료: 경로=/api/ws`);
+    console.log(`[WebSocket] 서버 초기화 완료: 경로=/ws, /api/ws 지원`);
     return wss;
 }
 

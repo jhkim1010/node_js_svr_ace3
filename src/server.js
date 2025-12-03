@@ -28,7 +28,8 @@ server.on('upgrade', (request, socket, head) => {
     console.log(`   Remote Address: ${socket.remoteAddress}`);
     
     // WebSocket 서버가 아직 초기화되지 않았으면 경고
-    if (!wssInitialized && (request.url === '/api/ws' || request.url.startsWith('/api/ws'))) {
+    if (!wssInitialized && (request.url === '/api/ws' || request.url === '/ws' || 
+        request.url.startsWith('/api/ws') || request.url.startsWith('/ws'))) {
         console.warn(`[HTTP Server] ⚠️ WebSocket 서버가 아직 초기화되지 않았습니다.`);
     }
     
@@ -43,7 +44,8 @@ server.on('upgrade', (request, socket, head) => {
 
 // WebSocket 경로를 가장 먼저 처리하여 Express 미들웨어가 가로채지 않도록 함
 // Express가 요청을 처리하기 전에 WebSocket 요청을 차단
-app.use('/api/ws', (req, res, next) => {
+// /ws와 /api/ws 모두 지원
+app.use(['/ws', '/api/ws'], (req, res, next) => {
     // WebSocket 업그레이드 요청인 경우 Express에서 처리하지 않음
     if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
         console.log(`[Express] WebSocket 요청 감지: ${req.url} - Express 미들웨어 건너뛰기`);
@@ -229,10 +231,10 @@ app.post('/api/health', async (req, res) => {
 
 // Operation 로깅 미들웨어 (요청 본문 파싱 후, DB 헤더 파싱 전에 적용)
 // POST, PUT, DELETE 요청의 operation을 먼저 확인하고 로그 출력
-// WebSocket 경로(/api/ws)는 제외
+// WebSocket 경로(/ws, /api/ws)는 제외
 app.use('/api', (req, res, next) => {
     // WebSocket 업그레이드 요청인 경우 Express 미들웨어 건너뛰기
-    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || req.originalUrl === '/ws' ||
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
         return next(); // WebSocket 서버로 전달
     }
@@ -243,7 +245,7 @@ app.use('/api', (req, res, next) => {
 // WebSocket 경로는 제외
 app.use((req, res, next) => {
     // WebSocket 업그레이드 요청인 경우 Express 미들웨어 건너뛰기
-    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || req.originalUrl === '/ws' ||
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
         return next(); // WebSocket 서버로 전달
     }
@@ -251,10 +253,10 @@ app.use((req, res, next) => {
 });
 
 // DB 헤더 파싱 미들웨어를 모든 API 라우트에 적용
-// WebSocket 경로(/api/ws)는 제외 (WebSocket 서버가 직접 처리)
+// WebSocket 경로(/ws, /api/ws)는 제외 (WebSocket 서버가 직접 처리)
 app.use('/api', (req, res, next) => {
     // WebSocket 업그레이드 요청인 경우 Express 라우터 건너뛰기
-    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || req.originalUrl === '/ws' ||
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
         return next(); // WebSocket 서버로 전달
     }
@@ -268,7 +270,7 @@ app.use('/api', (req, res, next) => {
 app.use((req, res) => {
     // WebSocket 업그레이드 요청인 경우 404 응답하지 않음
     // 이 요청은 HTTP 서버의 upgrade 이벤트에서 처리되어야 함
-    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || 
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || req.originalUrl === '/ws' ||
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
         // 이미 위의 미들웨어에서 처리되어야 하는데 여기까지 왔다면 로그만 출력
         // 응답을 종료하되, 상태 코드를 보내지 않음
@@ -302,7 +304,7 @@ async function start() {
         // HTTP 서버 시작
         server.listen(config.port, () => {
             console.log(`Server listening on http://localhost:${config.port}`);
-            console.log(`WebSocket server ready on ws://localhost:${config.port}/api/ws`);
+            console.log(`WebSocket server ready on ws://localhost:${config.port}/ws and ws://localhost:${config.port}/api/ws`);
             console.log('Ready to accept requests with DB connection info in headers');
             
             // HTTP 서버가 리스닝을 시작한 후 WebSocket 서버 초기화
