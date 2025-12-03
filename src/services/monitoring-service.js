@@ -277,24 +277,23 @@ async function checkPostgresConnectionCount() {
         // 첫 번째 연결을 사용하여 전체 PostgreSQL 서버의 연결 수 조회
         const firstSequelize = Array.from(connectionPool.values())[0];
         
-        // 전체 서버의 총 연결 수 조회 (모든 데이터베이스 합산)
+        // 전체 서버의 총 연결 수 조회 (pg_stat_activity의 모든 행)
         const [serverResults] = await firstSequelize.query(`
             SELECT count(*) as total_connections 
-            FROM pg_stat_activity 
-            WHERE datname IS NOT NULL
+            FROM pg_stat_activity
         `);
         
         const serverTotal = parseInt(serverResults[0].total_connections, 10);
         
         // 데이터베이스별 연결 수 조회 (idle과 active 구분)
+        // datname이 NULL인 경우도 포함하여 전체 수와 일치시킴
         const [dbResults] = await firstSequelize.query(`
             SELECT 
-                datname as database_name,
+                COALESCE(datname, 'NULL') as database_name,
                 count(*) FILTER (WHERE state != 'idle' AND state != 'idle in transaction') as active_count,
                 count(*) FILTER (WHERE state = 'idle' OR state = 'idle in transaction') as idle_count,
                 count(*) as total_count
             FROM pg_stat_activity 
-            WHERE datname IS NOT NULL 
             GROUP BY datname
             ORDER BY total_count DESC
         `);
@@ -306,9 +305,16 @@ async function checkPostgresConnectionCount() {
             total: parseInt(r.total_count, 10)
         }));
         
-        // 전체 active와 idle 수 계산
-        const totalActive = connectionDetails.reduce((sum, d) => sum + d.active, 0);
-        const totalIdle = connectionDetails.reduce((sum, d) => sum + d.idle, 0);
+        // 전체 active와 idle 수 계산 (모든 행 포함)
+        const [totalStats] = await firstSequelize.query(`
+            SELECT 
+                count(*) FILTER (WHERE state != 'idle' AND state != 'idle in transaction') as total_active,
+                count(*) FILTER (WHERE state = 'idle' OR state = 'idle in transaction') as total_idle
+            FROM pg_stat_activity
+        `);
+        
+        const totalActive = parseInt(totalStats[0].total_active, 10);
+        const totalIdle = parseInt(totalStats[0].total_idle, 10);
         
         console.log(`\n[PostgreSQL 연결 수] 총 접속자: ${serverTotal}개 (Active: ${totalActive}개, Idle: ${totalIdle}개)`);
         if (connectionDetails.length > 0) {
@@ -320,6 +326,8 @@ async function checkPostgresConnectionCount() {
         
         return {
             total: serverTotal,
+            active: totalActive,
+            idle: totalIdle,
             details: connectionDetails
         };
     } catch (err) {
