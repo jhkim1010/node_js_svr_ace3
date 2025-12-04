@@ -138,11 +138,8 @@ router.get('/', async (req, res) => {
         const hasMore = records.length > limit;
         const allRecords = hasMore ? records.slice(0, limit) : records;
         
-        // id_codigo를 제거하고 응답 데이터 구성
-        const data = allRecords.map(record => {
-            const { id_codigo, ...rest } = record;
-            return rest;
-        });
+        // 응답 데이터 구성 (id_codigo 포함)
+        const data = allRecords;
         
         // 다음 요청을 위한 id_codigo 계산 (마지막 레코드의 id_codigo)
         let nextIdCodigo = null;

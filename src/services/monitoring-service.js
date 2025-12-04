@@ -37,6 +37,7 @@ const alertState = {
     connectionAlert: false,
     memoryWarningAlert: false,
     memoryCriticalAlert: false,
+    poolUsageAlert: {}, // 데이터베이스별 풀 사용률 알림 상태
     lastAlertTime: {}
 };
 
@@ -450,7 +451,7 @@ async function checkPostgresConnectionCount() {
             const total = parseInt(r.total_count, 10);
             
             return {
-                database: r.database_name,
+            database: r.database_name,
                 active: active,
                 idle: idle,
                 idleInTransaction: idleInTransaction,
@@ -662,20 +663,138 @@ async function checkPostgresConnectionCount() {
     }
 }
 
+// Sequelize 연결 풀 사용률 확인
+async function checkConnectionPoolUsage() {
+    try {
+        if (connectionPool.size === 0) {
+            return null;
+        }
+        
+        const poolStats = [];
+        
+        // 각 데이터베이스의 연결 풀 상태 확인
+        for (const [key, sequelize] of connectionPool.entries()) {
+            if (!sequelize || !sequelize.config) {
+                continue;
+            }
+            
+            const pool = sequelize.connectionManager.pool;
+            if (!pool) {
+                continue;
+            }
+            
+            const poolMax = sequelize.config.pool?.max || 50;
+            const poolUsed = pool.used || 0;
+            const poolPending = pool.pending || 0;
+            const poolSize = pool.size || 0;
+            const poolUsage = poolMax > 0 ? (poolUsed / poolMax) * 100 : 0;
+            
+            const database = sequelize.config.database || 'unknown';
+            const host = sequelize.config.host || 'unknown';
+            
+            poolStats.push({
+                key,
+                database,
+                host,
+                poolMax,
+                poolUsed,
+                poolPending,
+                poolSize,
+                poolUsage
+            });
+            
+            // 80% 이상일 때 Telegram 알림 전송
+            if (poolUsage >= 80) {
+                const alertKey = `pool_usage_${database}`;
+                const now = Date.now();
+                const lastAlertTime = alertState.lastAlertTime[alertKey] || 0;
+                const cooldownPeriod = 5 * 60 * 1000; // 5분 쿨다운
+                
+                // 쿨다운 기간이 지났거나 아직 알림을 보내지 않은 경우
+                if (now - lastAlertTime >= cooldownPeriod || !alertState.poolUsageAlert[alertKey]) {
+                    alertState.lastAlertTime[alertKey] = now;
+                    alertState.poolUsageAlert[alertKey] = true;
+                    
+                    // 경고 레벨 결정
+                    let alertLevel = '⚠️';
+                    let alertTitle = '연결 풀 사용률 경고';
+                    
+                    if (poolUsage >= 100) {
+                        alertLevel = '🚨';
+                        alertTitle = '연결 풀 한계 초과!';
+                    } else if (poolUsage >= 90) {
+                        alertLevel = '🔴';
+                        alertTitle = '연결 풀 사용률 위험';
+                    }
+                    
+                    const message = `${alertLevel} <b>${alertTitle}</b>\n\n` +
+                                   `📊 <b>데이터베이스:</b> ${database}\n` +
+                                   `🔗 <b>호스트:</b> ${host}\n` +
+                                   `\n📈 <b>연결 풀 상태:</b>\n` +
+                                   `   - 사용 중: ${poolUsed}/${poolMax}개\n` +
+                                   `   - 대기 중: ${poolPending}개\n` +
+                                   `   - 풀 크기: ${poolSize}개\n` +
+                                   `   - 사용률: ${poolUsage.toFixed(1)}%\n` +
+                                   `\n💡 <b>권장 사항:</b>\n`;
+                    
+                    let recommendations = [];
+                    if (poolUsage >= 100) {
+                        recommendations.push('🚨 연결 풀 한계 초과! 즉시 조치 필요');
+                        recommendations.push('1. 사용 중인 연결 확인');
+                        recommendations.push('2. 트랜잭션이 제대로 종료되는지 확인');
+                        recommendations.push('3. 연결 풀 max 값 증가 고려');
+                    } else if (poolUsage >= 90) {
+                        recommendations.push('연결 풀 사용률이 90% 이상입니다');
+                        recommendations.push('1. 연결 풀 설정 확인 (max 값)');
+                        recommendations.push('2. 사용하지 않는 연결 정리');
+                        recommendations.push('3. PostgreSQL 서버 연결 상태 확인');
+                    } else {
+                        recommendations.push('연결 풀 사용률이 80% 이상입니다');
+                        recommendations.push('1. 연결 풀 모니터링 지속');
+                        recommendations.push('2. 사용하지 않는 연결 정리');
+                    }
+                    
+                    const finalMessage = message + recommendations.join('\n') +
+                                       `\n\n⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
+                    
+                    await sendTelegramMessage(finalMessage).catch(() => {
+                        // 알림 전송 실패는 무시
+                    });
+                }
+            } else {
+                // 사용률이 80% 미만으로 떨어지면 알림 상태 리셋
+                const alertKey = `pool_usage_${database}`;
+                if (alertState.poolUsageAlert[alertKey]) {
+                    alertState.poolUsageAlert[alertKey] = false;
+                }
+            }
+        }
+        
+        return poolStats;
+    } catch (err) {
+        console.error(`[Monitoring] 연결 풀 사용률 확인 오류: ${err.message}`);
+        return null;
+    }
+}
+
 // PostgreSQL 연결 수 모니터링 시작 (10분마다)
 function startPostgresConnectionMonitoring() {
     // 10분 = 600,000 밀리초
     const interval = 10 * 60 * 1000;
     
     console.log(`[Monitoring] PostgreSQL 연결 수 모니터링 시작 (10분마다)`);
+    console.log(`[Monitoring] 연결 풀 사용률 모니터링 시작 (80% 이상 시 알림)`);
     
     // 즉시 한 번 실행
     checkPostgresConnectionCount();
+    checkConnectionPoolUsage();
     
     // 10분마다 실행
     const postgresMonitoringInterval = setInterval(async () => {
         try {
             await checkPostgresConnectionCount();
+            // 연결 풀 사용률도 함께 확인
+            await checkConnectionPoolUsage();
         } catch (err) {
             console.error(`[Monitoring] PostgreSQL 연결 수 모니터링 오류: ${err.message}`);
         }
@@ -730,6 +849,7 @@ module.exports = {
     checkMemoryUsage,
     checkWebSocketConnections,
     startPostgresConnectionMonitoring,
-    checkPostgresConnectionCount
+    checkPostgresConnectionCount,
+    checkConnectionPoolUsage
 };
 

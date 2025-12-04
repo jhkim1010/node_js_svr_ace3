@@ -13,27 +13,54 @@ const router = Router();
 router.get('/', async (req, res) => {
     try {
         const Todocodigos = getModelForRequest(req, 'Todocodigos');
+        const sequelize = Todocodigos.sequelize;
         
-        // max_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
-        // 실제로는 id_todocodigo 값을 받음 (호환성을 위해 max_utime 이름 유지)
-        const maxUtime = req.body?.max_utime || req.query?.max_utime;
+        // id_todocodigo 파라미터 확인 (페이지네이션용, 첫 요청에는 없음)
+        const idTodocodigo = req.body?.id_todocodigo || req.query?.id_todocodigo;
         
-        // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
+        // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터, 호환성 유지)
         const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
         
-        let whereCondition = {};
-        let maxIdTodocodigo = null;
+        // 검색 및 정렬 파라미터 확인
+        const filteringWord = req.body?.filtering_word || req.query?.filtering_word || req.body?.filteringWord || req.query?.filteringWord || req.body?.search || req.query?.search;
+        const sortColumn = req.body?.sort_column || req.query?.sort_column || req.body?.sortBy || req.query?.sortBy;
+        const sortAscending = req.body?.sort_ascending !== undefined 
+            ? (req.body?.sort_ascending === 'true' || req.body?.sort_ascending === true)
+            : (req.query?.sort_ascending !== undefined 
+                ? (req.query?.sort_ascending === 'true' || req.query?.sort_ascending === true)
+                : (req.body?.sortOrder || req.query?.sortOrder 
+                    ? (req.body?.sortOrder || req.query?.sortOrder).toUpperCase() === 'ASC'
+                    : true)); // 기본값: 오름차순
+        const sortOrder = sortAscending ? 'ASC' : 'DESC';
         
-        if (maxUtime) {
-            // max_utime 값이 실제로는 id_todocodigo 값임
-            maxIdTodocodigo = parseInt(maxUtime, 10);
+        // 정렬 가능한 컬럼 화이트리스트 (SQL injection 방지)
+        const allowedSortColumns = [
+            'tcodigo', 'tdesc', 'tpre1', 'tpre2', 'tpre3', 'torgpre',
+            'ttelacodigo', 'ttelakg', 'tinfo1', 'tinfo2', 'tinfo3', 'utime', 'borrado',
+            'fotonombre', 'tpre4', 'tpre5', 'pubip', 'ip', 'mac', 'bmobile',
+            'ref_id_temporada', 'ref_id_tipo', 'ref_id_origen', 'ref_id_empresa', 'memo',
+            'estatus_precios', 'tprecio_dolar', 'utime_modificado', 'id_todocodigo_centralizado',
+            'b_mostrar_vcontrol', 'd_oferta_mode', 'id_serial', 'str_prefijo',
+            'id_todocodigo'
+        ];
+        
+        // 정렬 컬럼 검증 및 기본값 설정
+        // 파라미터가 없으면 tcodigo를 중심으로 오름차순 정렬
+        const defaultSortColumn = 'tcodigo';
+        const validSortBy = sortColumn && allowedSortColumns.includes(sortColumn) ? sortColumn : defaultSortColumn;
+        
+        // WHERE 조건 구성
+        let whereConditions = [];
+        let replacements = {};
+        
+        if (idTodocodigo) {
+            // id_todocodigo 파라미터로 페이지네이션 (다음 페이지 요청 시 사용)
+            const maxIdTodocodigo = parseInt(idTodocodigo, 10);
             if (isNaN(maxIdTodocodigo)) {
-                console.error(`ERROR: Invalid id_todocodigo format: ${maxUtime}`);
+                console.error(`ERROR: Invalid id_todocodigo format: ${idTodocodigo}`);
             } else {
-                // id_todocodigo가 maxIdTodocodigo보다 큰 레코드만 조회
-                whereCondition.id_todocodigo = {
-                    [Op.gt]: maxIdTodocodigo
-                };
+                whereConditions.push('id_todocodigo > :idTodocodigo');
+                replacements.idTodocodigo = maxIdTodocodigo;
             }
         }
         
@@ -42,58 +69,121 @@ router.get('/', async (req, res) => {
             // ISO 8601 형식의 'T'를 공백으로 변환하고 시간대 정보 제거
             let utimeStr = String(lastGetUtime);
             utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
-            // utime::text > 'last_get_utime' 조건 추가 (문자열 비교)
-            whereCondition[Op.and] = [
-                ...(whereCondition[Op.and] || []),
-                Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`)
-            ];
+            whereConditions.push(`utime::text > :lastGetUtime`);
+            replacements.lastGetUtime = utimeStr;
         }
         
+        // FilteringWord 검색 조건 추가 (tcodigo 또는 tdesc에서만 검색)
+        if (filteringWord && filteringWord.trim()) {
+            const searchTerm = `%${filteringWord.trim()}%`;
+            whereConditions.push(`(
+                tcodigo ILIKE :filteringWord OR 
+                tdesc ILIKE :filteringWord
+            )`);
+            replacements.filteringWord = searchTerm;
+        }
+        
+        const whereClause = whereConditions.length > 0 
+            ? 'WHERE ' + whereConditions.join(' AND ')
+            : '';
+        
         // 총 데이터 개수 조회
-        const totalCount = await Todocodigos.count({ where: whereCondition });
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM todocodigos
+            ${whereClause}
+        `;
+        const [countResult] = await sequelize.query(countQuery, {
+            replacements: replacements,
+            type: Sequelize.QueryTypes.SELECT
+        });
+        const totalCount = parseInt(countResult.total, 10);
         
         // 100개 단위로 제한
         const limit = 100;
-        // id_todocodigo로 정렬 (일관된 정렬 보장)
-        // raw: true를 사용하여 원본 데이터베이스 데이터를 그대로 반환 (모든 필드 포함)
-        const records = await Todocodigos.findAll({
-            where: whereCondition,
-            limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
-            order: [['id_todocodigo', 'ASC']],
-            attributes: [
-                'id_todocodigo', 'tcodigo', 'tdesc', 'tpre1', 'tpre2', 'tpre3', 'torgpre',
-                'ttelacodigo', 'ttelakg', 'tinfo1', 'tinfo2', 'tinfo3', 'utime', 'borrado',
-                'fotonombre', 'tpre4', 'tpre5', 'pubip', 'ip', 'mac', 'bmobile',
-                'ref_id_temporada', 'ref_id_tipo', 'ref_id_origen', 'ref_id_empresa', 'memo',
-                'estatus_precios', 'tprecio_dolar', 'utime_modificado', 'id_todocodigo_centralizado',
-                'b_mostrar_vcontrol', 'd_oferta_mode', 'id_serial', 'str_prefijo'
-            ],
-            raw: true // 원본 데이터베이스 데이터를 그대로 반환 (변환 없음)
+        
+        // 쿼리 실행 (사용자가 요청한 필드 + 페이지네이션을 위한 id_todocodigo)
+        const query = `
+            SELECT 
+                id_todocodigo, 
+                tcodigo, 
+                tdesc, 
+                tpre1, 
+                tpre2, 
+                tpre3, 
+                torgpre,
+                ttelacodigo, 
+                ttelakg, 
+                tinfo1, 
+                tinfo2, 
+                tinfo3, 
+                utime, 
+                borrado,
+                fotonombre, 
+                tpre4, 
+                tpre5, 
+                pubip, 
+                ip, 
+                mac, 
+                bmobile,
+                ref_id_temporada, 
+                ref_id_tipo, 
+                ref_id_origen, 
+                ref_id_empresa, 
+                memo,
+                estatus_precios, 
+                tprecio_dolar, 
+                utime_modificado, 
+                id_todocodigo_centralizado,
+                b_mostrar_vcontrol, 
+                d_oferta_mode, 
+                id_serial, 
+                str_prefijo
+            FROM todocodigos
+            ${whereClause}
+            ORDER BY ${validSortBy} ${sortOrder}, id_todocodigo ASC
+            LIMIT :limit OFFSET :offset
+        `;
+        
+        // 다음 배치 존재 여부 확인을 위해 limit + 1개 조회
+        const records = await sequelize.query(query, {
+            replacements: {
+                ...replacements,
+                limit: limit + 1,
+                offset: 0
+            },
+            type: Sequelize.QueryTypes.SELECT
         });
         
         // 다음 배치가 있는지 확인
         const hasMore = records.length > limit;
-        const data = hasMore ? records.slice(0, limit) : records;
+        const allRecords = hasMore ? records.slice(0, limit) : records;
         
-        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id_todocodigo)
-        let nextMaxUtime = null;
-        if (data.length > 0) {
-            const lastRecord = data[data.length - 1];
+        // 응답 데이터 구성 (id_todocodigo 포함)
+        const data = allRecords;
+        
+        // 다음 요청을 위한 id_todocodigo 계산 (마지막 레코드의 id_todocodigo)
+        let nextIdTodocodigo = null;
+        if (allRecords.length > 0) {
+            const lastRecord = allRecords[allRecords.length - 1];
             if (lastRecord.id_todocodigo !== null && lastRecord.id_todocodigo !== undefined) {
-                // id_todocodigo 값을 문자열로 변환하여 반환
-                nextMaxUtime = String(lastRecord.id_todocodigo);
+                nextIdTodocodigo = lastRecord.id_todocodigo;
             }
         }
         
         // 페이지네이션 정보와 함께 응답
-        // data는 원본 데이터베이스에서 가져온 형태 그대로 반환 (변환 없음)
         const responseData = {
             data: data,
             pagination: {
                 count: data.length,
                 total: totalCount,
                 hasMore: hasMore,
-                nextMaxUtime: nextMaxUtime
+                id_todocodigo: nextIdTodocodigo
+            },
+            filters: {
+                filtering_word: filteringWord || null,
+                sort_column: validSortBy,
+                sort_ascending: sortAscending
             }
         };
         
