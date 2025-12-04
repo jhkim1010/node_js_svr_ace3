@@ -2,6 +2,20 @@ const https = require('https');
 const http = require('http');
 const { connectionPool } = require('../db/dynamic-sequelize');
 
+// 아르헨티나 시간대(GMT-3)로 시간 포맷팅하는 헬퍼 함수
+function getArgentinaTime() {
+    return new Date().toLocaleString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+}
+
 // 알림 설정 (환경 변수로 구성)
 const MONITORING_CONFIG = {
     enabled: process.env.MONITORING_ENABLED === 'true',
@@ -110,7 +124,7 @@ function checkMemoryUsage() {
                           `임계값: ${MONITORING_CONFIG.memoryCriticalMB}MB\n` +
                           `RSS: ${rssMB}MB\n` +
                           `Heap Total: ${heapTotalMB}MB\n` +
-                          `시간: ${new Date().toLocaleString('ko-KR')}`;
+                          `시간: ${getArgentinaTime()} (GMT-3)`;
             sendAlert(message, 'memory_critical');
             alertState.memoryCriticalAlert = true;
         }
@@ -121,7 +135,7 @@ function checkMemoryUsage() {
                           `임계값: ${MONITORING_CONFIG.memoryThresholdMB}MB\n` +
                           `RSS: ${rssMB}MB\n` +
                           `Heap Total: ${heapTotalMB}MB\n` +
-                          `시간: ${new Date().toLocaleString('ko-KR')}`;
+                          `시간: ${getArgentinaTime()} (GMT-3)`;
             sendAlert(message, 'memory_warning');
             alertState.memoryWarningAlert = true;
         }
@@ -149,7 +163,7 @@ function checkWebSocketConnections(getWebSocketServer) {
             const message = `🚨 <b>WebSocket 연결 수 경고!</b>\n\n` +
                           `현재 연결 수: ${connectionCount}\n` +
                           `임계값: ${MONITORING_CONFIG.connectionThreshold}\n` +
-                          `시간: ${new Date().toLocaleString('ko-KR')}`;
+                          `시간: ${getArgentinaTime()} (GMT-3)`;
             sendAlert(message, 'connection');
             alertState.connectionAlert = true;
         }
@@ -241,7 +255,7 @@ async function sendDatabaseErrorAlert(err, database, table, operation = 'unknown
                          operation.toLowerCase().includes('post');
     
     // 오류 메시지 길이 제한 (Telegram 메시지 최대 길이: 4096자)
-    const maxMessageLength = 3000; // 여유를 두고 3000자로 제한
+    const maxMessageLength = 2500; // 여유를 두고 2500자로 제한 (연결 상태 정보를 위해 공간 확보)
     let truncatedErrorMsg = errorMsg;
     if (truncatedErrorMsg.length > maxMessageLength) {
         truncatedErrorMsg = truncatedErrorMsg.substring(0, maxMessageLength) + '... (truncated)';
@@ -249,18 +263,93 @@ async function sendDatabaseErrorAlert(err, database, table, operation = 'unknown
     
     // 에러 원인 분석
     let errorCause = '';
+    let solutionTips = '';
+    
     if (errorMsg.includes('foreign key constraint')) {
         errorCause = '🔗 외래키 제약 조건 위반';
+        solutionTips = '💡 참조하는 테이블에 해당 값이 존재하는지 확인하세요.';
     } else if (errorMsg.includes('unique constraint') || errorMsg.includes('duplicate key')) {
         errorCause = '🔑 중복 키 오류';
+        solutionTips = '💡 이미 존재하는 키 값입니다. UPDATE를 사용하거나 다른 키 값을 사용하세요.';
     } else if (errorMsg.includes('not null') || errorMsg.includes('null value')) {
         errorCause = '⚠️ 필수 필드 누락';
+        solutionTips = '💡 필수 필드에 값을 제공하세요.';
+    } else if (errorMsg.includes('ConnectionAcquireTimeoutError') || errorMsg.includes('Operation timeout')) {
+        errorCause = '⏱️ 연결 획득 타임아웃';
+        solutionTips = '💡 연결 풀이 고갈되었을 수 있습니다. PostgreSQL 서버의 연결 상태를 확인하세요.';
     } else if (errorMsg.includes('connection') || errorMsg.includes('timeout')) {
         errorCause = '🔌 데이터베이스 연결 오류';
+        solutionTips = '💡 데이터베이스 서버 상태와 네트워크 연결을 확인하세요.';
     } else if (errorMsg.includes('value too long')) {
         errorCause = '📏 데이터 길이 초과';
+        solutionTips = '💡 데이터 길이를 줄이거나 컬럼 크기를 늘리세요.';
     } else {
         errorCause = '❓ 기타 오류';
+        solutionTips = '💡 서버 로그를 확인하세요.';
+    }
+    
+    // ConnectionAcquireTimeoutError인 경우 연결 상태 정보 추가
+    let connectionStatusInfo = '';
+    if (errorMsg.includes('ConnectionAcquireTimeoutError') || errorMsg.includes('Operation timeout')) {
+        try {
+            // 연결 풀에서 해당 데이터베이스의 Sequelize 인스턴스 찾기
+            const { connectionPool } = require('../db/dynamic-sequelize');
+            let targetSequelize = null;
+            
+            for (const sequelize of connectionPool.values()) {
+                if (sequelize && sequelize.config && sequelize.config.database === database) {
+                    targetSequelize = sequelize;
+                    break;
+                }
+            }
+            
+            if (targetSequelize) {
+                const pool = targetSequelize.connectionManager.pool;
+                if (pool) {
+                    const poolSize = pool.size || 0;
+                    const poolUsed = pool.used || 0;
+                    const poolPending = pool.pending || 0;
+                    const poolMax = targetSequelize.config.pool?.max || 400;
+                    
+                    connectionStatusInfo = `\n📊 <b>연결 풀 상태:</b>\n` +
+                                         `   - 사용 중: ${poolUsed}/${poolMax}\n` +
+                                         `   - 대기 중: ${poolPending}개\n` +
+                                         `   - 사용률: ${((poolUsed / poolMax) * 100).toFixed(1)}%\n`;
+                    
+                    // PostgreSQL 서버 연결 상태도 확인
+                    try {
+                        const [pgStats] = await targetSequelize.query(`
+                            SELECT 
+                                count(*) FILTER (WHERE state = 'active') as active,
+                                count(*) FILTER (WHERE state = 'idle') as idle,
+                                count(*) FILTER (WHERE state = 'idle in transaction') as idle_in_tx,
+                                count(*) FILTER (WHERE state = 'idle in transaction (aborted)') as idle_in_tx_aborted,
+                                count(*) as total
+                            FROM pg_stat_activity
+                            WHERE datname = $1
+                        `, {
+                            replacements: [database]
+                        });
+                        
+                        if (pgStats && pgStats[0]) {
+                            const stats = pgStats[0];
+                            connectionStatusInfo += `\n🗄️ <b>PostgreSQL 서버 상태 (${database}):</b>\n` +
+                                                   `   - 총 연결: ${stats.total}개\n` +
+                                                   `   - Active: ${stats.active}개\n` +
+                                                   `   - Idle: ${stats.idle}개\n` +
+                                                   `   - Idle in TX: ${stats.idle_in_tx}개\n`;
+                            if (parseInt(stats.idle_in_tx_aborted, 10) > 0) {
+                                connectionStatusInfo += `   - ⚠️ Idle in TX (Aborted): ${stats.idle_in_tx_aborted}개\n`;
+                            }
+                        }
+                    } catch (pgErr) {
+                        // PostgreSQL 쿼리 실패는 무시
+                    }
+                }
+            }
+        } catch (statusErr) {
+            // 연결 상태 확인 실패는 무시
+        }
     }
     
     const emoji = isPostFailure ? '🚨' : '⚠️';
@@ -273,8 +362,10 @@ async function sendDatabaseErrorAlert(err, database, table, operation = 'unknown
                    `❌ <b>오류 타입:</b> ${errorType}\n` +
                    (errorCode ? `🔢 <b>오류 코드:</b> ${errorCode}\n` : '') +
                    `\n${errorCause}\n` +
+                   connectionStatusInfo +
                    `\n💬 <b>오류 메시지:</b>\n<code>${truncatedErrorMsg.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>\n` +
-                   `\n⏰ <b>시간:</b> ${new Date().toLocaleString('ko-KR')}`;
+                   (solutionTips ? `\n${solutionTips}\n` : '') +
+                   `\n⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
     
     // 데이터베이스 오류는 쿨다운 없이 전송 (중요한 오류이므로)
     console.log(`[Monitoring] 🚨 데이터베이스 오류 알림 전송`);
@@ -447,26 +538,80 @@ async function checkPostgresConnectionCount() {
                                `   - Idle in Transaction: ${totalIdleInTransaction}개\n` +
                                `   - ⚠️ Idle in Transaction (Aborted): ${totalIdleInTransactionAborted}개\n` +
                                `\n💡 <b>원인:</b> 트랜잭션이 시작되었지만 롤백되지 않은 상태입니다.\n` +
-                               `\n⏰ <b>시간:</b> ${new Date().toLocaleString('ko-KR')}`;
+                               `\n⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
             
             await sendTelegramMessage(alertMessage).catch(() => {
                 // 알림 전송 실패는 무시
             });
         }
         
-        // 연결 수가 너무 많을 때 경고 (샘플 코드처럼)
-        const maxConnections = parseInt(process.env.MAX_CONNECTIONS) || 100;
-        const connectionUsage = (serverTotal / maxConnections) * 100;
+        // PostgreSQL 서버의 실제 max_connections 값 조회
+        let pgMaxConnections = null;
+        try {
+            const [maxConnResult] = await firstSequelize.query(`SHOW max_connections`);
+            if (maxConnResult && maxConnResult[0] && maxConnResult[0].max_connections) {
+                pgMaxConnections = parseInt(maxConnResult[0].max_connections, 10);
+            }
+        } catch (err) {
+            // 조회 실패 시 환경 변수 또는 기본값 사용
+        }
         
-        if (connectionUsage >= 80) {
-            const alertMessage = `⚠️ <b>PostgreSQL 연결 사용률 경고</b>\n\n` +
+        // max_connections를 찾지 못한 경우 환경 변수 또는 기본값 사용
+        const maxConnections = pgMaxConnections || parseInt(process.env.MAX_CONNECTIONS) || 100;
+        const connectionUsage = maxConnections > 0 ? (serverTotal / maxConnections) * 100 : 0;
+        
+        // 연결 수가 너무 많을 때 경고 (80% 이상 또는 절대값이 많을 때)
+        const shouldAlert = connectionUsage >= 80 || serverTotal >= 50; // 50개 이상이면 무조건 경고
+        
+        if (shouldAlert) {
+            // 경고 레벨 결정
+            let alertLevel = '⚠️';
+            let alertTitle = 'PostgreSQL 연결 사용률 경고';
+            
+            if (connectionUsage >= 100) {
+                alertLevel = '🚨';
+                alertTitle = 'PostgreSQL 연결 한계 초과!';
+            } else if (connectionUsage >= 90) {
+                alertLevel = '🔴';
+                alertTitle = 'PostgreSQL 연결 사용률 위험';
+            } else if (totalIdleInTransactionAborted > 10) {
+                alertLevel = '⚠️';
+                alertTitle = 'PostgreSQL 연결 문제 (트랜잭션 미완료)';
+            }
+            
+            const alertMessage = `${alertLevel} <b>${alertTitle}</b>\n\n` +
                                `📊 <b>사용률:</b> ${connectionUsage.toFixed(1)}%\n` +
-                               `   - 총 연결: ${serverTotal}개 / ${maxConnections}개\n` +
+                               `   - 총 연결: ${serverTotal}개 / ${maxConnections}개 (서버 최대값)\n` +
                                `   - Active: ${totalActive}개\n` +
                                `   - Idle: ${totalIdle}개\n` +
                                `   - Idle in Transaction: ${totalIdleInTransaction}개\n` +
                                (totalIdleInTransactionAborted > 0 ? `   - ⚠️ Idle in TX (Aborted): ${totalIdleInTransactionAborted}개\n` : '') +
-                               `\n⏰ <b>시간:</b> ${new Date().toLocaleString('ko-KR')}`;
+                               (totalOther > 0 ? `   - 기타 상태: ${totalOther}개\n` : '') +
+                               `\n💡 <b>권장 사항:</b>\n`;
+            
+            let recommendations = [];
+            
+            if (connectionUsage >= 100) {
+                recommendations.push('🚨 연결 한계 초과! 즉시 조치 필요');
+                recommendations.push('1. "idle in transaction" 상태의 연결 확인');
+                recommendations.push('2. 애플리케이션 코드에서 트랜잭션 커밋/롤백 확인');
+                recommendations.push('3. 불필요한 연결 종료');
+            } else if (totalIdleInTransactionAborted > 10) {
+                recommendations.push('⚠️ 트랜잭션이 제대로 종료되지 않은 연결이 많습니다');
+                recommendations.push('1. 애플리케이션 코드에서 트랜잭션 관리 확인');
+                recommendations.push('2. 에러 발생 시 롤백이 제대로 되는지 확인');
+            } else if (connectionUsage >= 90) {
+                recommendations.push('연결 사용률이 90% 이상입니다');
+                recommendations.push('1. 연결 풀 설정 확인 (max 값)');
+                recommendations.push('2. 사용하지 않는 연결 정리');
+            } else if (serverTotal >= 50) {
+                recommendations.push('연결 수가 많습니다 (50개 이상)');
+                recommendations.push('1. 연결이 제대로 해제되는지 확인');
+                recommendations.push('2. 여러 애플리케이션 인스턴스가 실행 중인지 확인');
+            }
+            
+            const finalMessage = alertMessage + recommendations.join('\n') +
+                               `\n\n⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
             
             // 쿨다운 체크 (5분)
             const alertKey = 'connection_usage';
@@ -476,13 +621,13 @@ async function checkPostgresConnectionCount() {
             
             if (now - lastAlertTime >= cooldownPeriod) {
                 alertState.lastAlertTime[alertKey] = now;
-                await sendTelegramMessage(alertMessage).catch(() => {
+                await sendTelegramMessage(finalMessage).catch(() => {
                     // 알림 전송 실패는 무시
                 });
             }
         }
         
-        console.log(`[PostgreSQL 연결 수] 조회 시간: ${new Date().toLocaleString('ko-KR')}\n`);
+        console.log(`[PostgreSQL 연결 수] 조회 시간: ${getArgentinaTime()} (GMT-3)\n`);
         
         return {
             total: serverTotal,
