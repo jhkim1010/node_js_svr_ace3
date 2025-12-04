@@ -426,6 +426,20 @@ async function checkPostgresConnectionCount() {
             ORDER BY count DESC
         `);
         
+        // NULL 상태 연결의 상세 정보 조회 (백그라운드 프로세스 확인)
+        const [nullStateDetails] = await firstSequelize.query(`
+            SELECT 
+                COALESCE(backend_type, '<NULL>') as backend_type,
+                COALESCE(usename::text, '<NULL>') as usename,
+                COALESCE(application_name::text, '<NULL>') as application_name,
+                COALESCE(datname::text, '<NULL>') as datname,
+                count(*) as count
+            FROM pg_stat_activity
+            WHERE state IS NULL
+            GROUP BY backend_type, usename, application_name, datname
+            ORDER BY count DESC
+        `);
+        
         // 데이터베이스별 연결 수 조회 (모든 상태 포함)
         // idle in transaction (aborted)도 포함하여 정확한 집계
         const [dbResults] = await firstSequelize.query(`
@@ -507,6 +521,36 @@ async function checkPostgresConnectionCount() {
             stateResults.forEach(state => {
                 console.log(`   - ${state.state}: ${state.count}개`);
             });
+        }
+        
+        // NULL 상태 연결의 상세 정보 출력 (백그라운드 프로세스)
+        if (nullStateDetails && nullStateDetails.length > 0) {
+            console.log(`\n[NULL 상태 연결 상세 정보] (백그라운드 프로세스)`);
+            nullStateDetails.forEach(detail => {
+                const backendType = detail.backend_type || '<NULL>';
+                const usename = detail.usename || '<NULL>';
+                const appName = detail.application_name || '<NULL>';
+                const datname = detail.datname || '<NULL>';
+                const count = parseInt(detail.count, 10);
+                
+                console.log(`   - ${backendType}: ${count}개`);
+                if (backendType !== '<NULL>' && backendType !== 'client backend') {
+                    console.log(`     사용자: ${usename}, 앱: ${appName}, DB: ${datname}`);
+                }
+            });
+            
+            // NULL 상태가 많은 경우 경고
+            const nullStateCount = stateResults.find(s => s.state === '<NULL>')?.count || 0;
+            if (parseInt(nullStateCount, 10) > 50) {
+                console.warn(`\n[PostgreSQL 연결 수] ⚠️ NULL 상태 연결이 많습니다 (${nullStateCount}개)`);
+                console.warn(`   이는 주로 PostgreSQL 백그라운드 프로세스입니다:`);
+                console.warn(`   - autovacuum worker: 자동 정리 작업`);
+                console.warn(`   - background writer: 백그라운드 쓰기 작업`);
+                console.warn(`   - checkpointer: 체크포인트 작업`);
+                console.warn(`   - WAL writer: WAL 쓰기 작업`);
+                console.warn(`   - 기타 시스템 프로세스`);
+                console.warn(`   이것들은 정상적인 프로세스이며 연결 수에 포함됩니다.`);
+            }
         }
         
         // 데이터베이스별 상세 정보 출력

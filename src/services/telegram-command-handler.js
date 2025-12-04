@@ -1,4 +1,5 @@
 const TelegramBot = require('node-telegram-bot-api');
+const os = require('os');
 const { checkPostgresConnectionCount } = require('./monitoring-service');
 
 // Telegram Bot 설정
@@ -27,10 +28,18 @@ function getArgentinaTime() {
 
 // 서버 상태 확인
 async function handleStatusCommand(chatId) {
+    // Node.js 프로세스 메모리
     const memUsage = process.memoryUsage();
-    const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
-    const memTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
-    const memUsagePercent = ((memUsage.heapUsed / memUsage.heapTotal) * 100).toFixed(1);
+    const processMemUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const processMemTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    const processMemUsagePercent = ((memUsage.heapUsed / memUsage.heapTotal) * 100).toFixed(1);
+    const processRssMB = Math.round(memUsage.rss / 1024 / 1024);
+    
+    // 전체 시스템 메모리
+    const totalMemGB = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
+    const freeMemGB = (os.freemem() / 1024 / 1024 / 1024).toFixed(2);
+    const usedMemGB = ((os.totalmem() - os.freemem()) / 1024 / 1024 / 1024).toFixed(2);
+    const systemMemUsagePercent = (((os.totalmem() - os.freemem()) / os.totalmem()) * 100).toFixed(1);
     
     const uptime = process.uptime();
     const uptimeHours = Math.floor(uptime / 3600);
@@ -38,9 +47,12 @@ async function handleStatusCommand(chatId) {
     const uptimeSeconds = Math.floor(uptime % 60);
     
     const message = `📊 <b>서버 상태</b>\n\n` +
-                   `💾 <b>메모리:</b>\n` +
-                   `   - 사용 중: ${memUsedMB} MB / ${memTotalMB} MB (${memUsagePercent}%)\n` +
-                   `   - RSS: ${Math.round(memUsage.rss / 1024 / 1024)} MB\n\n` +
+                   `💾 <b>시스템 메모리:</b>\n` +
+                   `   - 사용 중: ${usedMemGB} GB / ${totalMemGB} GB (${systemMemUsagePercent}%)\n` +
+                   `   - 여유: ${freeMemGB} GB\n\n` +
+                   `🔧 <b>Node.js 프로세스 메모리:</b>\n` +
+                   `   - 힙 사용: ${processMemUsedMB} MB / ${processMemTotalMB} MB (${processMemUsagePercent}%)\n` +
+                   `   - RSS: ${processRssMB} MB\n\n` +
                    `⏱️ <b>업타임:</b>\n` +
                    `   - ${uptimeHours}시간 ${uptimeMinutes}분 ${uptimeSeconds}초\n\n` +
                    `⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
@@ -106,19 +118,31 @@ async function handleConnectionsCommand(chatId) {
 
 // 메모리 사용량 확인
 async function handleMemoryCommand(chatId) {
+    // Node.js 프로세스 메모리
     const memUsage = process.memoryUsage();
-    const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
-    const memTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
-    const memUsagePercent = ((memUsage.heapUsed / memUsage.heapTotal) * 100).toFixed(1);
+    const processMemUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const processMemTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    const processMemUsagePercent = ((memUsage.heapUsed / memUsage.heapTotal) * 100).toFixed(1);
+    const processRssMB = Math.round(memUsage.rss / 1024 / 1024);
+    const processExternalMB = Math.round(memUsage.external / 1024 / 1024);
+    const processArrayBuffersMB = Math.round(memUsage.arrayBuffers / 1024 / 1024);
+    
+    // 전체 시스템 메모리
+    const totalMemGB = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
+    const freeMemGB = (os.freemem() / 1024 / 1024 / 1024).toFixed(2);
+    const usedMemGB = ((os.totalmem() - os.freemem()) / 1024 / 1024 / 1024).toFixed(2);
+    const systemMemUsagePercent = (((os.totalmem() - os.freemem()) / os.totalmem()) * 100).toFixed(1);
     
     const message = `💾 <b>메모리 사용량</b>\n\n` +
-                   `📊 <b>힙 메모리:</b>\n` +
-                   `   - 사용 중: ${memUsedMB} MB / ${memTotalMB} MB\n` +
-                   `   - 사용률: ${memUsagePercent}%\n\n` +
-                   `📈 <b>전체 메모리:</b>\n` +
-                   `   - RSS: ${Math.round(memUsage.rss / 1024 / 1024)} MB\n` +
-                   `   - External: ${Math.round(memUsage.external / 1024 / 1024)} MB\n` +
-                   `   - Array Buffers: ${Math.round(memUsage.arrayBuffers / 1024 / 1024)} MB\n\n` +
+                   `🌐 <b>시스템 메모리:</b>\n` +
+                   `   - 총 메모리: ${totalMemGB} GB\n` +
+                   `   - 사용 중: ${usedMemGB} GB (${systemMemUsagePercent}%)\n` +
+                   `   - 여유: ${freeMemGB} GB\n\n` +
+                   `🔧 <b>Node.js 프로세스:</b>\n` +
+                   `   - 힙 사용: ${processMemUsedMB} MB / ${processMemTotalMB} MB (${processMemUsagePercent}%)\n` +
+                   `   - RSS: ${processRssMB} MB\n` +
+                   `   - External: ${processExternalMB} MB\n` +
+                   `   - Array Buffers: ${processArrayBuffersMB} MB\n\n` +
                    `⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
     
     await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
