@@ -567,28 +567,26 @@ async function checkPostgresConnectionCount() {
         const maxConnections = pgMaxConnections || parseInt(process.env.MAX_CONNECTIONS) || 100;
         const connectionUsage = maxConnections > 0 ? (serverTotal / maxConnections) * 100 : 0;
         
-        // 연결 수가 너무 많을 때 경고 (80% 이상 또는 절대값이 많을 때)
-        const shouldAlert = connectionUsage >= 80 || serverTotal >= 50; // 50개 이상이면 무조건 경고
+        // 연결 수가 350개를 넘을 때만 경고
+        const shouldAlert = serverTotal > 350;
         
         if (shouldAlert) {
-            // 경고 레벨 결정
+            // 경고 레벨 결정 (350개 초과 기준)
             let alertLevel = '⚠️';
-            let alertTitle = 'PostgreSQL 연결 사용률 경고';
+            let alertTitle = 'PostgreSQL 연결 수 경고';
             
-            if (connectionUsage >= 100) {
+            if (serverTotal >= 400) {
                 alertLevel = '🚨';
-                alertTitle = 'PostgreSQL 연결 한계 초과!';
-            } else if (connectionUsage >= 90) {
+                alertTitle = 'PostgreSQL 연결 수 위험!';
+            } else if (serverTotal >= 380) {
                 alertLevel = '🔴';
-                alertTitle = 'PostgreSQL 연결 사용률 위험';
-            } else if (totalIdleInTransactionAborted > 10) {
-                alertLevel = '⚠️';
-                alertTitle = 'PostgreSQL 연결 문제 (트랜잭션 미완료)';
+                alertTitle = 'PostgreSQL 연결 수 경고';
             }
             
             const alertMessage = `${alertLevel} <b>${alertTitle}</b>\n\n` +
-                               `📊 <b>사용률:</b> ${connectionUsage.toFixed(1)}%\n` +
-                               `   - 총 연결: ${serverTotal}개 / ${maxConnections}개 (서버 최대값)\n` +
+                               `📊 <b>연결 수:</b> ${serverTotal}개 (임계값: 350개 초과)\n` +
+                               `   - 서버 최대값: ${maxConnections}개\n` +
+                               `   - 사용률: ${connectionUsage.toFixed(1)}%\n` +
                                `   - Active: ${totalActive}개\n` +
                                `   - Idle: ${totalIdle}개\n` +
                                `   - Idle in Transaction: ${totalIdleInTransaction}개\n` +
@@ -598,23 +596,21 @@ async function checkPostgresConnectionCount() {
             
             let recommendations = [];
             
-            if (connectionUsage >= 100) {
-                recommendations.push('🚨 연결 한계 초과! 즉시 조치 필요');
+            if (serverTotal >= 400) {
+                recommendations.push('🚨 연결 수가 매우 많습니다 (400개 이상)! 즉시 조치 필요');
                 recommendations.push('1. "idle in transaction" 상태의 연결 확인');
                 recommendations.push('2. 애플리케이션 코드에서 트랜잭션 커밋/롤백 확인');
                 recommendations.push('3. 불필요한 연결 종료');
-            } else if (totalIdleInTransactionAborted > 10) {
-                recommendations.push('⚠️ 트랜잭션이 제대로 종료되지 않은 연결이 많습니다');
-                recommendations.push('1. 애플리케이션 코드에서 트랜잭션 관리 확인');
-                recommendations.push('2. 에러 발생 시 롤백이 제대로 되는지 확인');
-            } else if (connectionUsage >= 90) {
-                recommendations.push('연결 사용률이 90% 이상입니다');
-                recommendations.push('1. 연결 풀 설정 확인 (max 값)');
+                recommendations.push('4. PostgreSQL 서버의 max_connections 확인');
+            } else if (serverTotal >= 380) {
+                recommendations.push('연결 수가 많습니다 (380개 이상)');
+                recommendations.push('1. 연결 풀 설정 확인 (전체 최대값)');
                 recommendations.push('2. 사용하지 않는 연결 정리');
-            } else if (serverTotal >= 50) {
-                recommendations.push('연결 수가 많습니다 (50개 이상)');
+                recommendations.push('3. 여러 애플리케이션 인스턴스가 실행 중인지 확인');
+            } else {
+                recommendations.push('연결 수가 350개를 초과했습니다');
                 recommendations.push('1. 연결이 제대로 해제되는지 확인');
-                recommendations.push('2. 여러 애플리케이션 인스턴스가 실행 중인지 확인');
+                recommendations.push('2. 연결 풀 모니터링 지속');
             }
             
             const finalMessage = alertMessage + recommendations.join('\n') +
