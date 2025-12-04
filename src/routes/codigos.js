@@ -23,6 +23,28 @@ router.get('/', async (req, res) => {
         // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
         const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
         
+        // 검색 및 정렬 파라미터 확인
+        const filteringWord = req.body?.filtering_word || req.query?.filtering_word || req.body?.filteringWord || req.query?.filteringWord || req.body?.search || req.query?.search;
+        const sortColumn = req.body?.sort_column || req.query?.sort_column || req.body?.sortBy || req.query?.sortBy || 'id_codigo';
+        const sortAscending = req.body?.sort_ascending !== undefined 
+            ? (req.body?.sort_ascending === 'true' || req.body?.sort_ascending === true)
+            : (req.query?.sort_ascending !== undefined 
+                ? (req.query?.sort_ascending === 'true' || req.query?.sort_ascending === true)
+                : (req.body?.sortOrder || req.query?.sortOrder 
+                    ? (req.body?.sortOrder || req.query?.sortOrder).toUpperCase() === 'ASC'
+                    : true)); // 기본값: 오름차순
+        const sortOrder = sortAscending ? 'ASC' : 'DESC';
+        
+        // 정렬 가능한 컬럼 화이트리스트 (SQL injection 방지)
+        const allowedSortColumns = [
+            'codigo', 'descripcion', 'pre1', 'pre2', 'pre3', 'pre4', 'pre5', 'preorg',
+            'tcodigo', 'borrado', 'b_sincronizar_x_web', 'id_woocommerce', 'id_woocommerce_producto',
+            'id_codigo'
+        ];
+        
+        // 정렬 컬럼 검증
+        const validSortBy = allowedSortColumns.includes(sortColumn) ? sortColumn : 'id_codigo';
+        
         // WHERE 조건 구성
         let whereConditions = [];
         let replacements = {};
@@ -45,6 +67,17 @@ router.get('/', async (req, res) => {
             utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
             whereConditions.push(`c.utime::text > :lastGetUtime`);
             replacements.lastGetUtime = utimeStr;
+        }
+        
+        // FilteringWord 검색 조건 추가 (여러 컬럼에서 검색)
+        if (filteringWord && filteringWord.trim()) {
+            const searchTerm = `%${filteringWord.trim()}%`;
+            whereConditions.push(`(
+                c.codigo ILIKE :filteringWord OR 
+                c.descripcion ILIKE :filteringWord OR 
+                t.tcodigo ILIKE :filteringWord
+            )`);
+            replacements.filteringWord = searchTerm;
         }
         
         const whereClause = whereConditions.length > 0 
@@ -87,7 +120,7 @@ router.get('/', async (req, res) => {
             FROM codigos c
             INNER JOIN todocodigos t ON c.ref_id_todocodigo = t.id_todocodigo
             ${whereClause}
-            ORDER BY c.id_codigo ASC
+            ORDER BY ${validSortBy === 'tcodigo' ? 't.tcodigo' : `c.${validSortBy}`} ${validSortOrder}
             LIMIT :limit OFFSET :offset
         `;
         
@@ -128,6 +161,11 @@ router.get('/', async (req, res) => {
                 total: totalCount,
                 hasMore: hasMore,
                 nextMaxUtime: nextMaxUtime
+            },
+            filters: {
+                filtering_word: filteringWord || null,
+                sort_column: validSortBy,
+                sort_ascending: sortAscending
             }
         };
         

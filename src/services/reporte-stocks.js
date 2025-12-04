@@ -12,14 +12,37 @@ async function getStocksReport(req) {
 
     // 쿼리 파라미터 파싱
     const sucursal = req.query.sucursal ? parseInt(req.query.sucursal, 10) : null;
+    
+    // 페이지네이션 파라미터 확인 (바디 또는 쿼리 파라미터)
+    const maxUtime = req.body?.max_utime || req.query?.max_utime;
+    const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
+    
+    // 검색 및 정렬 파라미터 확인
+    const filteringWord = req.body?.filtering_word || req.query?.filtering_word || req.body?.filteringWord || req.query?.filteringWord || req.body?.search || req.query?.search;
+    const sortColumn = req.body?.sort_column || req.query?.sort_column || req.body?.sortBy || req.query?.sortBy;
+    const sortAscending = req.body?.sort_ascending !== undefined 
+        ? (req.body?.sort_ascending === 'true' || req.body?.sort_ascending === true)
+        : (req.query?.sort_ascending !== undefined 
+            ? (req.query?.sort_ascending === 'true' || req.query?.sort_ascending === true)
+            : (req.body?.sortOrder || req.query?.sortOrder 
+                ? (req.body?.sortOrder || req.query?.sortOrder).toUpperCase() === 'ASC'
+                : true)); // 기본값: 오름차순
+    const sortOrder = sortAscending ? 'ASC' : 'DESC';
+
+    // WHERE 조건 구성
+    let whereConditions = [];
+    const queryParams = [];
+    let paramIndex = 1;
 
     // 2. valor1 값에 따라 다른 테이블 조회
     let query;
-    let whereClause = '';
-    const queryParams = [];
+    let orderByField;
+    let idField;
 
     if (bcolorview) {
         // valor1이 1인 경우: screendetails2_total_id 조회
+        orderByField = 'ref_id_todocodigo';
+        idField = 'ref_id_todocodigo';
         query = `
             SELECT 
                 tcode, 
@@ -45,6 +68,8 @@ async function getStocksReport(req) {
         `;
     } else {
         // valor1이 0이거나 없는 경우: screendetails2_id 조회
+        orderByField = 'id_codigo1';
+        idField = 'id_codigo1';
         query = `
             SELECT 
                 codigo, 
@@ -72,11 +97,97 @@ async function getStocksReport(req) {
 
     // sucursal 필터 추가
     if (sucursal) {
-        whereClause = ' WHERE sucursal = $1';
+        whereConditions.push(`sucursal = $${paramIndex}`);
         queryParams.push(sucursal);
+        paramIndex++;
     }
 
+    // max_utime 파라미터 처리 (페이지네이션용)
+    if (maxUtime) {
+        const maxId = parseInt(maxUtime, 10);
+        if (!isNaN(maxId)) {
+            whereConditions.push(`${idField} > $${paramIndex}`);
+            queryParams.push(maxId);
+            paramIndex++;
+        }
+    }
+
+    // last_get_utime 파라미터 처리 (시간 기반 필터링)
+    if (lastGetUtime) {
+        // ISO 8601 형식의 'T'를 공백으로 변환하고 시간대 정보 제거
+        let utimeStr = String(lastGetUtime);
+        utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
+        // fecha1 또는 fecha2를 사용하여 필터링 (테이블에 utime 필드가 없으므로 fecha1 사용)
+        whereConditions.push(`fecha1::text > $${paramIndex}`);
+        queryParams.push(utimeStr);
+        paramIndex++;
+    }
+    
+    // FilteringWord 검색 조건 추가 (여러 컬럼에서 검색)
+    if (filteringWord && filteringWord.trim()) {
+        const searchTerm = `%${filteringWord.trim()}%`;
+        if (bcolorview) {
+            // screendetails2_total_id 테이블의 경우
+            whereConditions.push(`(
+                tcode ILIKE $${paramIndex} OR 
+                tdesc ILIKE $${paramIndex}
+            )`);
+        } else {
+            // screendetails2_id 테이블의 경우
+            whereConditions.push(`(
+                codigo ILIKE $${paramIndex} OR 
+                descripcion ILIKE $${paramIndex}
+            )`);
+        }
+        queryParams.push(searchTerm);
+        paramIndex++;
+    }
+    
+    // 정렬 가능한 컬럼 화이트리스트 (SQL injection 방지)
+    let allowedSortColumns;
+    if (bcolorview) {
+        allowedSortColumns = [
+            'tcode', 'tdesc', 'pre1', 'pre2', 'pre3', 'pre4', 'pre5',
+            'totaling3', 'totalventa3', 'stockreal3', 'porcentaje', 'sucursal',
+            'ref_id_todocodigo'
+        ];
+    } else {
+        allowedSortColumns = [
+            'codigo', 'descripcion', 'pre1', 'pre2', 'pre3', 'pre4', 'pre5',
+            'totaling', 'totalventa', 'stockreal', 'porcentaje', 'sucursal',
+            'id_codigo1'
+        ];
+    }
+    
+    // 정렬 컬럼 검증 및 기본값 설정
+    const validSortBy = sortColumn && allowedSortColumns.includes(sortColumn) ? sortColumn : orderByField;
+
+    // WHERE 절 구성
+    const whereClause = whereConditions.length > 0 
+        ? ' WHERE ' + whereConditions.join(' AND ')
+        : '';
+
+    // 총 데이터 개수 조회
+    const countQuery = `
+        SELECT COUNT(*) as total
+        FROM ${bcolorview ? 'public.screendetails2_total_id' : 'public.screendetails2_id'}
+        ${whereClause}
+    `;
+    const [countResult] = await sequelize.query(countQuery, {
+        bind: queryParams,
+        type: Sequelize.QueryTypes.SELECT
+    });
+    const totalCount = parseInt(countResult.total, 10);
+
+    // 100개 단위로 제한
+    const limit = 100;
+
+    // ORDER BY 및 LIMIT 추가
     query += whereClause;
+    query += ` ORDER BY ${validSortBy} ${validSortOrder}`;
+    query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    queryParams.push(limit + 1); // 다음 배치 존재 여부 확인을 위해 1개 더 조회
+    queryParams.push(0);
 
     // SQL 쿼리 실행
     const results = await sequelize.query(query, {
@@ -84,8 +195,22 @@ async function getStocksReport(req) {
         type: Sequelize.QueryTypes.SELECT
     });
 
+    // 다음 배치가 있는지 확인
+    const hasMore = results.length > limit;
+    const allRecords = hasMore ? results.slice(0, limit) : results;
+
     // 결과가 배열인지 확인
-    const stocks = Array.isArray(results) ? results : [];
+    const stocks = Array.isArray(allRecords) ? allRecords : [];
+    
+    // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id 값)
+    let nextMaxUtime = null;
+    if (stocks.length > 0) {
+        const lastRecord = stocks[stocks.length - 1];
+        const lastId = bcolorview ? lastRecord.ref_id_todocodigo : lastRecord.id_codigo1;
+        if (lastId !== null && lastId !== undefined) {
+            nextMaxUtime = String(lastId);
+        }
+    }
 
     /**
      * 응답 데이터 구조:
@@ -152,13 +277,22 @@ async function getStocksReport(req) {
         filters: {
             sucursal: sucursal || 'all',
             bcolorview: bcolorview,
-            valor1: valor1
+            valor1: valor1,
+            filtering_word: filteringWord || null,
+            sort_column: validSortBy,
+            sort_ascending: sortAscending
         },
         summary: {
             total_items: stocks.length,
             source_table: bcolorview ? 'screendetails2_total_id' : 'screendetails2_id'
         },
-        data: stocks
+        data: stocks,
+        pagination: {
+            count: stocks.length,
+            total: totalCount,
+            hasMore: hasMore,
+            nextMaxUtime: nextMaxUtime
+        }
     };
 }
 
