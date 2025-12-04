@@ -567,6 +567,30 @@ async function checkPostgresConnectionCount() {
         const maxConnections = pgMaxConnections || parseInt(process.env.MAX_CONNECTIONS) || 100;
         const connectionUsage = maxConnections > 0 ? (serverTotal / maxConnections) * 100 : 0;
         
+        // 연결 한계 정보 조회 (max_conn, used, res_for_super, res_for_normal)
+        let connectionLimitInfo = null;
+        try {
+            const [limitResult] = await firstSequelize.query(`
+                SELECT max_conn, used, res_for_super, (max_conn - res_for_super - used) AS res_for_normal
+                FROM (
+                    SELECT count(*) as used FROM pg_stat_activity
+                ) t1,
+                (SELECT setting::int as res_for_super FROM pg_settings WHERE name='superuser_reserved_connections') t2,
+                (SELECT setting::int as max_conn FROM pg_settings WHERE name='max_connections') t3
+            `);
+            
+            if (limitResult && limitResult[0]) {
+                connectionLimitInfo = {
+                    max_conn: parseInt(limitResult[0].max_conn, 10),
+                    used: parseInt(limitResult[0].used, 10),
+                    res_for_super: parseInt(limitResult[0].res_for_super, 10),
+                    res_for_normal: parseInt(limitResult[0].res_for_normal, 10)
+                };
+            }
+        } catch (err) {
+            console.error(`[Monitoring] 연결 한계 정보 조회 오류: ${err.message}`);
+        }
+        
         // 연결 수가 350개를 넘을 때만 경고
         const shouldAlert = serverTotal > 350;
         
@@ -630,6 +654,11 @@ async function checkPostgresConnectionCount() {
             }
         }
         
+        // 연결 한계 정보 출력
+        if (connectionLimitInfo) {
+            console.log(`[PostgreSQL 연결 한계] 최대: ${connectionLimitInfo.max_conn}개, 사용 중: ${connectionLimitInfo.used}개, 슈퍼유저 예약: ${connectionLimitInfo.res_for_super}개, 일반 사용 가능: ${connectionLimitInfo.res_for_normal}개`);
+        }
+        
         console.log(`[PostgreSQL 연결 수] 조회 시간: ${getArgentinaTime()} (GMT-3)\n`);
         
         return {
@@ -640,7 +669,8 @@ async function checkPostgresConnectionCount() {
             idleInTransactionAborted: totalIdleInTransactionAborted,
             other: totalOther,
             stateBreakdown: stateResults.map(s => ({ state: s.state, count: parseInt(s.count, 10) })),
-            details: connectionDetails
+            details: connectionDetails,
+            connectionLimitInfo: connectionLimitInfo
         };
     } catch (err) {
         console.error(`[Monitoring] PostgreSQL 연결 수 조회 오류: ${err.message}`);
