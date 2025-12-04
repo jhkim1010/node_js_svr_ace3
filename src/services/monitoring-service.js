@@ -519,15 +519,15 @@ async function checkPostgresConnectionCount() {
             console.log(`[PostgreSQL 연결 수] 총 ${serverTotal}개`);
         }
         
-        // 검증: 데이터베이스별 합계가 전체와 일치하는지 확인
-        const calculatedTotal = totalActive + totalIdle + totalIdleInTransaction + totalIdleInTransactionAborted + totalOther;
-        if (dbTotal !== serverTotal || calculatedTotal !== serverTotal) {
-            console.warn(`\n[PostgreSQL 연결 수] ⚠️ 합계 불일치 감지:`);
-            console.warn(`   전체: ${serverTotal}개`);
-            console.warn(`   계산된 합계: ${calculatedTotal}개 (Active: ${totalActive}, Idle: ${totalIdle}, Idle in TX: ${totalIdleInTransaction}, Idle in TX (Aborted): ${totalIdleInTransactionAborted}, 기타: ${totalOther})`);
-            console.warn(`   DB별 합계: ${dbTotal}개`);
-            console.warn(`   차이: ${serverTotal - dbTotal}개`);
-        }
+        // 검증: 데이터베이스별 합계가 전체와 일치하는지 확인 (로그 출력 제거)
+        // const calculatedTotal = totalActive + totalIdle + totalIdleInTransaction + totalIdleInTransactionAborted + totalOther;
+        // if (dbTotal !== serverTotal || calculatedTotal !== serverTotal) {
+        //     console.warn(`\n[PostgreSQL 연결 수] ⚠️ 합계 불일치 감지:`);
+        //     console.warn(`   전체: ${serverTotal}개`);
+        //     console.warn(`   계산된 합계: ${calculatedTotal}개 (Active: ${totalActive}, Idle: ${totalIdle}, Idle in TX: ${totalIdleInTransaction}, Idle in TX (Aborted): ${totalIdleInTransactionAborted}, 기타: ${totalOther})`);
+        //     console.warn(`   DB별 합계: ${dbTotal}개`);
+        //     console.warn(`   차이: ${serverTotal - dbTotal}개`);
+        // }
         
         // idle in transaction (aborted) 경고
         if (totalIdleInTransactionAborted > 0) {

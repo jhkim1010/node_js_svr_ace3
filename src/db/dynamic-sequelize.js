@@ -32,14 +32,11 @@ function getTotalPoolUsage() {
 }
 
 // 각 데이터베이스의 pool.max를 동적으로 계산
+// DB_POOL_MAX가 명시적으로 설정되어 있지 않으면, 각 데이터베이스가 전체 최대값까지 사용할 수 있도록 설정
 function calculatePoolMaxForDatabase() {
-    const dbCount = connectionPool.size || 1; // 데이터베이스 개수 (최소 1)
-    
-    // 전체 최대값을 데이터베이스 개수로 나눔 (균등 분배)
-    // 최소 1개는 보장
-    const maxPerDb = Math.max(1, Math.floor(TOTAL_POOL_MAX / dbCount));
-    
-    return maxPerDb;
+    // DB_POOL_MAX가 명시적으로 설정되어 있지 않으면, 각 데이터베이스가 전체 최대값(400)까지 사용 가능
+    // 필요에 따라 자유롭게 사용할 수 있도록 함
+    return TOTAL_POOL_MAX;
 }
 
 // Docker 환경 감지 함수
@@ -92,8 +89,8 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
         console.warn(`[Connection Pool] 새로운 연결 생성을 위해 기존 연결을 확인하세요.`);
     }
     
-    // 각 데이터베이스의 pool.max를 동적으로 계산
-    // DB_POOL_MAX가 명시적으로 설정되어 있으면 우선 사용, 없으면 전체 최대값을 데이터베이스 개수로 나눔
+    // 각 데이터베이스의 pool.max 설정
+    // DB_POOL_MAX가 명시적으로 설정되어 있으면 사용, 없으면 각 데이터베이스가 전체 최대값(400)까지 사용 가능
     const explicitPoolMax = process.env.DB_POOL_MAX ? parseInt(process.env.DB_POOL_MAX) : null;
     const poolMax = explicitPoolMax || calculatePoolMaxForDatabase();
     
@@ -104,8 +101,8 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
         dialect: 'postgres',
         dialectOptions: ssl ? { ssl: { rejectUnauthorized: false } } : {},
         pool: {
-            // 전체 연결 풀의 총 최대값을 고려하여 각 데이터베이스의 최대값 설정
-            // DB_POOL_MAX가 명시적으로 설정되어 있으면 사용, 없으면 전체 최대값을 데이터베이스 개수로 나눔
+            // 각 데이터베이스가 필요에 따라 전체 최대값(400)까지 사용할 수 있도록 설정
+            // DB_POOL_MAX가 명시적으로 설정되어 있으면 그 값을 사용
             max: poolMax,
             min: 0,               // 최소 연결 수 (0으로 설정하여 사용하지 않을 때 연결을 닫음)
             idle: parseInt(process.env.DB_POOL_IDLE) || 5000,  // 유휴 연결 유지 시간 (5초 - 빠른 정리로 연결 수 관리)
@@ -134,10 +131,6 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     
     connectionPool.set(key, sequelize);
     
-    // 기존 연결들의 pool.max를 재계산하여 전체 최대값을 유지
-    // (새로운 데이터베이스가 추가되면 기존 데이터베이스의 pool.max를 조정)
-    updateAllPoolMax();
-    
     // WebSocket LISTEN 리스너 설정 (비동기, 에러는 무시)
     setupDbListener(host, port, database, user, password, ssl).catch(() => {
         // LISTEN 설정 실패는 조용히 무시 (이미 설정되어 있을 수 있음)
@@ -146,19 +139,6 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     console.log(`[Connection Pool] ✅ 새로운 연결 생성: ${database} (pool.max: ${poolMax}, 전체 최대값: ${TOTAL_POOL_MAX})`);
     
     return sequelize;
-}
-
-// 모든 연결 풀의 max 값을 재계산하여 전체 최대값을 유지
-function updateAllPoolMax() {
-    const dbCount = connectionPool.size;
-    if (dbCount === 0) return;
-    
-    const explicitPoolMax = process.env.DB_POOL_MAX ? parseInt(process.env.DB_POOL_MAX) : null;
-    const poolMaxPerDb = explicitPoolMax || Math.max(1, Math.floor(TOTAL_POOL_MAX / dbCount));
-    
-    // Sequelize의 pool.max는 런타임에 변경할 수 없으므로, 로그만 출력
-    // 실제로는 새로운 연결 생성 시에만 적용됨
-    console.log(`[Connection Pool] 📊 전체 연결 풀 설정: 총 최대값 ${TOTAL_POOL_MAX}, 데이터베이스 ${dbCount}개, 데이터베이스당 최대 ${poolMaxPerDb}개`);
 }
 
 module.exports = { 
