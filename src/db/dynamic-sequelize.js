@@ -4,8 +4,8 @@ const { setupDbListener } = require('../services/websocket-service');
 // 연결 풀: 동일한 DB 연결 정보는 재사용
 const connectionPool = new Map();
 
-// 전체 연결 풀의 총 최대값 (환경 변수로 설정 가능, 기본값: 400)
-const TOTAL_POOL_MAX = parseInt(process.env.DB_POOL_TOTAL_MAX) || parseInt(process.env.MAX_CONNECTIONS) || 400;
+// 전체 연결 풀의 총 최대값 (환경 변수로 설정 가능, 기본값: 500)
+const TOTAL_POOL_MAX = parseInt(process.env.DB_POOL_TOTAL_MAX) || parseInt(process.env.MAX_CONNECTIONS) || 500;
 
 // PostgreSQL 서버의 실제 max_connections를 캐시 (동적으로 조회)
 let cachedPgMaxConnections = null;
@@ -70,29 +70,12 @@ async function getPostgresMaxConnections(sequelize) {
 }
 
 // 각 데이터베이스의 pool.max를 동적으로 계산 (동기 버전)
-// PostgreSQL 서버의 max_connections를 고려하여 설정
+// 사용자가 원하는 대로 각 데이터베이스가 전체 최대값(400)까지 사용할 수 있도록 설정
 function calculatePoolMaxForDatabase() {
-    // 캐시된 PostgreSQL 서버의 max_connections가 있으면 사용
-    if (cachedPgMaxConnections !== null) {
-        // PostgreSQL 서버의 max_connections를 고려하여 설정
-        // 각 데이터베이스가 필요에 따라 사용할 수 있도록 하되, 서버 한계를 초과하지 않도록 함
-        // 서버 한계에서 10개 여유를 두고, 전체 풀 최대값과 비교하여 작은 값 사용
-        const safeMax = Math.min(cachedPgMaxConnections - 10, TOTAL_POOL_MAX);
-        return Math.max(1, safeMax);
-    }
-    
-    // 캐시가 없으면 환경 변수 확인
-    const envMax = parseInt(process.env.MAX_CONNECTIONS);
-    if (envMax) {
-        // 환경 변수가 있으면 서버 한계에서 10개 여유를 두고 사용
-        return Math.min(envMax - 10, TOTAL_POOL_MAX);
-    }
-    
-    // 기본값: 전체 풀 최대값 사용
-    // 첫 번째 연결 생성 후 PostgreSQL 서버 조회가 완료되면 자동으로 조정됨
-    // 하지만 이미 생성된 연결은 pool.max가 변경되지 않으므로, 안전한 기본값 사용
-    // PostgreSQL 서버의 일반적인 기본값인 100을 고려하여 90으로 설정
-    return Math.min(90, TOTAL_POOL_MAX);
+    // DB_POOL_MAX가 명시적으로 설정되어 있지 않으면, 각 데이터베이스가 전체 최대값(400)까지 사용 가능
+    // 필요에 따라 자유롭게 사용할 수 있도록 함
+    // PostgreSQL 서버의 max_connections는 첫 번째 연결 생성 시 확인하여 경고만 표시
+    return TOTAL_POOL_MAX;
 }
 
 // Docker 환경 감지 함수
@@ -193,7 +176,10 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
             // 조회된 값이 현재 pool.max보다 작으면 경고
             if (pgMax < poolMax) {
                 console.warn(`[Connection Pool] ⚠️ PostgreSQL 서버 max_connections (${pgMax})가 pool.max (${poolMax})보다 작습니다.`);
-                console.warn(`[Connection Pool] 연결 한계 도달 오류가 발생할 수 있습니다.`);
+                console.warn(`[Connection Pool] 각 데이터베이스가 필요에 따라 사용하되, 서버 한계(${pgMax}개)를 초과하지 않도록 주의하세요.`);
+                console.warn(`[Connection Pool] 여러 데이터베이스 사용 시 총 연결 수가 서버 한계를 초과하지 않도록 모니터링하세요.`);
+            } else {
+                console.log(`[Connection Pool] ✅ PostgreSQL 서버 max_connections (${pgMax})가 충분합니다.`);
             }
         }).catch(() => {
             // 조회 실패는 무시
