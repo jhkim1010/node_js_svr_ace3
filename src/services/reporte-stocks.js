@@ -123,17 +123,17 @@ async function getStocksReport(req) {
         paramIndex++;
     }
     
-    // FilteringWord 검색 조건 추가 (여러 컬럼에서 검색)
+    // FilteringWord 검색 조건 추가 (codigo 또는 descripcion에서만 검색)
     if (filteringWord && filteringWord.trim()) {
         const searchTerm = `%${filteringWord.trim()}%`;
         if (bcolorview) {
-            // screendetails2_total_id 테이블의 경우
+            // screendetails2_total_id 테이블의 경우: tcode, tdesc (todocodigo의 codigo, descripcion에 해당)
             whereConditions.push(`(
                 tcode ILIKE $${paramIndex} OR 
                 tdesc ILIKE $${paramIndex}
             )`);
         } else {
-            // screendetails2_id 테이블의 경우
+            // screendetails2_id 테이블의 경우: codigo, descripcion
             whereConditions.push(`(
                 codigo ILIKE $${paramIndex} OR 
                 descripcion ILIKE $${paramIndex}
@@ -160,7 +160,14 @@ async function getStocksReport(req) {
     }
     
     // 정렬 컬럼 검증 및 기본값 설정
-    const validSortBy = sortColumn && allowedSortColumns.includes(sortColumn) ? sortColumn : orderByField;
+    // 파라미터가 없으면 codigo를 중심으로 오름차순 정렬
+    let defaultSortColumn;
+    if (bcolorview) {
+        defaultSortColumn = 'tcode'; // screendetails2_total_id의 경우 tcode
+    } else {
+        defaultSortColumn = 'codigo'; // screendetails2_id의 경우 codigo
+    }
+    const validSortBy = sortColumn && allowedSortColumns.includes(sortColumn) ? sortColumn : defaultSortColumn;
 
     // WHERE 절 구성
     const whereClause = whereConditions.length > 0 
@@ -184,7 +191,7 @@ async function getStocksReport(req) {
 
     // ORDER BY 및 LIMIT 추가
     query += whereClause;
-    query += ` ORDER BY ${validSortBy} ${validSortOrder}`;
+    query += ` ORDER BY ${validSortBy} ${sortOrder}`;
     query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     queryParams.push(limit + 1); // 다음 배치 존재 여부 확인을 위해 1개 더 조회
     queryParams.push(0);
