@@ -120,7 +120,7 @@ router.get('/', async (req, res) => {
             FROM codigos c
             INNER JOIN todocodigos t ON c.ref_id_todocodigo = t.id_todocodigo
             ${whereClause}
-            ORDER BY ${validSortBy === 'tcodigo' ? 't.tcodigo' : `c.${validSortBy}`} ${validSortOrder}
+            ORDER BY ${validSortBy === 'tcodigo' ? 't.tcodigo' : `c.${validSortBy}`} ${sortOrder}
             LIMIT :limit OFFSET :offset
         `;
         
