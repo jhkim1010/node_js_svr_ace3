@@ -14,6 +14,7 @@ const router = Router();
 router.get('/', async (req, res) => {
     try {
         const Codigos = getModelForRequest(req, 'Codigos');
+        const sequelize = Codigos.sequelize;
         
         // max_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
         // 실제로는 id_codigo 값을 받음 (호환성을 위해 max_utime 이름 유지)
@@ -22,19 +23,18 @@ router.get('/', async (req, res) => {
         // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
         const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
         
-        let whereCondition = {};
-        let maxIdCodigo = null;
+        // WHERE 조건 구성
+        let whereConditions = [];
+        let replacements = {};
         
         if (maxUtime) {
             // max_utime 값이 실제로는 id_codigo 값임
-            maxIdCodigo = parseInt(maxUtime, 10);
+            const maxIdCodigo = parseInt(maxUtime, 10);
             if (isNaN(maxIdCodigo)) {
                 console.error(`ERROR: Invalid id_codigo format: ${maxUtime}`);
             } else {
-                // id_codigo가 maxIdCodigo보다 큰 레코드만 조회
-                whereCondition.id_codigo = {
-                    [Op.gt]: maxIdCodigo
-                };
+                whereConditions.push('c.id_codigo > :maxIdCodigo');
+                replacements.maxIdCodigo = maxIdCodigo;
             }
         }
         
@@ -43,45 +43,79 @@ router.get('/', async (req, res) => {
             // ISO 8601 형식의 'T'를 공백으로 변환하고 시간대 정보 제거
             let utimeStr = String(lastGetUtime);
             utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
-            // utime::text > 'last_get_utime' 조건 추가 (문자열 비교)
-            whereCondition[Op.and] = [
-                ...(whereCondition[Op.and] || []),
-                Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`)
-            ];
+            whereConditions.push(`c.utime::text > :lastGetUtime`);
+            replacements.lastGetUtime = utimeStr;
         }
         
+        const whereClause = whereConditions.length > 0 
+            ? 'WHERE ' + whereConditions.join(' AND ')
+            : '';
+        
         // 총 데이터 개수 조회
-        const totalCount = await Codigos.count({ where: whereCondition });
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM codigos c
+            INNER JOIN todocodigos t ON c.ref_id_todocodigo = t.id_todocodigo
+            ${whereClause}
+        `;
+        const [countResult] = await sequelize.query(countQuery, {
+            replacements: replacements,
+            type: Sequelize.QueryTypes.SELECT
+        });
+        const totalCount = parseInt(countResult.total, 10);
         
         // 100개 단위로 제한
         const limit = 100;
-        // id_codigo로 정렬 (일관된 정렬 보장)
-        // raw: true를 사용하여 원본 데이터베이스 데이터를 그대로 반환 (모든 필드 포함)
-        const records = await Codigos.findAll({
-            where: whereCondition,
-            limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
-            order: [['id_codigo', 'ASC']],
-            attributes: [
-                'codigo', 'descripcion', 'pre1', 'pre2', 'pre3', 'preorg', 'codigoproducto',
-                'utime', 'borrado', 'fotonombre', 'pre4', 'pre5', 'valor1', 'valor2', 'valor3',
-                'pubip', 'ip', 'mac', 'bmobile', 'tipocodigo', 'id_codigo', 'ref_id_todocodigo',
-                'ref_id_color', 'str_talle', 'ref_id_temporada', 'ref_id_talle', 'utime_modificado',
-                'id_codigo_centralizado', 'id_woocommerce', 'id_woocommerce_producto',
-                'b_mostrar_vcontrol', 'b_sincronizar_x_web', 'd_oferta_mode'
-            ],
-            raw: true // 원본 데이터베이스 데이터를 그대로 반환 (변환 없음)
+        
+        // JOIN 쿼리 실행 (사용자가 요청한 필드 + 페이지네이션을 위한 id_codigo)
+        const query = `
+            SELECT 
+                c.codigo, 
+                c.descripcion, 
+                c.pre1, 
+                c.pre2, 
+                c.pre3, 
+                c.pre4, 
+                c.pre5, 
+                c.preorg, 
+                t.tcodigo, 
+                c.borrado, 
+                c.b_sincronizar_x_web, 
+                c.id_woocommerce, 
+                c.id_woocommerce_producto,
+                c.id_codigo
+            FROM codigos c
+            INNER JOIN todocodigos t ON c.ref_id_todocodigo = t.id_todocodigo
+            ${whereClause}
+            ORDER BY c.id_codigo ASC
+            LIMIT :limit OFFSET :offset
+        `;
+        
+        // 다음 배치 존재 여부 확인을 위해 limit + 1개 조회
+        const records = await sequelize.query(query, {
+            replacements: {
+                ...replacements,
+                limit: limit + 1,
+                offset: 0
+            },
+            type: Sequelize.QueryTypes.SELECT
         });
         
         // 다음 배치가 있는지 확인
         const hasMore = records.length > limit;
-        const data = hasMore ? records.slice(0, limit) : records;
+        const allRecords = hasMore ? records.slice(0, limit) : records;
+        
+        // id_codigo를 제거하고 응답 데이터 구성
+        const data = allRecords.map(record => {
+            const { id_codigo, ...rest } = record;
+            return rest;
+        });
         
         // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id_codigo)
         let nextMaxUtime = null;
-        if (data.length > 0) {
-            const lastRecord = data[data.length - 1];
+        if (allRecords.length > 0) {
+            const lastRecord = allRecords[allRecords.length - 1];
             if (lastRecord.id_codigo !== null && lastRecord.id_codigo !== undefined) {
-                // id_codigo 값을 문자열로 변환하여 반환
                 nextMaxUtime = String(lastRecord.id_codigo);
             }
         }
