@@ -16,11 +16,10 @@ router.get('/', async (req, res) => {
         const Codigos = getModelForRequest(req, 'Codigos');
         const sequelize = Codigos.sequelize;
         
-        // max_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
-        // 실제로는 id_codigo 값을 받음 (호환성을 위해 max_utime 이름 유지)
-        const maxUtime = req.body?.max_utime || req.query?.max_utime;
+        // id_codigo 파라미터 확인 (페이지네이션용, 첫 요청에는 없음)
+        const idCodigo = req.body?.id_codigo || req.query?.id_codigo;
         
-        // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
+        // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터, 호환성 유지)
         const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
         
         // 검색 및 정렬 파라미터 확인
@@ -51,14 +50,14 @@ router.get('/', async (req, res) => {
         let whereConditions = [];
         let replacements = {};
         
-        if (maxUtime) {
-            // max_utime 값이 실제로는 id_codigo 값임
-            const maxIdCodigo = parseInt(maxUtime, 10);
+        if (idCodigo) {
+            // id_codigo 파라미터로 페이지네이션 (다음 페이지 요청 시 사용)
+            const maxIdCodigo = parseInt(idCodigo, 10);
             if (isNaN(maxIdCodigo)) {
-                console.error(`ERROR: Invalid id_codigo format: ${maxUtime}`);
+                console.error(`ERROR: Invalid id_codigo format: ${idCodigo}`);
             } else {
-                whereConditions.push('c.id_codigo > :maxIdCodigo');
-                replacements.maxIdCodigo = maxIdCodigo;
+                whereConditions.push('c.id_codigo > :idCodigo');
+                replacements.idCodigo = maxIdCodigo;
             }
         }
         
@@ -145,12 +144,12 @@ router.get('/', async (req, res) => {
             return rest;
         });
         
-        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id_codigo)
-        let nextMaxUtime = null;
+        // 다음 요청을 위한 id_codigo 계산 (마지막 레코드의 id_codigo)
+        let nextIdCodigo = null;
         if (allRecords.length > 0) {
             const lastRecord = allRecords[allRecords.length - 1];
             if (lastRecord.id_codigo !== null && lastRecord.id_codigo !== undefined) {
-                nextMaxUtime = String(lastRecord.id_codigo);
+                nextIdCodigo = lastRecord.id_codigo;
             }
         }
         
@@ -161,7 +160,7 @@ router.get('/', async (req, res) => {
                 count: data.length,
                 total: totalCount,
                 hasMore: hasMore,
-                nextMaxUtime: nextMaxUtime
+                id_codigo: nextIdCodigo
             },
             filters: {
                 filtering_word: filteringWord || null,
