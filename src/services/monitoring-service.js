@@ -40,8 +40,8 @@ const alertState = {
     lastAlertTime: {}
 };
 
-// Telegram 메시지 전송
-async function sendTelegramMessage(message) {
+// Telegram 메시지 전송 (Fallback - telegram-command-handler의 bot이 없을 때 사용)
+async function sendTelegramMessageFallback(message) {
     if (!MONITORING_CONFIG.telegram.enabled || !MONITORING_CONFIG.telegram.botToken || !MONITORING_CONFIG.telegram.chatId) {
         return false;
     }
@@ -84,6 +84,23 @@ async function sendTelegramMessage(message) {
         req.write(data);
         req.end();
     });
+}
+
+// Telegram 메시지 전송 (telegram-command-handler의 sendTelegramMessage 사용, 없으면 fallback)
+async function sendTelegramMessage(message) {
+    try {
+        // telegram-command-handler의 sendTelegramMessage 사용 시도 (lazy loading)
+        const { sendTelegramMessage: handlerSendMessage } = require('./telegram-command-handler');
+        const result = await handlerSendMessage(message);
+        if (result) {
+            return result;
+        }
+    } catch (err) {
+        // telegram-command-handler가 없거나 오류 발생 시 fallback 사용
+    }
+    
+    // Fallback to direct API call
+    return await sendTelegramMessageFallback(message);
 }
 
 // 알림 전송 (Telegram)
