@@ -1,6 +1,6 @@
 const https = require('https');
 const http = require('http');
-const { connectionPool } = require('../db/dynamic-sequelize');
+const { connectionPool, getTotalPoolUsage, TOTAL_POOL_MAX } = require('../db/dynamic-sequelize');
 
 // 아르헨티나 시간대(GMT-3)로 시간 포맷팅하는 헬퍼 함수
 function getArgentinaTime() {
@@ -670,6 +670,10 @@ async function checkConnectionPoolUsage() {
             return null;
         }
         
+        // 전체 연결 풀 사용량 확인
+        const { totalUsed, totalMax } = getTotalPoolUsage();
+        const totalUsage = TOTAL_POOL_MAX > 0 ? (totalUsed / TOTAL_POOL_MAX) * 100 : 0;
+        
         const poolStats = [];
         
         // 각 데이터베이스의 연결 풀 상태 확인
@@ -703,8 +707,10 @@ async function checkConnectionPoolUsage() {
                 poolUsage
             });
             
-            // 80% 이상일 때 Telegram 알림 전송
-            if (poolUsage >= 80) {
+            // 80% 이상일 때 Telegram 알림 전송 (전체 또는 개별 데이터베이스)
+            const shouldAlert = poolUsage >= 80 || totalUsage >= 80;
+            
+            if (shouldAlert) {
                 const alertKey = `pool_usage_${database}`;
                 const now = Date.now();
                 const lastAlertTime = alertState.lastAlertTime[alertKey] || 0;
@@ -715,14 +721,15 @@ async function checkConnectionPoolUsage() {
                     alertState.lastAlertTime[alertKey] = now;
                     alertState.poolUsageAlert[alertKey] = true;
                     
-                    // 경고 레벨 결정
+                    // 경고 레벨 결정 (전체 사용률 또는 개별 사용률 중 높은 값 기준)
+                    const usageToCheck = Math.max(poolUsage, totalUsage);
                     let alertLevel = '⚠️';
                     let alertTitle = '연결 풀 사용률 경고';
                     
-                    if (poolUsage >= 100) {
+                    if (usageToCheck >= 100) {
                         alertLevel = '🚨';
                         alertTitle = '연결 풀 한계 초과!';
-                    } else if (poolUsage >= 90) {
+                    } else if (usageToCheck >= 90) {
                         alertLevel = '🔴';
                         alertTitle = '연결 풀 사용률 위험';
                     }
@@ -730,22 +737,26 @@ async function checkConnectionPoolUsage() {
                     const message = `${alertLevel} <b>${alertTitle}</b>\n\n` +
                                    `📊 <b>데이터베이스:</b> ${database}\n` +
                                    `🔗 <b>호스트:</b> ${host}\n` +
-                                   `\n📈 <b>연결 풀 상태:</b>\n` +
+                                   `\n📈 <b>연결 풀 상태 (${database}):</b>\n` +
                                    `   - 사용 중: ${poolUsed}/${poolMax}개\n` +
                                    `   - 대기 중: ${poolPending}개\n` +
                                    `   - 풀 크기: ${poolSize}개\n` +
                                    `   - 사용률: ${poolUsage.toFixed(1)}%\n` +
+                                   `\n🌐 <b>전체 연결 풀 상태:</b>\n` +
+                                   `   - 사용 중: ${totalUsed}/${TOTAL_POOL_MAX}개\n` +
+                                   `   - 전체 사용률: ${totalUsage.toFixed(1)}%\n` +
+                                   `   - 데이터베이스 수: ${connectionPool.size}개\n` +
                                    `\n💡 <b>권장 사항:</b>\n`;
                     
                     let recommendations = [];
-                    if (poolUsage >= 100) {
+                    if (usageToCheck >= 100) {
                         recommendations.push('🚨 연결 풀 한계 초과! 즉시 조치 필요');
                         recommendations.push('1. 사용 중인 연결 확인');
                         recommendations.push('2. 트랜잭션이 제대로 종료되는지 확인');
-                        recommendations.push('3. 연결 풀 max 값 증가 고려');
-                    } else if (poolUsage >= 90) {
+                        recommendations.push(`3. 전체 연결 풀 최대값 증가 고려 (현재: ${TOTAL_POOL_MAX})`);
+                    } else if (usageToCheck >= 90) {
                         recommendations.push('연결 풀 사용률이 90% 이상입니다');
-                        recommendations.push('1. 연결 풀 설정 확인 (max 값)');
+                        recommendations.push('1. 연결 풀 설정 확인 (전체 최대값)');
                         recommendations.push('2. 사용하지 않는 연결 정리');
                         recommendations.push('3. PostgreSQL 서버 연결 상태 확인');
                     } else {
@@ -770,7 +781,13 @@ async function checkConnectionPoolUsage() {
             }
         }
         
-        return poolStats;
+        return {
+            totalUsage,
+            totalUsed,
+            totalMax: TOTAL_POOL_MAX,
+            databaseCount: connectionPool.size,
+            pools: poolStats
+        };
     } catch (err) {
         console.error(`[Monitoring] 연결 풀 사용률 확인 오류: ${err.message}`);
         return null;
