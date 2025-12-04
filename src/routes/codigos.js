@@ -56,10 +56,20 @@ router.get('/', async (req, res) => {
         // 100개 단위로 제한
         const limit = 100;
         // id_codigo로 정렬 (일관된 정렬 보장)
+        // raw: true를 사용하여 원본 데이터베이스 데이터를 그대로 반환 (모든 필드 포함)
         const records = await Codigos.findAll({
             where: whereCondition,
             limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
-            order: [['id_codigo', 'ASC']]
+            order: [['id_codigo', 'ASC']],
+            attributes: [
+                'codigo', 'descripcion', 'pre1', 'pre2', 'pre3', 'preorg', 'codigoproducto',
+                'utime', 'borrado', 'fotonombre', 'pre4', 'pre5', 'valor1', 'valor2', 'valor3',
+                'pubip', 'ip', 'mac', 'bmobile', 'tipocodigo', 'id_codigo', 'ref_id_todocodigo',
+                'ref_id_color', 'str_talle', 'ref_id_temporada', 'ref_id_talle', 'utime_modificado',
+                'id_codigo_centralizado', 'id_woocommerce', 'id_woocommerce_producto',
+                'b_mostrar_vcontrol', 'b_sincronizar_x_web', 'd_oferta_mode'
+            ],
+            raw: true // 원본 데이터베이스 데이터를 그대로 반환 (변환 없음)
         });
         
         // 다음 배치가 있는지 확인
