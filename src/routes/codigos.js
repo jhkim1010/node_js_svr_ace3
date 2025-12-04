@@ -349,9 +349,24 @@ router.post('/', async (req, res) => {
     }
 });
 
+// PUT /codigos/id/:id 라우트 추가 (Flutter 앱 호환성)
+router.put('/id/:id', async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+    
+    // 기존 PUT /:id 핸들러와 동일한 로직 사용
+    return handlePutCodigo(req, res, id);
+});
+
 router.put('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+    
+    return handlePutCodigo(req, res, id);
+});
+
+// PUT 요청 처리 공통 함수
+async function handlePutCodigo(req, res, id) {
     try {
         const Codigos = getModelForRequest(req, 'Codigos');
         
@@ -371,6 +386,32 @@ router.put('/:id', async (req, res) => {
         // tcodigo는 codigos 테이블의 필드가 아니므로 제거 (업데이트 시 무시)
         if (cleanedData.tcodigo) {
             delete cleanedData.tcodigo;
+        }
+        
+        // 문자열 boolean 값을 boolean으로 변환 (Flutter 앱 호환성)
+        if (cleanedData.borrado !== undefined) {
+            if (cleanedData.borrado === 'true' || cleanedData.borrado === true) {
+                cleanedData.borrado = true;
+            } else if (cleanedData.borrado === 'false' || cleanedData.borrado === false) {
+                cleanedData.borrado = false;
+            }
+        }
+        
+        if (cleanedData.b_sincronizar_x_web !== undefined) {
+            if (cleanedData.b_sincronizar_x_web === 'true' || cleanedData.b_sincronizar_x_web === true) {
+                cleanedData.b_sincronizar_x_web = true;
+            } else if (cleanedData.b_sincronizar_x_web === 'false' || cleanedData.b_sincronizar_x_web === false) {
+                cleanedData.b_sincronizar_x_web = false;
+            }
+        }
+        
+        // null 문자열을 실제 null로 변환
+        if (cleanedData.id_woocommerce === 'null' || cleanedData.id_woocommerce === null) {
+            cleanedData.id_woocommerce = null;
+        }
+        
+        if (cleanedData.id_woocommerce_producto === 'null' || cleanedData.id_woocommerce_producto === null) {
+            cleanedData.id_woocommerce_producto = null;
         }
         
         const dataToUpdate = filterModelFields(Codigos, cleanedData);
@@ -467,7 +508,7 @@ router.put('/:id', async (req, res) => {
         console.error(err);
         res.status(400).json({ error: 'Failed to update codigo', details: err.message });
     }
-});
+}
 
 router.delete('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
