@@ -1,6 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const os = require('os');
 const { checkPostgresConnectionCount } = require('./monitoring-service');
+const { connectionPool } = require('../db/dynamic-sequelize');
 
 // Telegram Bot 설정
 const TELEGRAM_CONFIG = {
@@ -148,13 +149,236 @@ async function handleMemoryCommand(chatId) {
     await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
 }
 
+// 5분 이상 idle 상태인 연결 종료
+async function handleKillIdleCommand(chatId) {
+    try {
+        // 연결 풀이 비어있으면 조회 불가
+        if (connectionPool.size === 0) {
+            await bot.sendMessage(chatId, '❌ 데이터베이스 연결이 없어 조회할 수 없습니다.');
+            return;
+        }
+        
+        // 첫 번째 연결을 사용하여 전체 PostgreSQL 서버의 idle 연결 조회
+        const firstSequelize = Array.from(connectionPool.values())[0];
+        
+        // 5분 이상 idle 상태인 연결 찾기
+        const [idleConnections] = await firstSequelize.query(`
+            SELECT 
+                pid,
+                datname as database,
+                usename as username,
+                application_name,
+                state,
+                state_change,
+                now() - state_change as idle_duration,
+                query_start,
+                query
+            FROM pg_stat_activity
+            WHERE state = 'idle'
+                AND pid != pg_backend_pid()  -- 현재 세션 제외
+                AND state_change < now() - interval '5 minutes'  -- 5분 이상 idle
+            ORDER BY state_change ASC
+        `);
+        
+        if (!idleConnections || idleConnections.length === 0) {
+            await bot.sendMessage(chatId, '✅ 5분 이상 idle 상태인 연결이 없습니다.');
+            return;
+        }
+        
+        let killedCount = 0;
+        let failedCount = 0;
+        const killedDetails = [];
+        const failedDetails = [];
+        
+        // 각 idle 연결 종료
+        for (const conn of idleConnections) {
+            try {
+                const pid = conn.pid;
+                const database = conn.database || 'unknown';
+                const username = conn.username || 'unknown';
+                const idleDuration = conn.idle_duration;
+                
+                // 연결 종료
+                const [terminateResult] = await firstSequelize.query(
+                    `SELECT pg_terminate_backend($1) as terminated`,
+                    { replacements: [pid] }
+                );
+                
+                if (terminateResult && terminateResult[0] && terminateResult[0].terminated) {
+                    killedCount++;
+                    killedDetails.push({
+                        pid,
+                        database,
+                        username,
+                        idleDuration: idleDuration.toString()
+                    });
+                } else {
+                    failedCount++;
+                    failedDetails.push({ pid, database, reason: '종료 실패' });
+                }
+            } catch (err) {
+                failedCount++;
+                failedDetails.push({ 
+                    pid: conn.pid, 
+                    database: conn.database || 'unknown',
+                    reason: err.message 
+                });
+            }
+        }
+        
+        // 결과 메시지 생성
+        let message = `🔪 <b>Idle 연결 종료 결과</b>\n\n`;
+        
+        if (killedCount > 0) {
+            message += `✅ <b>종료된 연결:</b> ${killedCount}개\n`;
+            
+            // 데이터베이스별로 그룹화하여 표시
+            const dbGroups = {};
+            killedDetails.forEach(detail => {
+                if (!dbGroups[detail.database]) {
+                    dbGroups[detail.database] = [];
+                }
+                dbGroups[detail.database].push(detail);
+            });
+            
+            message += `\n📊 <b>데이터베이스별 종료:</b>\n`;
+            for (const [db, details] of Object.entries(dbGroups)) {
+                message += `   - ${db}: ${details.length}개\n`;
+            }
+            
+            // 상세 정보 (최대 10개만 표시)
+            if (killedDetails.length <= 10) {
+                message += `\n📋 <b>종료된 연결 상세:</b>\n`;
+                killedDetails.forEach((detail, index) => {
+                    const duration = detail.idleDuration.replace(/^\s*/, '').replace(/\s*$/, '');
+                    message += `   ${index + 1}. PID ${detail.pid} (${detail.database}, ${detail.username}) - ${duration} idle\n`;
+                });
+            } else {
+                message += `\n📋 <b>종료된 연결:</b> ${killedDetails.length}개 (상세 정보는 로그 확인)\n`;
+            }
+        }
+        
+        if (failedCount > 0) {
+            message += `\n❌ <b>종료 실패:</b> ${failedCount}개\n`;
+            if (failedDetails.length <= 5) {
+                failedDetails.forEach((detail, index) => {
+                    message += `   ${index + 1}. PID ${detail.pid} (${detail.database}) - ${detail.reason}\n`;
+                });
+            }
+        }
+        
+        if (killedCount === 0 && failedCount === 0) {
+            message += `⚠️ 종료할 연결이 없습니다.`;
+        }
+        
+        message += `\n⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
+        
+        // 로그 출력
+        console.log(`[Telegram Command] 🔪 Idle 연결 종료: ${killedCount}개 종료, ${failedCount}개 실패`);
+        if (killedDetails.length > 0) {
+            console.log(`[Telegram Command] 종료된 연결 상세:`, killedDetails);
+        }
+        
+        await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+    } catch (err) {
+        console.error(`[Telegram Command] ❌ /kill_idle 명령 처리 오류: ${err.message}`);
+        await bot.sendMessage(chatId, `❌ Idle 연결 종료 중 오류 발생:\n${err.message}`);
+    }
+}
+
+// 데이터베이스 연결 한계 정보 확인
+async function handleDbaseCommand(chatId) {
+    try {
+        // 연결 풀이 비어있으면 조회 불가
+        if (connectionPool.size === 0) {
+            await bot.sendMessage(chatId, '❌ 데이터베이스 연결이 없어 조회할 수 없습니다.');
+            return;
+        }
+        
+        // 첫 번째 연결을 사용하여 전체 PostgreSQL 서버의 연결 한계 정보 조회
+        const firstSequelize = Array.from(connectionPool.values())[0];
+        
+        const [limitResult] = await firstSequelize.query(`
+            SELECT max_conn, used, res_for_super, (max_conn - res_for_super - used) AS res_for_normal
+            FROM (
+                SELECT count(*) as used FROM pg_stat_activity
+            ) t1,
+            (SELECT setting::int as res_for_super FROM pg_settings WHERE name='superuser_reserved_connections') t2,
+            (SELECT setting::int as max_conn FROM pg_settings WHERE name='max_connections') t3
+        `);
+        
+        if (!limitResult || !limitResult[0]) {
+            await bot.sendMessage(chatId, '❌ 연결 한계 정보를 가져올 수 없습니다.');
+            return;
+        }
+        
+        const info = limitResult[0];
+        const maxConn = parseInt(info.max_conn, 10);
+        const used = parseInt(info.used, 10);
+        const resForSuper = parseInt(info.res_for_super, 10);
+        const resForNormal = parseInt(info.res_for_normal, 10);
+        
+        const usagePercent = maxConn > 0 ? ((used / maxConn) * 100).toFixed(1) : 'N/A';
+        const normalUsagePercent = maxConn > 0 ? (((used) / (maxConn - resForSuper)) * 100).toFixed(1) : 'N/A';
+        
+        // 경고 레벨 결정
+        let statusEmoji = '✅';
+        let statusText = '정상';
+        
+        if (resForNormal <= 50) {
+            statusEmoji = '🚨';
+            statusText = '위험';
+        } else if (resForNormal <= 100) {
+            statusEmoji = '⚠️';
+            statusText = '경고';
+        }
+        
+        const message = `🗄️ <b>데이터베이스 연결 한계 정보</b>\n\n` +
+                       `${statusEmoji} <b>상태:</b> ${statusText}\n\n` +
+                       `📊 <b>연결 한계:</b>\n` +
+                       `   - 최대 연결 수: ${maxConn.toLocaleString()}개\n` +
+                       `   - 현재 사용 중: ${used.toLocaleString()}개 (${usagePercent}%)\n` +
+                       `   - 슈퍼유저 예약: ${resForSuper.toLocaleString()}개\n` +
+                       `   - 일반 사용 가능: ${resForNormal.toLocaleString()}개\n\n` +
+                       `📈 <b>사용률 분석:</b>\n` +
+                       `   - 전체 사용률: ${usagePercent}%\n` +
+                       `   - 일반 사용률: ${normalUsagePercent}% (슈퍼유저 예약 제외)\n\n`;
+        
+        let recommendations = '';
+        if (resForNormal <= 50) {
+            recommendations = `🚨 <b>즉시 조치 필요:</b>\n` +
+                            `   - 일반 사용 가능 연결이 ${resForNormal}개만 남았습니다\n` +
+                            `   - 불필요한 연결을 종료하세요\n` +
+                            `   - "idle in transaction" 상태 연결 확인\n`;
+        } else if (resForNormal <= 100) {
+            recommendations = `⚠️ <b>주의 필요:</b>\n` +
+                            `   - 일반 사용 가능 연결이 ${resForNormal}개 남았습니다\n` +
+                            `   - 연결 모니터링을 강화하세요\n`;
+        } else {
+            recommendations = `✅ <b>정상 상태:</b>\n` +
+                            `   - 충분한 연결 여유가 있습니다\n`;
+        }
+        
+        const finalMessage = message + recommendations +
+                           `\n⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
+        
+        await bot.sendMessage(chatId, finalMessage, { parse_mode: 'HTML' });
+    } catch (err) {
+        console.error(`[Telegram Command] ❌ /dbase 명령 처리 오류: ${err.message}`);
+        await bot.sendMessage(chatId, `❌ 데이터베이스 연결 한계 정보 조회 중 오류 발생:\n${err.message}`);
+    }
+}
+
 // 도움말
 async function handleHelpCommand(chatId) {
     const message = `🤖 <b>사용 가능한 명령어</b>\n\n` +
                    `📊 <b>상태 확인:</b>\n` +
                    `   /status - 서버 상태 확인\n` +
                    `   /connections - 데이터베이스 연결 수 확인\n` +
-                   `   /memory - 메모리 사용량 확인\n\n` +
+                   `   /memory - 메모리 사용량 확인\n` +
+                   `   /dbase - 데이터베이스 연결 한계 정보 확인\n\n` +
+                   `🔧 <b>관리:</b>\n` +
+                   `   /kill_idle - 5분 이상 idle 상태인 연결 종료\n\n` +
                    `❓ <b>도움말:</b>\n` +
                    `   /help - 이 도움말 표시\n\n` +
                    `⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
@@ -250,6 +474,38 @@ function startTelegramPolling() {
             }
         });
         
+        // /dbase 명령어
+        bot.onText(/^\/(dbase|db|데이터베이스)$/i, async (msg) => {
+            const chatId = msg.chat.id;
+            if (!isAuthorized(chatId)) {
+                console.log(`[Telegram Command] ⚠️ 허용되지 않은 Chat ID에서 명령 시도: ${chatId}`);
+                return;
+            }
+            console.log(`[Telegram Command] 📨 명령 수신: /dbase (Chat ID: ${chatId})`);
+            try {
+                await handleDbaseCommand(chatId);
+            } catch (err) {
+                console.error(`[Telegram Command] ❌ 명령 처리 오류: ${err.message}`);
+                await bot.sendMessage(chatId, `❌ 명령 처리 중 오류가 발생했습니다:\n${err.message}`);
+            }
+        });
+        
+        // /kill_idle 명령어
+        bot.onText(/^\/(kill_idle|killidle|idle_kill)$/i, async (msg) => {
+            const chatId = msg.chat.id;
+            if (!isAuthorized(chatId)) {
+                console.log(`[Telegram Command] ⚠️ 허용되지 않은 Chat ID에서 명령 시도: ${chatId}`);
+                return;
+            }
+            console.log(`[Telegram Command] 📨 명령 수신: /kill_idle (Chat ID: ${chatId})`);
+            try {
+                await handleKillIdleCommand(chatId);
+            } catch (err) {
+                console.error(`[Telegram Command] ❌ 명령 처리 오류: ${err.message}`);
+                await bot.sendMessage(chatId, `❌ 명령 처리 중 오류가 발생했습니다:\n${err.message}`);
+            }
+        });
+        
         // /help 명령어
         bot.onText(/^\/(help|도움말|\?)$/i, async (msg) => {
             const chatId = msg.chat.id;
@@ -282,7 +538,7 @@ function startTelegramPolling() {
             }
             
             const command = msg.text.split(' ')[0].toLowerCase();
-            const knownCommands = ['/status', '/상태', '/connections', '/연결', '/conn', '/memory', '/메모리', '/mem', '/help', '/도움말', '/?'];
+            const knownCommands = ['/status', '/상태', '/connections', '/연결', '/conn', '/memory', '/메모리', '/mem', '/dbase', '/db', '/데이터베이스', '/kill_idle', '/killidle', '/idle_kill', '/help', '/도움말', '/?'];
             
             // 알려진 명령어가 아니면 처리
             if (!knownCommands.includes(command)) {
