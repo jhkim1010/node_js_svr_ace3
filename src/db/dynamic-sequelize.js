@@ -7,6 +7,10 @@ const connectionPool = new Map();
 // 전체 연결 풀의 총 최대값 (환경 변수로 설정 가능, 기본값: 400)
 const TOTAL_POOL_MAX = parseInt(process.env.DB_POOL_TOTAL_MAX) || parseInt(process.env.MAX_CONNECTIONS) || 400;
 
+// PostgreSQL 서버의 실제 max_connections를 캐시 (동적으로 조회)
+let cachedPgMaxConnections = null;
+let pgMaxConnectionsPromise = null; // 조회 중인 경우 Promise 저장
+
 function getConnectionKey(host, port, database, user) {
     return `${host}:${port}/${database}@${user}`;
 }
@@ -31,12 +35,64 @@ function getTotalPoolUsage() {
     return { totalUsed, totalMax };
 }
 
-// 각 데이터베이스의 pool.max를 동적으로 계산
-// DB_POOL_MAX가 명시적으로 설정되어 있지 않으면, 각 데이터베이스가 전체 최대값까지 사용할 수 있도록 설정
+// PostgreSQL 서버의 max_connections 조회 (캐시 사용, 비동기)
+async function getPostgresMaxConnections(sequelize) {
+    if (cachedPgMaxConnections !== null) {
+        return cachedPgMaxConnections;
+    }
+    
+    // 이미 조회 중이면 기다림
+    if (pgMaxConnectionsPromise) {
+        return await pgMaxConnectionsPromise;
+    }
+    
+    // 조회 시작
+    pgMaxConnectionsPromise = (async () => {
+        try {
+            const [maxConnResult] = await sequelize.query(`SHOW max_connections`);
+            if (maxConnResult && maxConnResult[0] && maxConnResult[0].max_connections) {
+                cachedPgMaxConnections = parseInt(maxConnResult[0].max_connections, 10);
+                console.log(`[Connection Pool] 📊 PostgreSQL 서버 max_connections: ${cachedPgMaxConnections}개`);
+                pgMaxConnectionsPromise = null;
+                return cachedPgMaxConnections;
+            }
+        } catch (err) {
+            console.warn(`[Connection Pool] ⚠️ PostgreSQL max_connections 조회 실패: ${err.message}`);
+        }
+        
+        // 조회 실패 시 환경 변수 또는 기본값 사용
+        cachedPgMaxConnections = parseInt(process.env.MAX_CONNECTIONS) || 100;
+        pgMaxConnectionsPromise = null;
+        return cachedPgMaxConnections;
+    })();
+    
+    return await pgMaxConnectionsPromise;
+}
+
+// 각 데이터베이스의 pool.max를 동적으로 계산 (동기 버전)
+// PostgreSQL 서버의 max_connections를 고려하여 설정
 function calculatePoolMaxForDatabase() {
-    // DB_POOL_MAX가 명시적으로 설정되어 있지 않으면, 각 데이터베이스가 전체 최대값(400)까지 사용 가능
-    // 필요에 따라 자유롭게 사용할 수 있도록 함
-    return TOTAL_POOL_MAX;
+    // 캐시된 PostgreSQL 서버의 max_connections가 있으면 사용
+    if (cachedPgMaxConnections !== null) {
+        // PostgreSQL 서버의 max_connections를 고려하여 설정
+        // 각 데이터베이스가 필요에 따라 사용할 수 있도록 하되, 서버 한계를 초과하지 않도록 함
+        // 서버 한계에서 10개 여유를 두고, 전체 풀 최대값과 비교하여 작은 값 사용
+        const safeMax = Math.min(cachedPgMaxConnections - 10, TOTAL_POOL_MAX);
+        return Math.max(1, safeMax);
+    }
+    
+    // 캐시가 없으면 환경 변수 확인
+    const envMax = parseInt(process.env.MAX_CONNECTIONS);
+    if (envMax) {
+        // 환경 변수가 있으면 서버 한계에서 10개 여유를 두고 사용
+        return Math.min(envMax - 10, TOTAL_POOL_MAX);
+    }
+    
+    // 기본값: 전체 풀 최대값 사용
+    // 첫 번째 연결 생성 후 PostgreSQL 서버 조회가 완료되면 자동으로 조정됨
+    // 하지만 이미 생성된 연결은 pool.max가 변경되지 않으므로, 안전한 기본값 사용
+    // PostgreSQL 서버의 일반적인 기본값인 100을 고려하여 90으로 설정
+    return Math.min(90, TOTAL_POOL_MAX);
 }
 
 // Docker 환경 감지 함수
@@ -83,16 +139,16 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     // 전체 연결 풀 사용량 확인
     const { totalUsed } = getTotalPoolUsage();
     
+    // 각 데이터베이스의 pool.max 설정
+    // DB_POOL_MAX가 명시적으로 설정되어 있으면 사용, 없으면 PostgreSQL 서버의 max_connections를 고려하여 계산
+    const explicitPoolMax = process.env.DB_POOL_MAX ? parseInt(process.env.DB_POOL_MAX) : null;
+    const poolMax = explicitPoolMax || calculatePoolMaxForDatabase();
+    
     // 전체 최대값을 초과하지 않도록 확인
     if (totalUsed >= TOTAL_POOL_MAX) {
         console.warn(`[Connection Pool] ⚠️ 전체 연결 풀 한계 도달: ${totalUsed}/${TOTAL_POOL_MAX}`);
         console.warn(`[Connection Pool] 새로운 연결 생성을 위해 기존 연결을 확인하세요.`);
     }
-    
-    // 각 데이터베이스의 pool.max 설정
-    // DB_POOL_MAX가 명시적으로 설정되어 있으면 사용, 없으면 각 데이터베이스가 전체 최대값(400)까지 사용 가능
-    const explicitPoolMax = process.env.DB_POOL_MAX ? parseInt(process.env.DB_POOL_MAX) : null;
-    const poolMax = explicitPoolMax || calculatePoolMaxForDatabase();
     
     // 새로운 연결 생성
     const sequelize = new Sequelize(database, user, password, {
@@ -130,6 +186,19 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     });
     
     connectionPool.set(key, sequelize);
+    
+    // 첫 번째 연결인 경우 PostgreSQL 서버의 max_connections 조회 (비동기, 백그라운드)
+    if (connectionPool.size === 1 && cachedPgMaxConnections === null) {
+        getPostgresMaxConnections(sequelize).then(pgMax => {
+            // 조회된 값이 현재 pool.max보다 작으면 경고
+            if (pgMax < poolMax) {
+                console.warn(`[Connection Pool] ⚠️ PostgreSQL 서버 max_connections (${pgMax})가 pool.max (${poolMax})보다 작습니다.`);
+                console.warn(`[Connection Pool] 연결 한계 도달 오류가 발생할 수 있습니다.`);
+            }
+        }).catch(() => {
+            // 조회 실패는 무시
+        });
+    }
     
     // WebSocket LISTEN 리스너 설정 (비동기, 에러는 무시)
     setupDbListener(host, port, database, user, password, ssl).catch(() => {
