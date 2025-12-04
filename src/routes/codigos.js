@@ -367,6 +367,12 @@ router.put('/:id', async (req, res) => {
         
         // 단일 항목 처리 (utime 비교 포함)
         const cleanedData = removeSyncField(req.body);
+        
+        // tcodigo는 codigos 테이블의 필드가 아니므로 제거 (업데이트 시 무시)
+        if (cleanedData.tcodigo) {
+            delete cleanedData.tcodigo;
+        }
+        
         const dataToUpdate = filterModelFields(Codigos, cleanedData);
         
         // 트랜잭션 사용하여 원자성 보장
@@ -439,26 +445,9 @@ router.put('/:id', async (req, res) => {
                 });
             }
             
-            // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
-            if (dataToUpdate.utime) {
-                let utimeStr = null;
-                if (dataToUpdate.utime instanceof Date) {
-                    // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
-                    const year = dataToUpdate.utime.getFullYear();
-                    const month = String(dataToUpdate.utime.getMonth() + 1).padStart(2, '0');
-                    const day = String(dataToUpdate.utime.getDate()).padStart(2, '0');
-                    const hours = String(dataToUpdate.utime.getHours()).padStart(2, '0');
-                    const minutes = String(dataToUpdate.utime.getMinutes()).padStart(2, '0');
-                    const seconds = String(dataToUpdate.utime.getSeconds()).padStart(2, '0');
-                    const ms = String(dataToUpdate.utime.getMilliseconds()).padStart(3, '0');
-                    utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-                } else {
-                    // 문자열인 경우 그대로 사용 (timezone 변환 없음)
-                    utimeStr = String(dataToUpdate.utime);
-                }
-                // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
-                dataToUpdate.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
-            }
+            // utime을 아르헨티나 시간대(GMT-3) 기준으로 현재 시간으로 설정
+            // 클라이언트에서 보낸 utime은 무시하고 항상 서버의 아르헨티나 시간으로 업데이트
+            dataToUpdate.utime = Sequelize.literal(`timezone('America/Argentina/Buenos_Aires', now())`);
             
             const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
             if (count === 0) {
