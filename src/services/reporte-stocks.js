@@ -219,6 +219,37 @@ async function getStocksReport(req) {
         }
     }
 
+    // Resumen del día (일일 요약) 쿼리 실행 - 항상 screendetails2_id 테이블 사용
+    const resumenQueryParams = [];
+    let resumenParamIndex = 1;
+    let resumenWhereConditions = ['si.sucursal IS NOT NULL'];
+    
+    // sucursal 필터가 있으면 WHERE 절에 추가
+    if (sucursal) {
+        resumenWhereConditions.push(`si.sucursal = $${resumenParamIndex}`);
+        resumenQueryParams.push(sucursal);
+        resumenParamIndex++;
+    }
+
+    const resumenDelDiaQuery = `
+        SELECT 
+            COUNT(*) as item_count, 
+            SUM(si.totalventa) as tVentas, 
+            SUM(si.totaling) as tIngresos, 
+            SUM(si.cntoffset) as tOffset, 
+            SUM(si.todayventa) as hVentas, 
+            SUM(si.todayingreso) as hIngresos, 
+            si.sucursal
+        FROM public.screendetails2_id si 
+        WHERE ${resumenWhereConditions.join(' AND ')}
+        GROUP BY si.sucursal
+    `;
+
+    const resumenDelDia = await sequelize.query(resumenDelDiaQuery, {
+        bind: resumenQueryParams.length > 0 ? resumenQueryParams : undefined,
+        type: Sequelize.QueryTypes.SELECT
+    });
+
     /**
      * 응답 데이터 구조:
      * {
@@ -232,6 +263,21 @@ async function getStocksReport(req) {
      *     source_table: string            // 사용된 소스 테이블 이름
      *   },
      *   data: Array<StockItem>            // 재고 데이터 배열
+     *   pagination: {
+     *     count: number,                  // 현재 반환된 개수
+     *     total: number,                  // 전체 데이터 개수
+     *     hasMore: boolean,               // 다음 배치 존재 여부
+     *     nextMaxUtime: string | null     // 다음 요청을 위한 커서 값
+     *   },
+     *   resumen_del_dia: Array<{          // 일일 요약 데이터 (지점별)
+     *     item_count: number,             // 아이템 개수
+     *     tVentas: number,                // 총 판매량 합계
+     *     tIngresos: number,              // 총 입고량 합계
+     *     tOffset: number,                // 오프셋 합계
+     *     hVentas: number,                // 오늘 판매량 합계
+     *     hIngresos: number,              // 오늘 입고량 합계
+     *     sucursal: number                 // 지점 번호
+     *   }>
      * }
      * 
      * StockItem 구조 (bcolorview = false, screendetails2_id):
@@ -299,7 +345,8 @@ async function getStocksReport(req) {
             total: totalCount,
             hasMore: hasMore,
             nextMaxUtime: nextMaxUtime
-        }
+        },
+        resumen_del_dia: resumenDelDia || []
     };
 }
 
