@@ -216,7 +216,7 @@ router.post('/', async (req, res) => {
         // 쿼리 6: stocks 데이터 집계 (screendetails2_id) - Sucursal별 그룹화
         const stocksQueryParams = [];
         let stocksParamIndex = 1;
-        let stocksWhereConditions = ['si.sucursal IS NOT NULL'];
+        let stocksWhereConditions = ['si.sucursal >= 1'];
         
         // sucursal 필터링 추가 (제공된 경우)
         if (sucursal) {
@@ -233,6 +233,7 @@ router.post('/', async (req, res) => {
                 SUM(si.cntoffset) as tOffset, 
                 SUM(si.todayventa) as hVentas, 
                 SUM(si.todayingreso) as hIngresos, 
+                SUM(si.stockreal) as finalStock, 
                 si.sucursal
             FROM public.screendetails2_id si 
             WHERE ${stocksWhereConditions.join(' AND ')}
@@ -289,7 +290,8 @@ router.post('/', async (req, res) => {
             tIngresos: parseFloat(item.tingresos || 0),
             tOffset: parseFloat(item.toffset || 0),
             hVentas: parseFloat(item.hventas || 0),
-            hIngresos: parseFloat(item.hingresos || 0)
+            hIngresos: parseFloat(item.hingresos || 0),
+            finalStock: parseFloat(item.finalstock || 0)
         }));
         
         const responseData = {

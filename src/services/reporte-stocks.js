@@ -222,7 +222,7 @@ async function getStocksReport(req) {
     // Resumen del día (일일 요약) 쿼리 실행 - 항상 screendetails2_id 테이블 사용
     const resumenQueryParams = [];
     let resumenParamIndex = 1;
-    let resumenWhereConditions = ['si.sucursal IS NOT NULL'];
+    let resumenWhereConditions = ['si.sucursal >= 1'];
     
     // sucursal 필터가 있으면 WHERE 절에 추가
     if (sucursal) {
