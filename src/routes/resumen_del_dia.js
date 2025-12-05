@@ -213,6 +213,38 @@ router.post('/', async (req, res) => {
             raw: true
         });
         
+        // 쿼리 6: stocks 데이터 집계 (screendetails2_id) - Sucursal별 그룹화
+        const stocksQueryParams = [];
+        let stocksParamIndex = 1;
+        let stocksWhereConditions = ['si.sucursal IS NOT NULL'];
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            stocksWhereConditions.push(`si.sucursal = $${stocksParamIndex}`);
+            stocksQueryParams.push(sucursal);
+            stocksParamIndex++;
+        }
+
+        const stocksQuery = `
+            SELECT 
+                COUNT(*) as item_count, 
+                SUM(si.totalventa) as tVentas, 
+                SUM(si.totaling) as tIngresos, 
+                SUM(si.cntoffset) as tOffset, 
+                SUM(si.todayventa) as hVentas, 
+                SUM(si.todayingreso) as hIngresos, 
+                si.sucursal
+            FROM public.screendetails2_id si 
+            WHERE ${stocksWhereConditions.join(' AND ')}
+            GROUP BY si.sucursal
+            ORDER BY si.sucursal ASC
+        `;
+
+        const stocksResult = await sequelize.query(stocksQuery, {
+            bind: stocksQueryParams.length > 0 ? stocksQueryParams : undefined,
+            type: Sequelize.QueryTypes.SELECT
+        });
+        
         // Sucursal별로 그룹화된 결과를 배열로 변환
         const vcodeSummary = (vcodeResult || []).map(item => ({
             sucursal: item.sucursal || null,
@@ -250,6 +282,16 @@ router.post('/', async (req, res) => {
             ingreso_total_ropas: parseFloat(item.ingreso_total_ropas || 0)
         }));
         
+        const stocksSummary = (stocksResult || []).map(item => ({
+            sucursal: item.sucursal || null,
+            item_count: parseInt(item.item_count || 0, 10),
+            tVentas: parseFloat(item.tventas || 0),
+            tIngresos: parseFloat(item.tingresos || 0),
+            tOffset: parseFloat(item.toffset || 0),
+            hVentas: parseFloat(item.hventas || 0),
+            hIngresos: parseFloat(item.hingresos || 0)
+        }));
+        
         const responseData = {
             fecha: targetDate || otherDate, // 요청된 날짜 또는 현재 날짜 (YYYY-MM-DD)
             fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
@@ -258,7 +300,8 @@ router.post('/', async (req, res) => {
             gastos: gastosSummary, // Sucursal별 배열
             vdetalle: vdetalleSummary, // Sucursal별 배열
             vcodes_mpago: vcodeMpagoSummary, // Sucursal별 배열
-            ingresos: ingresosSummary // Sucursal별 배열
+            ingresos: ingresosSummary, // Sucursal별 배열
+            stocks: stocksSummary // Sucursal별 배열
         };
         
         res.json(responseData);
