@@ -239,6 +239,7 @@ async function getStocksReport(req) {
             SUM(si.cntoffset) as tOffset, 
             SUM(si.todayventa) as hVentas, 
             SUM(si.todayingreso) as hIngresos, 
+            SUM(si.stockreal) as finalStock, 
             si.sucursal
         FROM public.screendetails2_id si 
         WHERE ${resumenWhereConditions.join(' AND ')}
@@ -276,6 +277,7 @@ async function getStocksReport(req) {
      *     tOffset: number,                // 오프셋 합계
      *     hVentas: number,                // 오늘 판매량 합계
      *     hIngresos: number,              // 오늘 입고량 합계
+     *     finalStock: number,             // 최종 재고 합계
      *     sucursal: number                 // 지점 번호
      *   }>
      * }
