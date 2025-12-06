@@ -4,11 +4,34 @@ const { getModelForRequest } = require('../models/model-factory');
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 /**
+ * 앱 식별 헬퍼 함수
+ * x-app-name 또는 x-client-app 헤더에서 앱 이름 추출
+ */
+function getAppName(req) {
+    return req.headers['x-app-name'] || 
+           req.headers['x-client-app'] || 
+           req.headers['app-name'] || 
+           null;
+}
+
+/**
  * JWT 토큰 검증 미들웨어
  * req.headers.authorization에서 Bearer 토큰을 추출하여 검증
  * 검증 성공 시 req.manager에 관리자 정보 저장
+ * 
+ * be_cool 앱: 인증 필수
+ * coolsyncro 앱: 인증 불필요 (보고서 접근 불가)
  */
 async function authenticateManager(req, res, next) {
+    const appName = getAppName(req);
+    
+    // coolsyncro 앱은 보고서 접근 불가
+    if (appName && appName.toLowerCase() === 'coolsyncro') {
+        return res.status(403).json({
+            error: 'Forbidden',
+            message: 'coolsyncro app does not have access to reports. Use be_cool app for reports.'
+        });
+    }
     try {
         // Authorization 헤더에서 토큰 추출
         const authHeader = req.headers.authorization || req.headers.Authorization;
@@ -113,9 +136,30 @@ function checkReportPermission(reportName) {
     };
 }
 
+/**
+ * 보고서 라우터용 조건부 인증 미들웨어
+ * be_cool 앱만 인증 필요, coolsyncro는 접근 불가
+ */
+function authenticateManagerForReports(req, res, next) {
+    const appName = getAppName(req);
+    
+    // coolsyncro 앱은 보고서 접근 불가
+    if (appName && appName.toLowerCase() === 'coolsyncro') {
+        return res.status(403).json({
+            error: 'Forbidden',
+            message: 'coolsyncro app does not have access to reports. Use be_cool app for reports.'
+        });
+    }
+    
+    // be_cool 앱 또는 앱 이름이 없는 경우 인증 필요
+    return authenticateManager(req, res, next);
+}
+
 module.exports = {
     authenticateManager,
+    authenticateManagerForReports,
     checkReportPermission,
+    getAppName,
     JWT_SECRET
 };
 

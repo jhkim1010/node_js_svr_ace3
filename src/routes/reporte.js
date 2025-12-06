@@ -5,12 +5,12 @@ const { getClientesReport } = require('../services/reporte-clientes');
 const { getGastosReport } = require('../services/reporte-gastos');
 const { getVentasReport } = require('../services/reporte-ventas');
 const { getAlertasReport } = require('../services/reporte-alertas');
-const { authenticateManager, checkReportPermission } = require('../middleware/auth');
+const { authenticateManagerForReports, checkReportPermission } = require('../middleware/auth');
 
 const router = Router();
 
-// 모든 보고서 엔드포인트에 인증 미들웨어 적용
-router.use(authenticateManager);
+// 모든 보고서 엔드포인트에 인증 미들웨어 적용 (be_cool 앱만 접근 가능)
+router.use(authenticateManagerForReports);
 
 // 로깅 헬퍼 함수
 function logReportRequest(req, reportName) {

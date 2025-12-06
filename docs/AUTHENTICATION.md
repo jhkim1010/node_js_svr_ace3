@@ -9,6 +9,26 @@
 1. **관리자 인증**: manager_name과 password로 로그인
 2. **JWT 토큰 기반 인증**: 로그인 후 JWT 토큰 발급
 3. **보고서 권한 관리**: 각 관리자마다 접근 가능한 보고서 제한
+4. **앱별 접근 제어**: coolsyncro와 be_cool 앱 구분하여 접근 제어
+
+## 앱별 접근 제어
+
+이 서버는 두 가지 앱에서 접근합니다:
+
+- **coolsyncro**: 보고서를 보지 않는 앱. manager 정보 불필요. 보고서 엔드포인트 접근 불가.
+- **be_cool**: 보고서를 보는 앱. 데이터베이스 연결 후 manager 로그인 필요.
+
+### 앱 식별 방법
+
+요청 헤더에 앱 이름을 포함하세요:
+
+```
+x-app-name: be_cool
+또는
+x-app-name: coolsyncro
+```
+
+헤더를 보내지 않으면 기본적으로 be_cool로 간주됩니다 (보고서 접근 시 인증 필요).
 
 ## 데이터베이스 설정
 
@@ -95,11 +115,47 @@ curl -X POST http://localhost:3030/api/auth/login \
   "success": true,
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "manager_name": "admin1",
-  "allowed_reports": ["stocks", "items", "clientes"]
+  "allowed_reports": ["stocks", "items", "clientes"],
+  "available_reports": ["stocks", "items", "clientes"],
+  "is_super_admin": false
 }
 ```
 
-### 3. 보고서 접근 (GET /api/reporte/{report_name})
+**응답 필드 설명:**
+- `token`: JWT 토큰 (24시간 유효)
+- `manager_name`: 관리자 이름
+- `allowed_reports`: 관리자에게 할당된 보고서 목록 (빈 배열이면 모든 보고서 접근 가능)
+- `available_reports`: 실제 사용 가능한 보고서 목록
+- `is_super_admin`: 슈퍼 관리자 여부 (allowed_reports가 빈 배열인 경우)
+
+### 3. 사용 가능한 보고서 조회 (GET /api/auth/available-reports)
+
+현재 토큰으로 사용 가능한 보고서 목록을 조회합니다.
+
+**요청:**
+```bash
+curl -X GET http://localhost:3030/api/auth/available-reports \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "x-db-host: localhost" \
+  -H "x-db-port: 5432" \
+  -H "x-db-name: your_database" \
+  -H "x-db-user: your_user" \
+  -H "x-db-password: your_password"
+```
+
+**응답:**
+```json
+{
+  "success": true,
+  "manager_name": "admin1",
+  "allowed_reports": ["stocks", "items"],
+  "available_reports": ["stocks", "items"],
+  "is_super_admin": false,
+  "all_reports": ["stocks", "items", "clientes", "gastos", "ventas", "alertas", "codigos", "todocodigos"]
+}
+```
+
+### 4. 보고서 접근 (GET /api/reporte/{report_name})
 
 JWT 토큰을 사용하여 보고서에 접근합니다.
 
@@ -107,12 +163,15 @@ JWT 토큰을 사용하여 보고서에 접근합니다.
 ```bash
 curl -X GET http://localhost:3030/api/reporte/stocks \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "x-app-name: be_cool" \
   -H "x-db-host: localhost" \
   -H "x-db-port: 5432" \
   -H "x-db-name: your_database" \
   -H "x-db-user: your_user" \
   -H "x-db-password: your_password"
 ```
+
+**참고**: `x-app-name: be_cool` 헤더가 없으면 기본적으로 be_cool로 간주됩니다. `coolsyncro` 앱은 보고서 접근이 불가능합니다.
 
 **권한이 없는 경우 응답:**
 ```json
@@ -151,6 +210,7 @@ const { token } = await loginResponse.json();
 const reportResponse = await fetch('http://localhost:3030/api/reporte/stocks', {
   headers: {
     'Authorization': `Bearer ${token}`,
+    'x-app-name': 'be_cool',
     'x-db-host': 'localhost',
     'x-db-port': '5432',
     'x-db-name': 'your_database',
@@ -189,6 +249,7 @@ token = response.json()['token']
 report_url = 'http://localhost:3030/api/reporte/stocks'
 report_headers = {
     'Authorization': f'Bearer {token}',
+    'x-app-name': 'be_cool',
     **login_headers
 }
 
