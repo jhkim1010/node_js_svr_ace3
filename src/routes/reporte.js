@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getStocksReport } = require('../services/reporte-stocks');
 const { getItemsReport } = require('../services/reporte-items');
+const { getIngresosReport } = require('../services/reporte-ingresos');
 const { getClientesReport } = require('../services/reporte-clientes');
 const { getGastosReport } = require('../services/reporte-gastos');
 const { getVentasReport } = require('../services/reporte-ventas');
@@ -72,6 +73,24 @@ router.get('/items', async (req, res) => {
             errorType: err.constructor.name
         };
         console.error(`\n[Items 보고서 오류]`);
+        console.error(JSON.stringify(errorResponse, null, 2));
+        console.error(`\n`);
+        res.status(500).json(errorResponse);
+    }
+});
+
+// Ingresos 보고서
+router.get('/ingresos', async (req, res) => {
+    try {
+        const result = await getIngresosReport(req);
+        res.json(result);
+    } catch (err) {
+        const errorResponse = {
+            error: 'Failed to get ingresos report',
+            details: err.message,
+            errorType: err.constructor.name
+        };
+        console.error(`\n[Ingresos 보고서 오류]`);
         console.error(JSON.stringify(errorResponse, null, 2));
         console.error(`\n`);
         res.status(500).json(errorResponse);
