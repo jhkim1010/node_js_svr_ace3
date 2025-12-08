@@ -1,7 +1,122 @@
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
 
+/**
+ * 날짜 차이를 계산하여 기간을 판단하는 함수
+ * @param {string} startDate - 시작 날짜 (YYYY-MM-DD)
+ * @param {string} endDate - 종료 날짜 (YYYY-MM-DD)
+ * @returns {Object} { days: number, months: number, years: number, isSameDay: boolean }
+ */
+function calculatePeriod(startDate, endDate) {
+    if (!startDate || !endDate) {
+        return { days: 0, months: 0, years: 0, isSameDay: false };
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // 동일한 날짜인지 확인
+    const isSameDay = startDate === endDate;
+    
+    // 날짜 차이 계산 (밀리초)
+    const diffTime = Math.abs(end - start);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    // 대략적인 월 수 계산 (30일 기준)
+    const diffMonths = Math.floor(diffDays / 30);
+    
+    // 대략적인 연 수 계산 (365일 기준)
+    const diffYears = Math.floor(diffDays / 365);
+    
+    return {
+        days: diffDays,
+        months: diffMonths,
+        years: diffYears,
+        isSameDay: isSameDay
+    };
+}
+
 async function getVentasReport(req) {
+    const Vcode = getModelForRequest(req, 'Vcode');
+    const sequelize = Vcode.sequelize;
+
+    // 쿼리 파라미터 파싱 (날짜 범위)
+    const fechaInicio = req.query.fecha_inicio || req.query.start_date || req.query.fecha_desde;
+    const fechaFin = req.query.fecha_fin || req.query.end_date || req.query.fecha_hasta;
+
+    // 날짜가 없으면 에러 반환
+    if (!fechaInicio || !fechaFin) {
+        throw new Error('fecha_inicio and fecha_fin are required');
+    }
+
+    // 기간 계산
+    const period = calculatePeriod(fechaInicio, fechaFin);
+    
+    // 어떤 함수를 호출할지 결정
+    let functionName;
+    if (period.isSameDay) {
+        // 동일한 날짜인 경우
+        functionName = 'ventas_rpt_a_day';
+    } else if (period.years >= 2) {
+        // 2년 이상인 경우
+        functionName = 'ventas_rpt_x_year';
+    } else if (period.months >= 2) {
+        // 2개월 이상인 경우
+        functionName = 'ventas_rpt_x_month';
+    } else {
+        // 그 외 (기간, 2개월 미만)
+        functionName = 'ventas_rpt_a_periodo';
+    }
+
+    // PostgreSQL 함수 호출
+    let query;
+    let queryParams;
+
+    try {
+        // 함수 호출 쿼리 (PostgreSQL 함수 호출 형식)
+        query = `SELECT * FROM ${functionName}($1, $2)`;
+        queryParams = [fechaInicio, fechaFin];
+
+        // SQL 쿼리 실행
+        const results = await sequelize.query(query, {
+            bind: queryParams,
+            type: Sequelize.QueryTypes.SELECT
+        });
+
+        // 결과가 배열인지 확인
+        const data = Array.isArray(results) ? results : [];
+
+        return {
+            filters: {
+                fecha_inicio: fechaInicio,
+                fecha_fin: fechaFin,
+                start_date: fechaInicio,
+                end_date: fechaFin,
+                period_days: period.days,
+                period_months: period.months,
+                period_years: period.years,
+                is_same_day: period.isSameDay
+            },
+            summary: {
+                function_used: functionName,
+                total_items: data.length
+            },
+            data: data
+        };
+    } catch (err) {
+        console.error(`\n[Ventas 보고서 오류] 함수 ${functionName} 호출 실패:`);
+        console.error('   Error type:', err.constructor.name);
+        console.error('   Error message:', err.message);
+        console.error('   Full error:', err);
+        if (err.original) {
+            console.error('   Original error:', err.original);
+        }
+        throw err;
+    }
+}
+
+// 기존 함수는 유지 (하위 호환성을 위해)
+async function getVentasReportLegacy(req) {
     const Vcode = getModelForRequest(req, 'Vcode');
     const Vdetalle = getModelForRequest(req, 'Vdetalle');
     const sequelize = Vcode.sequelize;

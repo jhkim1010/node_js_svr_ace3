@@ -336,7 +336,8 @@ router.post('/', async (req, res) => {
         // BATCH_SYNC 또는 배열 데이터 처리 (utime 비교를 통한 UPDATE/SKIP 결정)
         // Ingresos는 복합 unique key ['ingreso_id', 'sucursal'] 사용
         if ((req.body.operation === 'BATCH_SYNC' || Array.isArray(req.body.data)) && Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleUtimeComparisonArrayData(req, res, Ingresos, ['ingreso_id', 'sucursal'], 'Ingresos');
+            // 50개를 넘으면 배치로 나눠서 처리 (연결 풀 효율적 사용)
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Ingresos, ['ingreso_id', 'sucursal'], 'Ingresos');
             await notifyBatchSync(req, Ingresos, result);
             return res.status(200).json(result);
         }
