@@ -5,12 +5,10 @@ const { getClientesReport } = require('../services/reporte-clientes');
 const { getGastosReport } = require('../services/reporte-gastos');
 const { getVentasReport } = require('../services/reporte-ventas');
 const { getAlertasReport } = require('../services/reporte-alertas');
-const { authenticateManager, checkReportPermission } = require('../middleware/auth');
 
 const router = Router();
 
-// 모든 보고서 엔드포인트에 인증 미들웨어 적용
-router.use(authenticateManager);
+// JWT 인증 미들웨어 제거됨 - 모든 보고서 엔드포인트는 인증 없이 접근 가능
 
 // 로깅 헬퍼 함수
 function logReportRequest(req, reportName) {
@@ -45,7 +43,7 @@ function logReportResponse(reportName, result) {
 }
 
 // Stocks 보고서
-router.get('/stocks', checkReportPermission('stocks'), async (req, res) => {
+router.get('/stocks', async (req, res) => {
     try {
         const result = await getStocksReport(req);
         res.json(result);
@@ -63,7 +61,7 @@ router.get('/stocks', checkReportPermission('stocks'), async (req, res) => {
 });
 
 // Items 보고서
-router.get('/items', checkReportPermission('items'), async (req, res) => {
+router.get('/items', async (req, res) => {
     try {
         const result = await getItemsReport(req);
         res.json(result);
@@ -81,7 +79,7 @@ router.get('/items', checkReportPermission('items'), async (req, res) => {
 });
 
 // Clientes 보고서
-router.get('/clientes', checkReportPermission('clientes'), async (req, res) => {
+router.get('/clientes', async (req, res) => {
     try {
         const result = await getClientesReport(req);
         res.json(result);
@@ -99,7 +97,7 @@ router.get('/clientes', checkReportPermission('clientes'), async (req, res) => {
 });
 
 // Gastos 보고서
-router.get('/gastos', checkReportPermission('gastos'), async (req, res) => {
+router.get('/gastos', async (req, res) => {
     try {
         const result = await getGastosReport(req);
         res.json(result);
@@ -117,7 +115,7 @@ router.get('/gastos', checkReportPermission('gastos'), async (req, res) => {
 });
 
 // Ventas 보고서
-router.get('/ventas', checkReportPermission('ventas'), async (req, res) => {
+router.get('/ventas', async (req, res) => {
     try {
         const result = await getVentasReport(req);
         res.json(result);
@@ -135,7 +133,7 @@ router.get('/ventas', checkReportPermission('ventas'), async (req, res) => {
 });
 
 // Alertas 보고서
-router.get('/alertas', checkReportPermission('alertas'), async (req, res) => {
+router.get('/alertas', async (req, res) => {
     try {
         const result = await getAlertasReport(req);
         res.json(result);

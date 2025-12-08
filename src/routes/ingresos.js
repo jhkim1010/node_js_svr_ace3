@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { Op, Sequelize } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
@@ -11,11 +12,163 @@ const router = Router();
 router.get('/', async (req, res) => {
     try {
         const Ingresos = getModelForRequest(req, 'Ingresos');
-        const records = await Ingresos.findAll({ limit: 100, order: [['ingreso_id', 'DESC']] });
-        res.json(records);
+        const sequelize = Ingresos.sequelize;
+        
+        // ingreso_id 파라미터 확인 (페이지네이션용, 첫 요청에는 없음)
+        const idIngreso = req.body?.ingreso_id || req.query?.ingreso_id;
+        
+        // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터, 호환성 유지)
+        const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
+        
+        // 검색 및 정렬 파라미터 확인
+        const filteringWord = req.body?.filtering_word || req.query?.filtering_word || req.body?.filteringWord || req.query?.filteringWord || req.body?.search || req.query?.search;
+        const sortColumn = req.body?.sort_column || req.query?.sort_column || req.body?.sortBy || req.query?.sortBy;
+        const sortAscending = req.body?.sort_ascending !== undefined 
+            ? (req.body?.sort_ascending === 'true' || req.body?.sort_ascending === true)
+            : (req.query?.sort_ascending !== undefined 
+                ? (req.query?.sort_ascending === 'true' || req.query?.sort_ascending === true)
+                : (req.body?.sortOrder || req.query?.sortOrder 
+                    ? (req.body?.sortOrder || req.query?.sortOrder).toUpperCase() === 'ASC'
+                    : true)); // 기본값: 오름차순
+        const sortOrder = sortAscending ? 'ASC' : 'DESC';
+        
+        // 정렬 가능한 컬럼 화이트리스트 (SQL injection 방지)
+        const allowedSortColumns = [
+            'ingreso_id', 'codigo', 'desc3', 'cant3', 'pre1', 'pre2', 'pre3', 'pre4', 'pre5', 'preorg',
+            'fecha', 'hora', 'sucursal', 'codigoproducto', 'utime', 'borrado', 'fotonombre',
+            'refemp', 'refcolor', 'totpre', 'pubip', 'ip', 'mac', 'ref1', 'ref_vcode',
+            'bfallado', 'bmovido', 'ref_sucursal', 'auto_agregado', 'b_autoagregado',
+            'ref_id_codigo', 'num_corte', 'casoesp', 'ref_id_todocodigo', 'utime_modificado',
+            'id_ingreso_centralizado'
+        ];
+        
+        // 정렬 컬럼 검증 및 기본값 설정
+        // 파라미터가 없으면 ingreso_id를 중심으로 오름차순 정렬
+        const defaultSortColumn = 'ingreso_id';
+        const validSortBy = sortColumn && allowedSortColumns.includes(sortColumn) ? sortColumn : defaultSortColumn;
+        
+        // WHERE 조건 구성
+        let whereConditions = [];
+        let replacements = {};
+        
+        if (idIngreso) {
+            // ingreso_id 파라미터로 페이지네이션 (다음 페이지 요청 시 사용)
+            const maxIdIngreso = parseInt(idIngreso, 10);
+            if (isNaN(maxIdIngreso)) {
+                console.error(`ERROR: Invalid ingreso_id format: ${idIngreso}`);
+            } else {
+                whereConditions.push('ingreso_id > :idIngreso');
+                replacements.idIngreso = maxIdIngreso;
+            }
+        }
+        
+        // last_get_utime이 있으면 utime 필터 추가
+        if (lastGetUtime) {
+            // ISO 8601 형식의 'T'를 공백으로 변환하고 시간대 정보 제거
+            let utimeStr = String(lastGetUtime);
+            utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
+            whereConditions.push(`utime::text > :lastGetUtime`);
+            replacements.lastGetUtime = utimeStr;
+        }
+        
+        // FilteringWord 검색 조건 추가 (codigo 또는 desc3에서만 검색)
+        if (filteringWord && filteringWord.trim()) {
+            const searchTerm = `%${filteringWord.trim()}%`;
+            whereConditions.push(`(
+                codigo ILIKE :filteringWord OR 
+                desc3 ILIKE :filteringWord
+            )`);
+            replacements.filteringWord = searchTerm;
+        }
+        
+        const whereClause = whereConditions.length > 0 
+            ? 'WHERE ' + whereConditions.join(' AND ')
+            : '';
+        
+        // 총 데이터 개수 조회
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM ingresos
+            ${whereClause}
+        `;
+        const [countResult] = await sequelize.query(countQuery, {
+            replacements: replacements,
+            type: Sequelize.QueryTypes.SELECT
+        });
+        const totalCount = parseInt(countResult.total, 10);
+        
+        // 100개 단위로 제한
+        const limit = 100;
+        
+        // 쿼리 실행
+        const query = `
+            SELECT *
+            FROM ingresos
+            ${whereClause}
+            ORDER BY ${validSortBy} ${sortOrder}
+            LIMIT :limit OFFSET :offset
+        `;
+        
+        // 다음 배치 존재 여부 확인을 위해 limit + 1개 조회
+        const records = await sequelize.query(query, {
+            replacements: {
+                ...replacements,
+                limit: limit + 1,
+                offset: 0
+            },
+            type: Sequelize.QueryTypes.SELECT
+        });
+        
+        // 다음 배치가 있는지 확인
+        const hasMore = records.length > limit;
+        const allRecords = hasMore ? records.slice(0, limit) : records;
+        
+        // 응답 데이터 구성 (ingreso_id 포함)
+        const data = allRecords;
+        
+        // 다음 요청을 위한 ingreso_id 계산 (마지막 레코드의 ingreso_id)
+        let nextIdIngreso = null;
+        if (allRecords.length > 0) {
+            const lastRecord = allRecords[allRecords.length - 1];
+            if (lastRecord.ingreso_id !== null && lastRecord.ingreso_id !== undefined) {
+                nextIdIngreso = lastRecord.ingreso_id;
+            }
+        }
+        
+        // 페이지네이션 정보와 함께 응답
+        const responseData = {
+            data: data,
+            pagination: {
+                count: data.length,
+                total: totalCount,
+                hasMore: hasMore,
+                ingreso_id: nextIdIngreso
+            },
+            filters: {
+                filtering_word: filteringWord || null,
+                sort_column: validSortBy,
+                sort_ascending: sortAscending
+            }
+        };
+        
+        // 응답 로거에서 사용할 데이터 개수 저장
+        req._responseDataCount = data.length;
+        
+        res.json(responseData);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to list ingresos', details: err.message });
+        console.error('\nERROR: Ingresos fetch error:');
+        console.error('   Error type:', err.constructor.name);
+        console.error('   Error message:', err.message);
+        console.error('   Full error:', err);
+        if (err.original) {
+            console.error('   Original error:', err.original);
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to list ingresos', 
+            details: err.message,
+            errorType: err.constructor.name
+        });
     }
 });
 

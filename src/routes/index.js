@@ -17,13 +17,10 @@ const logsRouter = require('./logs');
 const vendedoresRouter = require('./vendedores');
 const resumenDelDiaRouter = require('./resumen_del_dia');
 const reporteRouter = require('./reporte');
-const authRouter = require('./auth');
 
 const router = Router();
 
 // Health는 server.js에서 처리 (헤더 불필요)
-// Auth 라우터는 인증 없이 접근 가능
-router.use('/auth', authRouter);
 router.use('/vcodes', vcodesRouter);
 router.use('/vdetalle', vdetalleRouter);
 router.use('/parametros', parametrosRouter);
