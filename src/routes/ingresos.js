@@ -172,6 +172,149 @@ router.get('/', async (req, res) => {
     }
 });
 
+// 집계 쿼리 엔드포인트 (codigo별 그룹화)
+router.get('/summary', async (req, res) => {
+    try {
+        const Ingresos = getModelForRequest(req, 'Ingresos');
+        const sequelize = Ingresos.sequelize;
+        
+        // 날짜 범위 파라미터 (필수)
+        const startDate = req.body?.start_date || req.query?.start_date;
+        const endDate = req.body?.end_date || req.query?.end_date;
+        
+        if (!startDate || !endDate) {
+            return res.status(400).json({ 
+                error: 'Missing required parameters', 
+                details: 'start_date and end_date are required' 
+            });
+        }
+        
+        // 페이지네이션 파라미터 (id_codigo 기준)
+        const idCodigo = req.body?.id_codigo || req.query?.id_codigo;
+        
+        // 기본 WHERE 조건
+        const baseWhereConditions = [
+            `fecha BETWEEN :startDate AND :endDate`,
+            `b_autoagregado IS FALSE`,
+            `borrado IS FALSE`
+        ];
+        
+        let replacements = {
+            startDate: startDate,
+            endDate: endDate
+        };
+        
+        // id_codigo 페이지네이션 조건 처리
+        let paginationCondition = '';
+        if (idCodigo) {
+            const maxIdCodigo = parseInt(idCodigo, 10);
+            if (isNaN(maxIdCodigo)) {
+                console.error(`ERROR: Invalid id_codigo format: ${idCodigo}`);
+            } else {
+                replacements.idCodigo = maxIdCodigo;
+                paginationCondition = 'HAVING MAX(ref_id_codigo) > :idCodigo';
+            }
+        }
+        
+        const whereClause = 'WHERE ' + baseWhereConditions.join(' AND ');
+        
+        // 총 그룹 개수 조회
+        let countQuery = `
+            SELECT COUNT(*) as total
+            FROM (
+                SELECT codigo
+                FROM ingresos
+                ${whereClause}
+                GROUP BY codigo
+                ${paginationCondition}
+            ) as grouped
+        `;
+        
+        const [countResult] = await sequelize.query(countQuery, {
+            replacements: replacements,
+            type: Sequelize.QueryTypes.SELECT
+        });
+        const totalCount = parseInt(countResult.total, 10);
+        
+        // 집계 쿼리 실행
+        const query = `
+            SELECT 
+                codigo, 
+                MAX(desc3) as descripcion, 
+                SUM(cant3) as tIngreso, 
+                MIN(fecha) as startDate, 
+                MAX(fecha) as endDate, 
+                COUNT(*) as cntEvent, 
+                MAX(ref_id_codigo) as id_codigo
+            FROM ingresos
+            ${whereClause}
+            GROUP BY codigo
+            ${paginationCondition}
+            ORDER BY MAX(ref_id_codigo) ASC
+            LIMIT :limit
+        `;
+        
+        // 100개 단위로 제한
+        const limit = 100;
+        
+        // 다음 배치 존재 여부 확인을 위해 limit + 1개 조회
+        const records = await sequelize.query(query, {
+            replacements: {
+                ...replacements,
+                limit: limit + 1
+            },
+            type: Sequelize.QueryTypes.SELECT
+        });
+        
+        // 다음 배치가 있는지 확인
+        const hasMore = records.length > limit;
+        const allRecords = hasMore ? records.slice(0, limit) : records;
+        
+        // 다음 요청을 위한 id_codigo 계산 (마지막 레코드의 id_codigo)
+        let nextIdCodigo = null;
+        if (allRecords.length > 0) {
+            const lastRecord = allRecords[allRecords.length - 1];
+            if (lastRecord.id_codigo !== null && lastRecord.id_codigo !== undefined) {
+                nextIdCodigo = lastRecord.id_codigo;
+            }
+        }
+        
+        // 응답 데이터 구성
+        const responseData = {
+            data: allRecords,
+            pagination: {
+                count: allRecords.length,
+                total: totalCount,
+                hasMore: hasMore,
+                id_codigo: nextIdCodigo
+            },
+            filters: {
+                start_date: startDate,
+                end_date: endDate
+            }
+        };
+        
+        // 응답 로거에서 사용할 데이터 개수 저장
+        req._responseDataCount = allRecords.length;
+        
+        res.json(responseData);
+    } catch (err) {
+        console.error('\nERROR: Ingresos summary fetch error:');
+        console.error('   Error type:', err.constructor.name);
+        console.error('   Error message:', err.message);
+        console.error('   Full error:', err);
+        if (err.original) {
+            console.error('   Original error:', err.original);
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to fetch ingresos summary', 
+            details: err.message,
+            errorType: err.constructor.name
+        });
+    }
+});
+
 router.get('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
