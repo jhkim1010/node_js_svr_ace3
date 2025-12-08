@@ -170,23 +170,37 @@ function initializeWebSocket(server) {
 
         // ping/pong으로 연결 유지 (60초마다 - 1000개 이상 연결 시 성능 최적화)
         // 30초에서 60초로 증가하여 ping 빈도 감소 (연결 유지에는 충분함)
-        const pingInterval = setInterval(() => {
+        let pingInterval = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
                 try {
                     ws.ping();
                 } catch (err) {
                     console.error(`[WebSocket] ping 전송 오류 (id=${ws.id}):`, err.message);
-                    clearInterval(pingInterval);
+                    if (pingInterval) {
+                        clearInterval(pingInterval);
+                        pingInterval = null;
+                    }
                 }
             } else {
-                clearInterval(pingInterval);
+                if (pingInterval) {
+                    clearInterval(pingInterval);
+                    pingInterval = null;
+                }
             }
         }, 60000); // 60초로 증가 (1000개 이상 연결 시 성능 최적화)
+
+        // ping interval 정리 헬퍼 함수
+        const cleanupPingInterval = () => {
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = null;
+            }
+        };
 
         // 연결 종료 처리
         ws.on('close', (code, reason) => {
             // ping 인터벌 정리
-            clearInterval(pingInterval);
+            cleanupPingInterval();
             
             const info = clientInfo.get(ws.id);
             const clientId = info ? info.clientId : 'unknown';
@@ -227,6 +241,8 @@ function initializeWebSocket(server) {
         ws.on('error', (error) => {
             console.error(`[WebSocket] 클라이언트 오류 (id=${ws.id}):`, error.message);
             console.error(`[WebSocket] 오류 상세:`, error);
+            // 오류 발생 시에도 ping interval 정리
+            cleanupPingInterval();
         });
 
         // pong 응답 처리
@@ -414,10 +430,30 @@ async function setupDbListener(host, port, database, user, password, ssl = false
     });
 
     // 연결 오류 처리
-    client.on('error', (err) => {
+    client.on('error', async (err) => {
         console.error(`❌ DB LISTEN connection error (${key}):`, err.message);
+        
+        // 리스너에서 제거
         dbListeners.delete(key);
-        client.release();
+        
+        // 클라이언트 해제
+        try {
+            if (client && !client._ending) {
+                client.release();
+            }
+        } catch (releaseErr) {
+            console.error(`[WebSocket] Client release error:`, releaseErr.message);
+        }
+        
+        // Pool 정리 (더 이상 사용하지 않을 경우)
+        // 주의: 다른 연결이 pool을 사용할 수 있으므로 신중하게 처리
+        // 현재는 pool을 유지하되, client만 해제
+    });
+
+    // 연결 종료 처리
+    client.on('end', () => {
+        console.log(`[WebSocket] DB LISTEN connection ended (${key})`);
+        dbListeners.delete(key);
     });
 
     dbListeners.set(key, { client, pool });
