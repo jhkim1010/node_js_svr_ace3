@@ -1,6 +1,7 @@
 const https = require('https');
 const http = require('http');
 const { connectionPool, getTotalPoolUsage, TOTAL_POOL_MAX } = require('../db/dynamic-sequelize');
+const { killIdleProcesses } = require('../utils/db-idle-killer');
 
 // 아르헨티나 시간대(GMT-3)로 시간 포맷팅하는 헬퍼 함수
 function getArgentinaTime() {
@@ -38,7 +39,9 @@ const alertState = {
     memoryWarningAlert: false,
     memoryCriticalAlert: false,
     poolUsageAlert: {}, // 데이터베이스별 풀 사용률 알림 상태
-    lastAlertTime: {}
+    lastAlertTime: {},
+    lastIdleKillTime: 0, // 마지막 idle kill 시도 시간
+    lastConnectionCountBeforeKill: 0 // idle kill 전 연결 수
 };
 
 // Telegram 메시지 전송 (Fallback - telegram-command-handler의 bot이 없을 때 사용)
@@ -595,62 +598,113 @@ async function checkPostgresConnectionCount() {
         const shouldAlert = serverTotal > 350;
         
         if (shouldAlert) {
-            // 경고 레벨 결정 (350개 초과 기준)
-            let alertLevel = '⚠️';
-            let alertTitle = 'PostgreSQL 연결 수 경고';
-            
-            if (serverTotal >= 400) {
-                alertLevel = '🚨';
-                alertTitle = 'PostgreSQL 연결 수 위험!';
-            } else if (serverTotal >= 380) {
-                alertLevel = '🔴';
-                alertTitle = 'PostgreSQL 연결 수 경고';
-            }
-            
-            const alertMessage = `${alertLevel} <b>${alertTitle}</b>\n\n` +
-                               `📊 <b>연결 수:</b> ${serverTotal}개 (임계값: 350개 초과)\n` +
-                               `   - 서버 최대값: ${maxConnections}개\n` +
-                               `   - 사용률: ${connectionUsage.toFixed(1)}%\n` +
-                               `   - Active: ${totalActive}개\n` +
-                               `   - Idle: ${totalIdle}개\n` +
-                               `   - Idle in Transaction: ${totalIdleInTransaction}개\n` +
-                               (totalIdleInTransactionAborted > 0 ? `   - ⚠️ Idle in TX (Aborted): ${totalIdleInTransactionAborted}개\n` : '') +
-                               (totalOther > 0 ? `   - 기타 상태: ${totalOther}개\n` : '') +
-                               `\n💡 <b>권장 사항:</b>\n`;
-            
-            let recommendations = [];
-            
-            if (serverTotal >= 400) {
-                recommendations.push('🚨 연결 수가 매우 많습니다 (400개 이상)! 즉시 조치 필요');
-                recommendations.push('1. "idle in transaction" 상태의 연결 확인');
-                recommendations.push('2. 애플리케이션 코드에서 트랜잭션 커밋/롤백 확인');
-                recommendations.push('3. 불필요한 연결 종료');
-                recommendations.push('4. PostgreSQL 서버의 max_connections 확인');
-            } else if (serverTotal >= 380) {
-                recommendations.push('연결 수가 많습니다 (380개 이상)');
-                recommendations.push('1. 연결 풀 설정 확인 (전체 최대값)');
-                recommendations.push('2. 사용하지 않는 연결 정리');
-                recommendations.push('3. 여러 애플리케이션 인스턴스가 실행 중인지 확인');
-            } else {
-                recommendations.push('연결 수가 350개를 초과했습니다');
-                recommendations.push('1. 연결이 제대로 해제되는지 확인');
-                recommendations.push('2. 연결 풀 모니터링 지속');
-            }
-            
-            const finalMessage = alertMessage + recommendations.join('\n') +
-                               `\n\n⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
-            
-            // 쿨다운 체크 (5분)
-            const alertKey = 'connection_usage';
             const now = Date.now();
+            const alertKey = 'connection_usage';
             const lastAlertTime = alertState.lastAlertTime[alertKey] || 0;
+            const lastIdleKillTime = alertState.lastIdleKillTime || 0;
+            const lastConnectionCountBeforeKill = alertState.lastConnectionCountBeforeKill || 0;
             const cooldownPeriod = 5 * 60 * 1000; // 5분
+            const idleKillRecheckPeriod = 60 * 1000; // 1분 (idle kill 후 재확인 대기 시간)
             
-            if (now - lastAlertTime >= cooldownPeriod) {
-                alertState.lastAlertTime[alertKey] = now;
-                await sendTelegramMessage(finalMessage).catch(() => {
-                    // 알림 전송 실패는 무시
-                });
+            // idle kill 후 재확인: 1분 이상 지났고, 연결 수가 여전히 과다한지 확인
+            const timeSinceLastKill = now - lastIdleKillTime;
+            const hasEnoughTimePassed = timeSinceLastKill >= idleKillRecheckPeriod;
+            const stillHigh = lastIdleKillTime > 0 && serverTotal >= lastConnectionCountBeforeKill * 0.95; // 5% 이상 감소하지 않았으면
+            
+            // idle kill을 시도해야 하는지 확인
+            // - 아직 idle kill을 시도하지 않았거나
+            // - idle kill 후 1분이 지났고 상황이 개선되지 않았거나
+            const shouldTryIdleKill = (lastIdleKillTime === 0) || (hasEnoughTimePassed && stillHigh);
+            
+            if (shouldTryIdleKill) {
+                console.log(`[Monitoring] 🔪 연결 수 과다 감지 (${serverTotal}개). Idle 프로세스 종료 시도...`);
+                
+                // Idle 프로세스 종료 시도
+                const killResult = await killIdleProcesses(10); // 10분 이상 idle인 프로세스 종료
+                
+                console.log(`[Monitoring] ✅ Idle 프로세스 종료 완료: ${killResult.killedCount}개 종료, ${killResult.failedCount}개 실패`);
+                
+                // 상태 업데이트
+                alertState.lastIdleKillTime = now;
+                alertState.lastConnectionCountBeforeKill = serverTotal;
+                
+                // idle kill 후 1분 후에 재확인하도록 설정 (다음 모니터링 주기에서 확인)
+                console.log(`[Monitoring] ℹ️ Idle kill 완료. 1분 후 재확인 예정.`);
+            } else if (hasEnoughTimePassed && stillHigh) {
+                // idle kill 후 1분 이상 지났고, 연결 수가 여전히 과다하면 Telegram 알림 전송
+                console.log(`[Monitoring] ⚠️ Idle kill 후에도 연결 수가 여전히 과다합니다 (${lastConnectionCountBeforeKill}개 → ${serverTotal}개). Telegram 알림 전송...`);
+                
+                // 경고 레벨 결정 (350개 초과 기준)
+                let alertLevel = '⚠️';
+                let alertTitle = 'PostgreSQL 연결 수 경고';
+                
+                if (serverTotal >= 400) {
+                    alertLevel = '🚨';
+                    alertTitle = 'PostgreSQL 연결 수 위험!';
+                } else if (serverTotal >= 380) {
+                    alertLevel = '🔴';
+                    alertTitle = 'PostgreSQL 연결 수 경고';
+                }
+                
+                const alertMessage = `${alertLevel} <b>${alertTitle}</b>\n\n` +
+                                   `📊 <b>연결 수:</b> ${serverTotal}개 (임계값: 350개 초과)\n` +
+                                   `   - 서버 최대값: ${maxConnections}개\n` +
+                                   `   - 사용률: ${connectionUsage.toFixed(1)}%\n` +
+                                   `   - Active: ${totalActive}개\n` +
+                                   `   - Idle: ${totalIdle}개\n` +
+                                   `   - Idle in Transaction: ${totalIdleInTransaction}개\n` +
+                                   (totalIdleInTransactionAborted > 0 ? `   - ⚠️ Idle in TX (Aborted): ${totalIdleInTransactionAborted}개\n` : '') +
+                                   (totalOther > 0 ? `   - 기타 상태: ${totalOther}개\n` : '') +
+                                   `\n🔪 <b>자동 조치:</b> Idle 프로세스 종료 시도 완료\n` +
+                                   `   - 상황 개선 없음 (연결 수: ${lastConnectionCountBeforeKill}개 → ${serverTotal}개)\n` +
+                                   `\n💡 <b>권장 사항:</b>\n`;
+                
+                let recommendations = [];
+                
+                if (serverTotal >= 400) {
+                    recommendations.push('🚨 연결 수가 매우 많습니다 (400개 이상)! 즉시 조치 필요');
+                    recommendations.push('1. "idle in transaction" 상태의 연결 확인');
+                    recommendations.push('2. 애플리케이션 코드에서 트랜잭션 커밋/롤백 확인');
+                    recommendations.push('3. 수동으로 불필요한 연결 종료');
+                    recommendations.push('4. PostgreSQL 서버의 max_connections 확인');
+                } else if (serverTotal >= 380) {
+                    recommendations.push('연결 수가 많습니다 (380개 이상)');
+                    recommendations.push('1. 연결 풀 설정 확인 (전체 최대값)');
+                    recommendations.push('2. 사용하지 않는 연결 정리');
+                    recommendations.push('3. 여러 애플리케이션 인스턴스가 실행 중인지 확인');
+                } else {
+                    recommendations.push('연결 수가 350개를 초과했습니다');
+                    recommendations.push('1. 연결이 제대로 해제되는지 확인');
+                    recommendations.push('2. 연결 풀 모니터링 지속');
+                }
+                
+                const finalMessage = alertMessage + recommendations.join('\n') +
+                                   `\n\n⏰ <b>시간:</b> ${getArgentinaTime()} (GMT-3)`;
+                
+                // 쿨다운 체크 (5분)
+                if (now - lastAlertTime >= cooldownPeriod) {
+                    alertState.lastAlertTime[alertKey] = now;
+                    await sendTelegramMessage(finalMessage).catch(() => {
+                        // 알림 전송 실패는 무시
+                    });
+                }
+            } else if (lastIdleKillTime > 0 && serverTotal < lastConnectionCountBeforeKill * 0.95) {
+                // 상황이 개선된 경우 (5% 이상 감소)
+                console.log(`[Monitoring] ✅ 연결 수가 개선되었습니다 (${lastConnectionCountBeforeKill}개 → ${serverTotal}개)`);
+                // 상황이 개선되었으므로 상태 리셋
+                alertState.lastIdleKillTime = 0;
+                alertState.lastConnectionCountBeforeKill = 0;
+            } else if (lastIdleKillTime > 0 && !hasEnoughTimePassed) {
+                // 아직 재확인 대기 중
+                const remainingSeconds = Math.ceil((idleKillRecheckPeriod - timeSinceLastKill) / 1000);
+                console.log(`[Monitoring] ℹ️ Idle kill 후 재확인 대기 중... (${remainingSeconds}초 남음)`);
+            }
+        } else {
+            // 연결 수가 정상 범위로 돌아오면 상태 리셋
+            if (alertState.lastConnectionCountBeforeKill > 0) {
+                console.log(`[Monitoring] ✅ 연결 수가 정상 범위로 돌아왔습니다 (${serverTotal}개)`);
+                alertState.lastIdleKillTime = 0;
+                alertState.lastConnectionCountBeforeKill = 0;
             }
         }
         
