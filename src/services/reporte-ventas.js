@@ -61,69 +61,159 @@ async function getVentasReport(req) {
     // 기간 계산
     const period = calculatePeriod(fechaInicio, fechaFin);
     
-    // 어떤 함수를 호출할지 결정
-    let functionName;
-    if (period.isSameDay) {
-        // 동일한 날짜인 경우
-        functionName = 'ventas_rpt_a_day';
-    } else if (period.years >= 2) {
-        // 2년 이상인 경우
-        functionName = 'ventas_rpt_x_year';
-    } else if (period.months >= 2) {
-        // 2개월 이상인 경우
-        functionName = 'ventas_rpt_x_month';
-    } else {
-        // 그 외 (기간, 2개월 미만)
-        functionName = 'ventas_rpt_a_periodo';
-    }
-
-    // PostgreSQL 함수 호출 시도, 실패 시 직접 쿼리로 fallback
+    // unit이 'vcode'가 아닌 경우 (day, month, year) 직접 쿼리 실행
+    // unit이 'vcode'이거나 없으면 PostgreSQL 함수 호출 시도
     let query;
     let queryParams;
     let data = [];
     let functionUsed = false;
+    let functionName;
 
-    try {
-        // 함수 호출 쿼리 (PostgreSQL 함수 호출 형식)
-        // 파라미터 타입을 명시적으로 지정 (DATE 타입으로 캐스팅)
-        query = `SELECT * FROM ${functionName}($1::DATE, $2::DATE)`;
-        queryParams = [fechaInicio, fechaFin];
-
-        // SQL 쿼리 실행
-        const results = await sequelize.query(query, {
-            bind: queryParams,
-            type: Sequelize.QueryTypes.SELECT
-        });
-
-        // 결과가 배열인지 확인
-        data = Array.isArray(results) ? results : [];
-        functionUsed = true;
-    } catch (err) {
-        console.error(`\n[Ventas 보고서 오류] 함수 ${functionName} 호출 실패:`);
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        if (err.original) {
-            console.error('   Original error:', err.original.message);
-            console.error('   Original code:', err.original.code);
+    // unit이 day, month, year인 경우 직접 쿼리 실행
+    if (unit !== 'vcode') {
+        try {
+            // unit에 따라 쿼리 구성
+            let directQuery;
+            let fechaField = '';
+            
+            if (unit === 'day') {
+                // 일별 그룹화 (fecha 형식: "YYYY-MM-DD")
+                fechaField = `fecha::text as fecha`;
+                directQuery = `
+                    SELECT 
+                        fecha,
+                        COUNT(*) as eventCount,
+                        SUM(tpago) as tVents,
+                        SUM(cntropas) as tCntRopas,
+                        SUM(tefectivo) as tefectivo,
+                        SUM(tcredito) as tcredito,
+                        SUM(tbanco) as tbanco,
+                        SUM(treservado) as treservado,
+                        SUM(tfavor) as tfavor,
+                        nencargado,
+                        sucursal,
+                        d_num_caja,
+                        d_num_terminal
+                    FROM public.vcodes
+                    WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
+                        AND borrado = false
+                    GROUP BY fecha, nencargado, sucursal, d_num_caja, d_num_terminal
+                    ORDER BY fecha DESC
+                `;
+            } else if (unit === 'month') {
+                // 월별 그룹화
+                fechaField = `DATE_TRUNC('month', fecha)::date AS month`;
+                directQuery = `
+                    SELECT 
+                        DATE_TRUNC('month', fecha)::date AS month,
+                        COUNT(*) AS eventCount,
+                        SUM(tpago) AS tVents,
+                        SUM(cntropas) AS tCntRopas,
+                        SUM(tefectivo) AS tefectivo,
+                        SUM(tcredito) AS tcredito,
+                        SUM(tbanco) AS tbanco,
+                        SUM(treservado) AS treservado,
+                        SUM(tfavor) AS tfavor,
+                        sucursal
+                    FROM public.vcodes
+                    WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
+                        AND borrado IS FALSE
+                    GROUP BY DATE_TRUNC('month', fecha), sucursal
+                    ORDER BY DATE_TRUNC('month', fecha) DESC
+                `;
+            } else if (unit === 'year') {
+                // 연도별 그룹화
+                fechaField = `DATE_TRUNC('year', fecha)::date AS year`;
+                directQuery = `
+                    SELECT 
+                        DATE_TRUNC('year', fecha)::date AS year,
+                        COUNT(*) AS eventCount,
+                        SUM(tpago) AS tVents,
+                        SUM(cntropas) AS tCntRopas,
+                        SUM(tefectivo) AS tefectivo,
+                        SUM(tcredito) AS tcredito,
+                        SUM(tbanco) AS tbanco,
+                        SUM(treservado) AS treservado,
+                        SUM(tfavor) AS tfavor,
+                        sucursal
+                    FROM public.vcodes
+                    WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
+                        AND borrado IS FALSE
+                    GROUP BY DATE_TRUNC('year', fecha), sucursal
+                    ORDER BY DATE_TRUNC('year', fecha) DESC
+                `;
+            }
+            
+            const directResults = await sequelize.query(directQuery, {
+                replacements: {
+                    fechaInicio: fechaInicio,
+                    fechaFin: fechaFin
+                },
+                type: Sequelize.QueryTypes.SELECT
+            });
+            
+            data = Array.isArray(directResults) ? directResults : [];
+            functionUsed = false;
+            functionName = `direct_query_${unit}`;
+        } catch (directErr) {
+            console.error(`[Ventas 보고서] 직접 쿼리 실행 실패 (unit: ${unit}):`);
+            console.error('   Error:', directErr.message);
+            throw directErr;
         }
-        
-        // 함수가 존재하지 않는 경우 직접 쿼리로 fallback
-        const isFunctionNotFound = err.message && (
-            err.message.includes('does not exist') ||
-            err.message.includes('function') && err.message.includes('not found') ||
-            err.original && err.original.code === '42883' // PostgreSQL function does not exist
-        );
-        
-        if (isFunctionNotFound) {
-            try {
-                // unit에 따라 쿼리 구성
-                let directQuery;
-                let groupByClause = '';
-                let orderByClause = '';
-                let fechaField = '';
-                
-                if (unit === 'vcode') {
-                    // 개별 vcode 표시 (그룹화 없음)
+    } else {
+        // unit이 'vcode'이거나 없는 경우: PostgreSQL 함수 호출 시도, 실패 시 직접 쿼리로 fallback
+        // 어떤 함수를 호출할지 결정
+        if (period.isSameDay) {
+            // 동일한 날짜인 경우
+            functionName = 'ventas_rpt_a_day';
+        } else if (period.years >= 2) {
+            // 2년 이상인 경우
+            functionName = 'ventas_rpt_x_year';
+        } else if (period.months >= 2) {
+            // 2개월 이상인 경우
+            functionName = 'ventas_rpt_x_month';
+        } else {
+            // 그 외 (기간, 2개월 미만)
+            functionName = 'ventas_rpt_a_periodo';
+        }
+
+        try {
+            // 함수 호출 쿼리 (PostgreSQL 함수 호출 형식)
+            // 파라미터 타입을 명시적으로 지정 (DATE 타입으로 캐스팅)
+            query = `SELECT * FROM ${functionName}($1::DATE, $2::DATE)`;
+            queryParams = [fechaInicio, fechaFin];
+
+            // SQL 쿼리 실행
+            const results = await sequelize.query(query, {
+                bind: queryParams,
+                type: Sequelize.QueryTypes.SELECT
+            });
+
+            // 결과가 배열인지 확인
+            data = Array.isArray(results) ? results : [];
+            functionUsed = true;
+        } catch (err) {
+            console.error(`\n[Ventas 보고서 오류] 함수 ${functionName} 호출 실패:`);
+            console.error('   Error type:', err.constructor.name);
+            console.error('   Error message:', err.message);
+            if (err.original) {
+                console.error('   Original error:', err.original.message);
+                console.error('   Original code:', err.original.code);
+            }
+            
+            // 함수가 존재하지 않는 경우 직접 쿼리로 fallback
+            const isFunctionNotFound = err.message && (
+                err.message.includes('does not exist') ||
+                err.message.includes('function') && err.message.includes('not found') ||
+                err.original && err.original.code === '42883' // PostgreSQL function does not exist
+            );
+            
+            if (isFunctionNotFound) {
+                try {
+                    // unit이 'vcode'인 경우 직접 쿼리 구성
+                    let directQuery;
+                    
+                    // unit이 'vcode'인 경우 직접 쿼리 구성
                     directQuery = `
                         SELECT 
                             vcode_id as id,
@@ -156,73 +246,6 @@ async function getVentasReport(req) {
                             AND borrado = false
                         ORDER BY vcode_id ASC
                     `;
-                } else if (unit === 'day') {
-                    // 일별 그룹화 (fecha 형식: "YYYY-MM-DD")
-                    fechaField = `fecha::text as fecha`;
-                    directQuery = `
-                        SELECT 
-                            fecha,
-                            COUNT(*) as eventCount,
-                            SUM(tpago) as tVents,
-                            SUM(cntropas) as tCntRopas,
-                            SUM(tefectivo) as tefectivo,
-                            SUM(tcredito) as tcredito,
-                            SUM(tbanco) as tbanco,
-                            SUM(treservado) as treservado,
-                            SUM(tfavor) as tfavor,
-                            nencargado,
-                            sucursal,
-                            d_num_caja,
-                            d_num_terminal
-                        FROM public.vcodes
-                        WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
-                            AND borrado = false
-                        GROUP BY fecha, nencargado, sucursal, d_num_caja, d_num_terminal
-                        ORDER BY fecha DESC
-                    `;
-                } else if (unit === 'month') {
-                    // 월별 그룹화
-                    fechaField = `DATE_TRUNC('month', fecha)::date AS month`;
-                    directQuery = `
-                        SELECT 
-                            DATE_TRUNC('month', fecha)::date AS month,
-                            COUNT(*) AS eventCount,
-                            SUM(tpago) AS tVents,
-                            SUM(cntropas) AS tCntRopas,
-                            SUM(tefectivo) AS tefectivo,
-                            SUM(tcredito) AS tcredito,
-                            SUM(tbanco) AS tbanco,
-                            SUM(treservado) AS treservado,
-                            SUM(tfavor) AS tfavor,
-                            sucursal
-                        FROM public.vcodes
-                        WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
-                            AND borrado IS FALSE
-                        GROUP BY DATE_TRUNC('month', fecha), sucursal
-                        ORDER BY DATE_TRUNC('month', fecha) DESC
-                    `;
-                } else if (unit === 'year') {
-                    // 연도별 그룹화
-                    fechaField = `DATE_TRUNC('year', fecha)::date AS year`;
-                    directQuery = `
-                        SELECT 
-                            DATE_TRUNC('year', fecha)::date AS year,
-                            COUNT(*) AS eventCount,
-                            SUM(tpago) AS tVents,
-                            SUM(cntropas) AS tCntRopas,
-                            SUM(tefectivo) AS tefectivo,
-                            SUM(tcredito) AS tcredito,
-                            SUM(tbanco) AS tbanco,
-                            SUM(treservado) AS treservado,
-                            SUM(tfavor) AS tfavor,
-                            sucursal
-                        FROM public.vcodes
-                        WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
-                            AND borrado IS FALSE
-                        GROUP BY DATE_TRUNC('year', fecha), sucursal
-                        ORDER BY DATE_TRUNC('year', fecha) DESC
-                    `;
-                }
                 
                 const directResults = await sequelize.query(directQuery, {
                     replacements: {
