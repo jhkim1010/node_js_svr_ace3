@@ -76,10 +76,11 @@ async function getVentasReport(req) {
 
     try {
         // 함수 호출 쿼리 (PostgreSQL 함수 호출 형식)
-        query = `SELECT * FROM ${functionName}($1, $2)`;
+        // 파라미터 타입을 명시적으로 지정 (DATE 타입으로 캐스팅)
+        query = `SELECT * FROM ${functionName}($1::DATE, $2::DATE)`;
         queryParams = [fechaInicio, fechaFin];
 
-        console.log(`[Ventas 보고서] PostgreSQL 함수 호출 시도: ${functionName}(${fechaInicio}, ${fechaFin})`);
+        console.log(`[Ventas 보고서] PostgreSQL 함수 호출 시도: ${functionName}(${fechaInicio}::DATE, ${fechaFin}::DATE)`);
 
         // SQL 쿼리 실행
         const results = await sequelize.query(query, {
