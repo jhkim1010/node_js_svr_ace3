@@ -235,6 +235,7 @@ router.get('/ventas_x_a_day', async (req, res) => {
         const query = `
             SELECT 
                 vcode_id as id,
+                right(vcode, 5) as vcode,
                 hora,
                 tpago,
                 cntropas,
@@ -254,7 +255,6 @@ router.get('/ventas_x_a_day', async (req, res) => {
                 fecha,
                 sucursal,
                 ntiqrepetir,
-                vcode_id,
                 b_mercadopago,
                 d_num_caja,
                 d_num_terminal

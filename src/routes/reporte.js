@@ -136,9 +136,7 @@ router.get('/gastos', async (req, res) => {
 // Ventas 보고서
 router.get('/ventas', async (req, res) => {
     try {
-        logReportRequest(req, 'Ventas');
         const result = await getVentasReport(req);
-        logReportResponse('Ventas', result);
         res.json(result);
     } catch (err) {
         const errorResponse = {

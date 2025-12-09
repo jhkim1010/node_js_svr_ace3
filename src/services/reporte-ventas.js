@@ -80,8 +80,6 @@ async function getVentasReport(req) {
         query = `SELECT * FROM ${functionName}($1::DATE, $2::DATE)`;
         queryParams = [fechaInicio, fechaFin];
 
-        console.log(`[Ventas 보고서] PostgreSQL 함수 호출 시도: ${functionName}(${fechaInicio}::DATE, ${fechaFin}::DATE)`);
-
         // SQL 쿼리 실행
         const results = await sequelize.query(query, {
             bind: queryParams,
@@ -91,8 +89,6 @@ async function getVentasReport(req) {
         // 결과가 배열인지 확인
         data = Array.isArray(results) ? results : [];
         functionUsed = true;
-        
-        console.log(`[Ventas 보고서] PostgreSQL 함수 호출 성공: ${data.length}개 레코드 반환`);
     } catch (err) {
         console.error(`\n[Ventas 보고서 오류] 함수 ${functionName} 호출 실패:`);
         console.error('   Error type:', err.constructor.name);
@@ -110,8 +106,6 @@ async function getVentasReport(req) {
         );
         
         if (isFunctionNotFound) {
-            console.log(`[Ventas 보고서] PostgreSQL 함수가 없습니다. 직접 쿼리로 fallback...`);
-            
             try {
                 // 직접 쿼리로 데이터 조회
                 const directQuery = `
@@ -156,7 +150,6 @@ async function getVentasReport(req) {
                 });
                 
                 data = Array.isArray(directResults) ? directResults : [];
-                console.log(`[Ventas 보고서] 직접 쿼리 성공: ${data.length}개 레코드 반환`);
                 
                 // 하루치 보고서인 경우 함수 이름을 ventas_rpt_a_day로 설정
                 if (period.isSameDay) {
