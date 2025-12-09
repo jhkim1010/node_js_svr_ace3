@@ -161,63 +161,66 @@ async function getVentasReport(req) {
                     fechaField = `fecha::text as fecha`;
                     directQuery = `
                         SELECT 
-                            fecha::text as fecha,
-                            COUNT(*) as count,
-                            SUM(tpago) as tpago,
-                            SUM(cntropas) as cntropas,
+                            fecha,
+                            COUNT(*) as eventCount,
+                            SUM(tpago) as tVents,
+                            SUM(cntropas) as tCntRopas,
                             SUM(tefectivo) as tefectivo,
                             SUM(tcredito) as tcredito,
                             SUM(tbanco) as tbanco,
                             SUM(treservado) as treservado,
-                            SUM(tfavor) as tfavor
+                            SUM(tfavor) as tfavor,
+                            nencargado,
+                            sucursal,
+                            d_num_caja,
+                            d_num_terminal
                         FROM public.vcodes
-                        WHERE fecha >= :fechaInicio 
-                            AND fecha <= :fechaFin 
+                        WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                             AND borrado = false
-                        GROUP BY fecha
-                        ORDER BY fecha ASC
+                        GROUP BY fecha, nencargado, sucursal, d_num_caja, d_num_terminal
+                        ORDER BY fecha DESC
                     `;
                 } else if (unit === 'month') {
-                    // 월별 그룹화 (fecha 형식: "YYYY-MM")
-                    fechaField = `TO_CHAR(fecha, 'YYYY-MM') as fecha`;
+                    // 월별 그룹화
+                    fechaField = `DATE_TRUNC('month', fecha)::date AS month`;
                     directQuery = `
                         SELECT 
-                            TO_CHAR(fecha, 'YYYY-MM') as fecha,
-                            COUNT(*) as count,
-                            SUM(tpago) as tpago,
-                            SUM(cntropas) as cntropas,
-                            SUM(tefectivo) as tefectivo,
-                            SUM(tcredito) as tcredito,
-                            SUM(tbanco) as tbanco,
-                            SUM(treservado) as treservado,
-                            SUM(tfavor) as tfavor
+                            DATE_TRUNC('month', fecha)::date AS month,
+                            COUNT(*) AS eventCount,
+                            SUM(tpago) AS tVents,
+                            SUM(cntropas) AS tCntRopas,
+                            SUM(tefectivo) AS tefectivo,
+                            SUM(tcredito) AS tcredito,
+                            SUM(tbanco) AS tbanco,
+                            SUM(treservado) AS treservado,
+                            SUM(tfavor) AS tfavor,
+                            sucursal
                         FROM public.vcodes
-                        WHERE fecha >= :fechaInicio 
-                            AND fecha <= :fechaFin 
-                            AND borrado = false
-                        GROUP BY TO_CHAR(fecha, 'YYYY-MM')
-                        ORDER BY TO_CHAR(fecha, 'YYYY-MM') ASC
+                        WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
+                            AND borrado IS FALSE
+                        GROUP BY DATE_TRUNC('month', fecha), sucursal
+                        ORDER BY DATE_TRUNC('month', fecha) DESC
                     `;
                 } else if (unit === 'year') {
-                    // 연도별 그룹화 (fecha 형식: "YYYY")
-                    fechaField = `TO_CHAR(fecha, 'YYYY') as fecha`;
+                    // 연도별 그룹화
+                    fechaField = `DATE_TRUNC('year', fecha)::date AS year`;
                     directQuery = `
                         SELECT 
-                            TO_CHAR(fecha, 'YYYY') as fecha,
-                            COUNT(*) as count,
-                            SUM(tpago) as tpago,
-                            SUM(cntropas) as cntropas,
-                            SUM(tefectivo) as tefectivo,
-                            SUM(tcredito) as tcredito,
-                            SUM(tbanco) as tbanco,
-                            SUM(treservado) as treservado,
-                            SUM(tfavor) as tfavor
+                            DATE_TRUNC('year', fecha)::date AS year,
+                            COUNT(*) AS eventCount,
+                            SUM(tpago) AS tVents,
+                            SUM(cntropas) AS tCntRopas,
+                            SUM(tefectivo) AS tefectivo,
+                            SUM(tcredito) AS tcredito,
+                            SUM(tbanco) AS tbanco,
+                            SUM(treservado) AS treservado,
+                            SUM(tfavor) AS tfavor,
+                            sucursal
                         FROM public.vcodes
-                        WHERE fecha >= :fechaInicio 
-                            AND fecha <= :fechaFin 
-                            AND borrado = false
-                        GROUP BY TO_CHAR(fecha, 'YYYY')
-                        ORDER BY TO_CHAR(fecha, 'YYYY') ASC
+                        WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
+                            AND borrado IS FALSE
+                        GROUP BY DATE_TRUNC('year', fecha), sucursal
+                        ORDER BY DATE_TRUNC('year', fecha) DESC
                     `;
                 }
                 
