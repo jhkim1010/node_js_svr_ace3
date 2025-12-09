@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { Sequelize } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
 const { handleVcodesBatchSync, handleVcodesArrayData } = require('../utils/vcodes-handler');
@@ -175,6 +176,138 @@ router.delete('/:id', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to delete vcode', details: err.message });
+    }
+});
+
+// 특정 날짜의 판매 데이터 조회 (페이지네이션)
+router.get('/ventas_x_a_day', async (req, res) => {
+    try {
+        const Vcode = getModelForRequest(req, 'Vcode');
+        const sequelize = Vcode.sequelize;
+        
+        // 날짜 파라미터 확인 (query 또는 body)
+        const fecha = req.query.fecha || req.body.fecha;
+        if (!fecha) {
+            return res.status(400).json({ error: 'fecha parameter is required' });
+        }
+        
+        // 날짜 형식 검증 (YYYY-MM-DD)
+        const fechaRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!fechaRegex.test(fecha)) {
+            return res.status(400).json({ error: 'Invalid fecha format. Expected YYYY-MM-DD' });
+        }
+        
+        // 페이지네이션 파라미터 확인 (vcode_id 기준)
+        const lastVcodeId = req.query.last_vcode_id || req.body.last_vcode_id;
+        
+        // WHERE 조건 구성
+        let whereConditions = ['fecha = :fecha', 'borrado = false'];
+        const replacements = { fecha };
+        
+        // 페이지네이션: vcode_id가 제공되면 해당 ID보다 큰 것만 조회
+        if (lastVcodeId) {
+            const vcodeId = parseInt(lastVcodeId, 10);
+            if (isNaN(vcodeId)) {
+                return res.status(400).json({ error: 'Invalid last_vcode_id format' });
+            }
+            whereConditions.push('vcode_id > :lastVcodeId');
+            replacements.lastVcodeId = vcodeId;
+        }
+        
+        const whereClause = 'WHERE ' + whereConditions.join(' AND ');
+        
+        // 총 데이터 개수 조회
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM public.vcodes
+            ${whereClause}
+        `;
+        const [countResult] = await sequelize.query(countQuery, {
+            replacements: replacements,
+            type: Sequelize.QueryTypes.SELECT
+        });
+        const totalCount = parseInt(countResult.total, 10);
+        
+        // 50개 단위로 제한
+        const limit = 50;
+        
+        // 쿼리 실행 (요청한 필드들)
+        const query = `
+            SELECT 
+                vcode_id as id,
+                hora,
+                tpago,
+                cntropas,
+                clientenombre,
+                tefectivo,
+                tcredito,
+                tbanco,
+                treservado,
+                tfavor,
+                vendedor,
+                tipo,
+                dni,
+                resiva,
+                casoesp,
+                nencargado,
+                cretmp,
+                fecha,
+                sucursal,
+                ntiqrepetir,
+                vcode_id,
+                b_mercadopago,
+                d_num_caja,
+                d_num_terminal
+            FROM public.vcodes
+            ${whereClause}
+            ORDER BY vcode_id ASC
+            LIMIT :limit
+        `;
+        
+        // 다음 배치 존재 여부 확인을 위해 limit + 1개 조회
+        const records = await sequelize.query(query, {
+            replacements: {
+                ...replacements,
+                limit: limit + 1
+            },
+            type: Sequelize.QueryTypes.SELECT
+        });
+        
+        // 다음 배치가 있는지 확인
+        const hasMore = records.length > limit;
+        const data = hasMore ? records.slice(0, limit) : records;
+        
+        // 다음 요청을 위한 vcode_id 계산 (마지막 레코드의 vcode_id)
+        let nextVcodeId = null;
+        if (data.length > 0) {
+            const lastRecord = data[data.length - 1];
+            if (lastRecord.vcode_id !== null && lastRecord.vcode_id !== undefined) {
+                nextVcodeId = lastRecord.vcode_id;
+            }
+        }
+        
+        // 응답 구성
+        const response = {
+            success: true,
+            fecha: fecha,
+            total: totalCount,
+            count: data.length,
+            hasMore: hasMore,
+            data: data
+        };
+        
+        // 다음 페이지가 있으면 next_vcode_id 포함
+        if (hasMore && nextVcodeId !== null) {
+            response.next_vcode_id = nextVcodeId;
+        }
+        
+        res.json(response);
+    } catch (err) {
+        console.error('[Ventas x a Day] 오류:', err);
+        res.status(500).json({ 
+            error: 'Failed to get ventas_x_a_day', 
+            details: err.message 
+        });
     }
 });
 
