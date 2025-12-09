@@ -91,13 +91,11 @@ async function getVentasReport(req) {
                         SUM(treservado) as treservado,
                         SUM(tfavor) as tfavor,
                         nencargado,
-                        sucursal,
-                        d_num_caja,
-                        d_num_terminal
+                        sucursal
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado = false
-                    GROUP BY fecha, nencargado, sucursal, d_num_caja, d_num_terminal
+                    GROUP BY fecha, nencargado, sucursal
                     ORDER BY fecha DESC
                 `;
             } else if (unit === 'month') {
