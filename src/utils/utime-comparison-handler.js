@@ -172,6 +172,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 results.push({ index: i, action: 'updated', data: resultPk.data });
                                 updatedCount++;
                                 
+                                // 트랜잭션 커밋하여 연결 풀로 반환
+                                if (transaction && !transaction.finished) {
+                                    await transaction.commit();
+                                }
+                                
                                 // primary key 기반 처리 완료 → 다음 아이템으로
                                 continue;
                             }
@@ -187,6 +192,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     data: resultPk.data
                                 });
                                 skippedCount++;
+                                
+                                // 트랜잭션 커밋하여 연결 풀로 반환
+                                if (transaction && !transaction.finished) {
+                                    await transaction.commit();
+                                }
                                 
                                 // primary key 기반 처리 완료 → 다음 아이템으로
                                 continue;
@@ -228,6 +238,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     error: pkErrorMsg
                                 });
                                 skippedCount++;
+                                
+                                // 트랜잭션 커밋하여 연결 풀로 반환
+                                if (transaction && !transaction.finished) {
+                                    await transaction.commit();
+                                }
+                                
                                 continue;
                                 } else {
                                     // skip하지 않는 경우 에러로 처리
@@ -310,6 +326,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         results.push({ index: i, action: 'updated', data: resultRetry.data });
                                         updatedCount++;
                                         retrySuccess = true;
+                                        
+                                        // 트랜잭션 커밋하여 연결 풀로 반환
+                                        if (transaction && !transaction.finished) {
+                                            await transaction.commit();
+                                        }
+                                        
                                         continue;
                                     }
 
@@ -325,6 +347,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         });
                                         skippedCount++;
                                         retrySuccess = true;
+                                        
+                                        // 트랜잭션 커밋하여 연결 풀로 반환
+                                        if (transaction && !transaction.finished) {
+                                            await transaction.commit();
+                                        }
+                                        
                                         continue;
                                     }
                                 } catch (retryErr) {
@@ -375,6 +403,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 results.push({ index: i, action: 'updated', data: resultRetry.data });
                                                 updatedCount++;
                                                 retrySuccess = true;
+                                                
+                                                // 트랜잭션 커밋하여 연결 풀로 반환
+                                                if (transaction && !transaction.finished) {
+                                                    await transaction.commit();
+                                                }
+                                                
                                                 break; // 성공했으면 루프 종료
                                             }
 
@@ -389,6 +423,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 });
                                                 skippedCount++;
                                                 retrySuccess = true;
+                                                
+                                                // 트랜잭션 커밋하여 연결 풀로 반환
+                                                if (transaction && !transaction.finished) {
+                                                    await transaction.commit();
+                                                }
+                                                
                                                 break; // 성공했으면 루프 종료
                                             }
                                         } catch (retryErr) {
@@ -401,6 +441,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             
                             // 3. 모든 unique key로 시도했지만 실패한 경우에만 skip 처리
                             if (retrySuccess) {
+                                // 트랜잭션 커밋하여 연결 풀로 반환
+                                if (transaction && !transaction.finished) {
+                                    await transaction.commit();
+                                }
+                                
                                 continue;
                             }
 
@@ -478,6 +523,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             } catch (releaseErr) {
                                 // 무시
                             }
+                            
+                            // 트랜잭션 커밋하여 연결 풀로 반환
+                            if (transaction && !transaction.finished) {
+                                await transaction.commit();
+                            }
                     } else {
                             // 그 외 에러는 SAVEPOINT 롤백 후 그대로 throw (실패로 처리)
                             try {
@@ -490,6 +540,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
 
                     // Codigos, Todocodigos 에 대해서는 여기까지 처리했으므로 다음 아이템으로
+                    // 트랜잭션 커밋하여 연결 풀로 반환
+                    if (transaction && !transaction.finished) {
+                        await transaction.commit();
+                    }
+                    
                     continue;
                 }
                 
