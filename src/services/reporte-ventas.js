@@ -68,14 +68,18 @@ async function getVentasReport(req) {
         functionName = 'ventas_rpt_a_periodo';
     }
 
-    // PostgreSQL 함수 호출
+    // PostgreSQL 함수 호출 시도, 실패 시 직접 쿼리로 fallback
     let query;
     let queryParams;
+    let data = [];
+    let functionUsed = false;
 
     try {
         // 함수 호출 쿼리 (PostgreSQL 함수 호출 형식)
         query = `SELECT * FROM ${functionName}($1, $2)`;
         queryParams = [fechaInicio, fechaFin];
+
+        console.log(`[Ventas 보고서] PostgreSQL 함수 호출 시도: ${functionName}(${fechaInicio}, ${fechaFin})`);
 
         // SQL 쿼리 실행
         const results = await sequelize.query(query, {
@@ -84,35 +88,107 @@ async function getVentasReport(req) {
         });
 
         // 결과가 배열인지 확인
-        const data = Array.isArray(results) ? results : [];
-
-        return {
-            filters: {
-                fecha_inicio: fechaInicio,
-                fecha_fin: fechaFin,
-                start_date: fechaInicio,
-                end_date: fechaFin,
-                period_days: period.days,
-                period_months: period.months,
-                period_years: period.years,
-                is_same_day: period.isSameDay
-            },
-            summary: {
-                function_used: functionName,
-                total_items: data.length
-            },
-            data: data
-        };
+        data = Array.isArray(results) ? results : [];
+        functionUsed = true;
+        
+        console.log(`[Ventas 보고서] PostgreSQL 함수 호출 성공: ${data.length}개 레코드 반환`);
     } catch (err) {
         console.error(`\n[Ventas 보고서 오류] 함수 ${functionName} 호출 실패:`);
         console.error('   Error type:', err.constructor.name);
         console.error('   Error message:', err.message);
-        console.error('   Full error:', err);
         if (err.original) {
-            console.error('   Original error:', err.original);
+            console.error('   Original error:', err.original.message);
+            console.error('   Original code:', err.original.code);
         }
-        throw err;
+        
+        // 함수가 존재하지 않는 경우 직접 쿼리로 fallback
+        const isFunctionNotFound = err.message && (
+            err.message.includes('does not exist') ||
+            err.message.includes('function') && err.message.includes('not found') ||
+            err.original && err.original.code === '42883' // PostgreSQL function does not exist
+        );
+        
+        if (isFunctionNotFound) {
+            console.log(`[Ventas 보고서] PostgreSQL 함수가 없습니다. 직접 쿼리로 fallback...`);
+            
+            try {
+                // 직접 쿼리로 데이터 조회
+                const directQuery = `
+                    SELECT 
+                        vcode_id as id,
+                        hora,
+                        tpago,
+                        cntropas,
+                        clientenombre,
+                        tefectivo,
+                        tcredito,
+                        tbanco,
+                        treservado,
+                        tfavor,
+                        vendedor,
+                        tipo,
+                        dni,
+                        resiva,
+                        casoesp,
+                        nencargado,
+                        cretmp,
+                        fecha,
+                        sucursal,
+                        ntiqrepetir,
+                        vcode_id,
+                        b_mercadopago,
+                        d_num_caja,
+                        d_num_terminal
+                    FROM public.vcodes
+                    WHERE fecha >= :fechaInicio 
+                        AND fecha <= :fechaFin 
+                        AND borrado = false
+                    ORDER BY vcode_id ASC
+                `;
+                
+                const directResults = await sequelize.query(directQuery, {
+                    replacements: {
+                        fechaInicio: fechaInicio,
+                        fechaFin: fechaFin
+                    },
+                    type: Sequelize.QueryTypes.SELECT
+                });
+                
+                data = Array.isArray(directResults) ? directResults : [];
+                console.log(`[Ventas 보고서] 직접 쿼리 성공: ${data.length}개 레코드 반환`);
+                
+                // 하루치 보고서인 경우 함수 이름을 ventas_rpt_a_day로 설정
+                if (period.isSameDay) {
+                    functionName = 'ventas_rpt_a_day';
+                }
+            } catch (fallbackErr) {
+                console.error(`[Ventas 보고서] 직접 쿼리도 실패:`);
+                console.error('   Error:', fallbackErr.message);
+                throw fallbackErr;
+            }
+        } else {
+            // 다른 종류의 에러는 그대로 throw
+            throw err;
+        }
     }
+
+    return {
+        filters: {
+            fecha_inicio: fechaInicio,
+            fecha_fin: fechaFin,
+            start_date: fechaInicio,
+            end_date: fechaFin,
+            period_days: period.days,
+            period_months: period.months,
+            period_years: period.years,
+            is_same_day: period.isSameDay
+        },
+        summary: {
+            function_used: functionUsed ? functionName : (period.isSameDay ? 'ventas_rpt_a_day' : functionName),
+            total_items: data.length
+        },
+        data: data
+    };
 }
 
 // 기존 함수는 유지 (하위 호환성을 위해)

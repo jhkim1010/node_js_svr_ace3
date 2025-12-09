@@ -136,7 +136,9 @@ router.get('/gastos', async (req, res) => {
 // Ventas 보고서
 router.get('/ventas', async (req, res) => {
     try {
+        logReportRequest(req, 'Ventas');
         const result = await getVentasReport(req);
+        logReportResponse('Ventas', result);
         res.json(result);
     } catch (err) {
         const errorResponse = {
@@ -144,8 +146,20 @@ router.get('/ventas', async (req, res) => {
             details: err.message,
             errorType: err.constructor.name
         };
+        
+        // 원본 에러 정보 추가
+        if (err.original) {
+            errorResponse.originalError = {
+                message: err.original.message,
+                code: err.original.code,
+                detail: err.original.detail
+            };
+        }
+        
         console.error(`\n[Ventas 보고서 오류]`);
         console.error(JSON.stringify(errorResponse, null, 2));
+        console.error(`\n[스택 트레이스]`);
+        console.error(err.stack);
         console.error(`\n`);
         res.status(500).json(errorResponse);
     }
