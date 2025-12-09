@@ -43,10 +43,19 @@ async function getVentasReport(req) {
     // 쿼리 파라미터 파싱 (날짜 범위)
     const fechaInicio = req.query.fecha_inicio || req.query.start_date || req.query.fecha_desde;
     const fechaFin = req.query.fecha_fin || req.query.end_date || req.query.fecha_hasta;
+    
+    // unit 파라미터 파싱 (기본값: 'vcode')
+    const unit = req.query.unit || 'vcode';
 
     // 날짜가 없으면 에러 반환
     if (!fechaInicio || !fechaFin) {
         throw new Error('fecha_inicio and fecha_fin are required');
+    }
+    
+    // unit 값 검증
+    const validUnits = ['vcode', 'day', 'month', 'year'];
+    if (!validUnits.includes(unit)) {
+        throw new Error(`Invalid unit parameter. Valid values: ${validUnits.join(', ')}`);
     }
 
     // 기간 계산
@@ -107,39 +116,110 @@ async function getVentasReport(req) {
         
         if (isFunctionNotFound) {
             try {
-                // 직접 쿼리로 데이터 조회
-                const directQuery = `
-                    SELECT 
-                        vcode_id as id,
-                        hora,
-                        tpago,
-                        cntropas,
-                        clientenombre,
-                        tefectivo,
-                        tcredito,
-                        tbanco,
-                        treservado,
-                        tfavor,
-                        vendedor,
-                        tipo,
-                        dni,
-                        resiva,
-                        casoesp,
-                        nencargado,
-                        cretmp,
-                        fecha,
-                        sucursal,
-                        ntiqrepetir,
-                        vcode_id,
-                        b_mercadopago,
-                        d_num_caja,
-                        d_num_terminal
-                    FROM public.vcodes
-                    WHERE fecha >= :fechaInicio 
-                        AND fecha <= :fechaFin 
-                        AND borrado = false
-                    ORDER BY vcode_id ASC
-                `;
+                // unit에 따라 쿼리 구성
+                let directQuery;
+                let groupByClause = '';
+                let orderByClause = '';
+                let fechaField = '';
+                
+                if (unit === 'vcode') {
+                    // 개별 vcode 표시 (그룹화 없음)
+                    directQuery = `
+                        SELECT 
+                            vcode_id as id,
+                            hora,
+                            tpago,
+                            cntropas,
+                            clientenombre,
+                            tefectivo,
+                            tcredito,
+                            tbanco,
+                            treservado,
+                            tfavor,
+                            vendedor,
+                            tipo,
+                            dni,
+                            resiva,
+                            casoesp,
+                            nencargado,
+                            cretmp,
+                            fecha,
+                            sucursal,
+                            ntiqrepetir,
+                            vcode_id,
+                            b_mercadopago,
+                            d_num_caja,
+                            d_num_terminal
+                        FROM public.vcodes
+                        WHERE fecha >= :fechaInicio 
+                            AND fecha <= :fechaFin 
+                            AND borrado = false
+                        ORDER BY vcode_id ASC
+                    `;
+                } else if (unit === 'day') {
+                    // 일별 그룹화 (fecha 형식: "YYYY-MM-DD")
+                    fechaField = `fecha::text as fecha`;
+                    directQuery = `
+                        SELECT 
+                            fecha::text as fecha,
+                            COUNT(*) as count,
+                            SUM(tpago) as tpago,
+                            SUM(cntropas) as cntropas,
+                            SUM(tefectivo) as tefectivo,
+                            SUM(tcredito) as tcredito,
+                            SUM(tbanco) as tbanco,
+                            SUM(treservado) as treservado,
+                            SUM(tfavor) as tfavor
+                        FROM public.vcodes
+                        WHERE fecha >= :fechaInicio 
+                            AND fecha <= :fechaFin 
+                            AND borrado = false
+                        GROUP BY fecha
+                        ORDER BY fecha ASC
+                    `;
+                } else if (unit === 'month') {
+                    // 월별 그룹화 (fecha 형식: "YYYY-MM")
+                    fechaField = `TO_CHAR(fecha, 'YYYY-MM') as fecha`;
+                    directQuery = `
+                        SELECT 
+                            TO_CHAR(fecha, 'YYYY-MM') as fecha,
+                            COUNT(*) as count,
+                            SUM(tpago) as tpago,
+                            SUM(cntropas) as cntropas,
+                            SUM(tefectivo) as tefectivo,
+                            SUM(tcredito) as tcredito,
+                            SUM(tbanco) as tbanco,
+                            SUM(treservado) as treservado,
+                            SUM(tfavor) as tfavor
+                        FROM public.vcodes
+                        WHERE fecha >= :fechaInicio 
+                            AND fecha <= :fechaFin 
+                            AND borrado = false
+                        GROUP BY TO_CHAR(fecha, 'YYYY-MM')
+                        ORDER BY TO_CHAR(fecha, 'YYYY-MM') ASC
+                    `;
+                } else if (unit === 'year') {
+                    // 연도별 그룹화 (fecha 형식: "YYYY")
+                    fechaField = `TO_CHAR(fecha, 'YYYY') as fecha`;
+                    directQuery = `
+                        SELECT 
+                            TO_CHAR(fecha, 'YYYY') as fecha,
+                            COUNT(*) as count,
+                            SUM(tpago) as tpago,
+                            SUM(cntropas) as cntropas,
+                            SUM(tefectivo) as tefectivo,
+                            SUM(tcredito) as tcredito,
+                            SUM(tbanco) as tbanco,
+                            SUM(treservado) as treservado,
+                            SUM(tfavor) as tfavor
+                        FROM public.vcodes
+                        WHERE fecha >= :fechaInicio 
+                            AND fecha <= :fechaFin 
+                            AND borrado = false
+                        GROUP BY TO_CHAR(fecha, 'YYYY')
+                        ORDER BY TO_CHAR(fecha, 'YYYY') ASC
+                    `;
+                }
                 
                 const directResults = await sequelize.query(directQuery, {
                     replacements: {
@@ -172,6 +252,7 @@ async function getVentasReport(req) {
             fecha_fin: fechaFin,
             start_date: fechaInicio,
             end_date: fechaFin,
+            unit: unit,
             period_days: period.days,
             period_months: period.months,
             period_years: period.years,
@@ -179,7 +260,8 @@ async function getVentasReport(req) {
         },
         summary: {
             function_used: functionUsed ? functionName : (period.isSameDay ? 'ventas_rpt_a_day' : functionName),
-            total_items: data.length
+            total_items: data.length,
+            unit: unit
         },
         data: data
     };
