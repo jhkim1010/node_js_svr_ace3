@@ -270,6 +270,7 @@ async function getVentasReport(req) {
             // 다른 종류의 에러는 그대로 throw
             throw err;
         }
+        }
     }
 
     return {
