@@ -140,10 +140,20 @@ router.get('/ventas', async (req, res) => {
         const result = await getVentasReport(req);
         res.json(result);
     } catch (err) {
+        // 데이터베이스 정보 추출 (에러 로깅용)
+        const dbInfo = req.dbConfig ? {
+            database: req.dbConfig.database || 'unknown',
+            host: req.dbConfig.host || 'unknown',
+            port: req.dbConfig.port || 'unknown'
+        } : { database: 'unknown', host: 'unknown', port: 'unknown' };
+        
         const errorResponse = {
             error: 'Failed to get ventas report',
             details: err.message,
-            errorType: err.constructor.name
+            errorType: err.constructor.name,
+            database: dbInfo.database,
+            host: dbInfo.host,
+            port: dbInfo.port
         };
         
         // 원본 에러 정보 추가
@@ -156,6 +166,7 @@ router.get('/ventas', async (req, res) => {
         }
         
         console.error(`\n[Ventas 보고서 오류]`);
+        console.error(`   Database: ${dbInfo.database} (${dbInfo.host}:${dbInfo.port})`);
         console.error(JSON.stringify(errorResponse, null, 2));
         console.error(`\n[스택 트레이스]`);
         console.error(err.stack);

@@ -194,6 +194,7 @@ async function getVentasReport(req) {
             functionUsed = true;
         } catch (err) {
             console.error(`\n[Ventas 보고서 오류] 함수 ${functionName} 호출 실패:`);
+            console.error(`   Database: ${dbInfo.database} (${dbInfo.host}:${dbInfo.port})`);
             console.error('   Error type:', err.constructor.name);
             console.error('   Error message:', err.message);
             if (err.original) {
@@ -263,6 +264,7 @@ async function getVentasReport(req) {
                 }
             } catch (fallbackErr) {
                 console.error(`[Ventas 보고서] 직접 쿼리도 실패:`);
+                console.error(`   Database: ${dbInfo.database} (${dbInfo.host}:${dbInfo.port})`);
                 console.error('   Error:', fallbackErr.message);
                 throw fallbackErr;
             }
