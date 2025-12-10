@@ -147,6 +147,46 @@ router.get('/ventas', async (req, res) => {
             port: req.dbConfig.port || 'unknown'
         } : { database: 'unknown', host: 'unknown', port: 'unknown' };
         
+        // 요청 헤더 복사 (비밀번호 마스킹)
+        const safeHeaders = { ...req.headers };
+        if (safeHeaders['x-db-password']) {
+            safeHeaders['x-db-password'] = '***';
+        }
+        if (safeHeaders['db-password']) {
+            safeHeaders['db-password'] = '***';
+        }
+        
+        // 요청 정보 상세 로깅
+        console.error(`\n========== [Ventas 보고서 오류] ==========`);
+        console.error(`[요청 정보]`);
+        console.error(`   Method: ${req.method}`);
+        console.error(`   URL: ${req.originalUrl || req.url || req.path}`);
+        console.error(`   Path: ${req.path}`);
+        console.error(`   Query String: ${req.url.split('?')[1] || '(없음)'}`);
+        console.error(`\n[요청 쿼리 파라미터]`);
+        console.error(JSON.stringify(req.query, null, 2));
+        console.error(`\n[요청 헤더]`);
+        console.error(JSON.stringify(safeHeaders, null, 2));
+        console.error(`\n[요청 바디]`);
+        console.error(JSON.stringify(req.body || {}, null, 2));
+        console.error(`\n[데이터베이스 정보]`);
+        console.error(`   Database: ${dbInfo.database}`);
+        console.error(`   Host: ${dbInfo.host}`);
+        console.error(`   Port: ${dbInfo.port}`);
+        console.error(`\n[에러 정보]`);
+        console.error(`   Error Type: ${err.constructor.name}`);
+        console.error(`   Error Message: ${err.message}`);
+        if (err.original) {
+            console.error(`   Original Error: ${err.original.message}`);
+            console.error(`   Original Code: ${err.original.code}`);
+            if (err.original.detail) {
+                console.error(`   Original Detail: ${err.original.detail}`);
+            }
+        }
+        console.error(`\n[스택 트레이스]`);
+        console.error(err.stack);
+        console.error(`==========================================\n`);
+        
         const errorResponse = {
             error: 'Failed to get ventas report',
             details: err.message,
@@ -165,12 +205,6 @@ router.get('/ventas', async (req, res) => {
             };
         }
         
-        console.error(`\n[Ventas 보고서 오류]`);
-        console.error(`   Database: ${dbInfo.database} (${dbInfo.host}:${dbInfo.port})`);
-        console.error(JSON.stringify(errorResponse, null, 2));
-        console.error(`\n[스택 트레이스]`);
-        console.error(err.stack);
-        console.error(`\n`);
         res.status(500).json(errorResponse);
     }
 });
