@@ -94,6 +94,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado = false
+                        AND b_cancelado IS FALSE
                     GROUP BY fecha, sucursal
                     ORDER BY fecha DESC
                 `;
@@ -115,6 +116,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
+                        AND b_cancelado IS FALSE
                     GROUP BY DATE_TRUNC('month', fecha), sucursal
                     ORDER BY DATE_TRUNC('month', fecha) DESC
                 `;
@@ -136,6 +138,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
+                        AND b_cancelado IS FALSE
                     GROUP BY DATE_TRUNC('year', fecha), sucursal
                     ORDER BY DATE_TRUNC('year', fecha) DESC
                 `;
