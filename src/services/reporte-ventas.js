@@ -39,6 +39,17 @@ function calculatePeriod(startDate, endDate) {
 async function getVentasReport(req) {
     const Vcode = getModelForRequest(req, 'Vcode');
     const sequelize = Vcode.sequelize;
+    
+    // 데이터베이스 정보 추출 (헤더에서 파싱된 정보 사용)
+    const dbInfo = req.dbConfig ? {
+        database: req.dbConfig.database || 'unknown',
+        host: req.dbConfig.host || 'unknown',
+        port: req.dbConfig.port || 'unknown'
+    } : {
+        database: 'unknown',
+        host: 'unknown',
+        port: 'unknown'
+    };
 
     // 쿼리 파라미터 파싱 (날짜 범위)
     const fechaInicio = req.query.fecha_inicio || req.query.start_date || req.query.fecha_desde;
