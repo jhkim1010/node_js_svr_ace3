@@ -6,6 +6,7 @@ const { getClientesReport } = require('../services/reporte-clientes');
 const { getGastosReport } = require('../services/reporte-gastos');
 const { getVentasReport } = require('../services/reporte-ventas');
 const { getAlertasReport } = require('../services/reporte-alertas');
+const { getVdetalleReport } = require('../services/reporte-vdetalle');
 
 const router = Router();
 
@@ -175,6 +176,24 @@ router.get('/alertas', async (req, res) => {
             errorType: err.constructor.name
         };
         console.error(`\n[Alertas 보고서 오류]`);
+        console.error(JSON.stringify(errorResponse, null, 2));
+        console.error(`\n`);
+        res.status(500).json(errorResponse);
+    }
+});
+
+// Vdetalle 보고서
+router.get('/vdetalle', async (req, res) => {
+    try {
+        const result = await getVdetalleReport(req);
+        res.json(result);
+    } catch (err) {
+        const errorResponse = {
+            error: 'Failed to get vdetalle report',
+            details: err.message,
+            errorType: err.constructor.name
+        };
+        console.error(`\n[Vdetalle 보고서 오류]`);
         console.error(JSON.stringify(errorResponse, null, 2));
         console.error(`\n`);
         res.status(500).json(errorResponse);

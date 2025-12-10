@@ -24,16 +24,18 @@ async function killIdleProcesses(idleMinutes = 10) {
         const firstSequelize = Array.from(connectionPool.values())[0];
         
         // Step 1: 10분 이상 idle 상태인 연결 찾기
+        // 'idle', 'idle in transaction', 'idle in transaction (aborted)', 'disabled' 상태 모두 조회
         const [idleConnections] = await firstSequelize.query(`
             SELECT 
                 pid, 
                 state, 
-                now() - state_change AS idle_time,
+                state_change,
+                now() - state_change AS idle_duration,
                 datname as database,
                 usename as username
             FROM pg_stat_activity
-            WHERE state = 'idle' 
-                AND now() - state_change > interval '${idleMinutes} minutes'
+            WHERE state IN ('idle', 'idle in transaction', 'idle in transaction (aborted)', 'disabled')
+                AND state_change < current_timestamp - INTERVAL '${idleMinutes} minutes'
                 AND pid <> pg_backend_pid()
             ORDER BY state_change ASC
         `);
@@ -56,7 +58,17 @@ async function killIdleProcesses(idleMinutes = 10) {
         const killedPids = [];
         const failedPids = [];
         
+        // Step 2: 'idle'과 'idle in transaction' 상태만 종료
+        // 'idle in transaction (aborted)'와 'disabled'는 종료하지 않음
+        const killableStates = ['idle', 'idle in transaction'];
+        
         for (const conn of idleConnections) {
+            // 종료 가능한 상태인지 확인
+            if (!killableStates.includes(conn.state)) {
+                console.log(`[DB Idle Killer] ⏭️ PID ${conn.pid} 건너뜀 (상태: ${conn.state}, 종료 대상 아님)`);
+                continue;
+            }
+            
             try {
                 const pid = conn.pid;
                 
@@ -69,7 +81,7 @@ async function killIdleProcesses(idleMinutes = 10) {
                 if (terminateResult && terminateResult[0] && terminateResult[0].terminated) {
                     killedCount++;
                     killedPids.push(pid);
-                    console.log(`[DB Idle Killer] ✅ PID ${pid} 종료 (${conn.database || 'unknown'}, ${conn.username || 'unknown'})`);
+                    console.log(`[DB Idle Killer] ✅ PID ${pid} 종료 (상태: ${conn.state}, DB: ${conn.database || 'unknown'}, 사용자: ${conn.username || 'unknown'})`);
                 } else {
                     failedCount++;
                     failedPids.push(pid);
