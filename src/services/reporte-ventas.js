@@ -204,6 +204,14 @@ async function getVentasReport(req) {
             data = Array.isArray(results) ? results : [];
             functionUsed = true;
         } catch (err) {
+            // 함수가 존재하지 않는 경우 직접 쿼리로 fallback
+            const isFunctionNotFound = err.message && (
+                err.message.includes('does not exist') ||
+                err.message.includes('function') && err.message.includes('not found') ||
+                err.original && err.original.code === '42883' // PostgreSQL function does not exist
+            );
+            
+            // 함수가 없어도 오류로 기록 (fallback은 하지만 문제임을 알림)
             console.error(`\n[Ventas 보고서 오류] 함수 ${functionName} 호출 실패:`);
             console.error(`   Database: ${dbInfo.database} (${dbInfo.host}:${dbInfo.port})`);
             console.error('   Error type:', err.constructor.name);
@@ -212,13 +220,9 @@ async function getVentasReport(req) {
                 console.error('   Original error:', err.original.message);
                 console.error('   Original code:', err.original.code);
             }
-            
-            // 함수가 존재하지 않는 경우 직접 쿼리로 fallback
-            const isFunctionNotFound = err.message && (
-                err.message.includes('does not exist') ||
-                err.message.includes('function') && err.message.includes('not found') ||
-                err.original && err.original.code === '42883' // PostgreSQL function does not exist
-            );
+            if (isFunctionNotFound) {
+                console.error(`   ⚠️ 함수가 존재하지 않아 직접 쿼리로 fallback합니다.`);
+            }
             
             if (isFunctionNotFound) {
                 try {
