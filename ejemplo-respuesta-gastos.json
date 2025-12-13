@@ -1,0 +1,94 @@
+{
+  "filters": {
+    "fecha_inicio": "2025-12-01",
+    "fecha_fin": "2025-12-31",
+    "start_date": "2025-12-01",
+    "end_date": "2025-12-31"
+  },
+  "summary": {
+    "total_rubros": 5,
+    "total_items": 150,
+    "total_costo": 1250000.50
+  },
+  "data": {
+    "summary": [
+      {
+        "count": "45",
+        "desc_gasto": "Alquiler",
+        "sum_costo": "500000.00",
+        "codigo_rubro": "1"
+      },
+      {
+        "count": "30",
+        "desc_gasto": "Servicios",
+        "sum_costo": "350000.50",
+        "codigo_rubro": "2"
+      },
+      {
+        "count": "25",
+        "desc_gasto": "Personal",
+        "sum_costo": "250000.00",
+        "codigo_rubro": "3"
+      },
+      {
+        "count": "30",
+        "desc_gasto": "Mantenimiento",
+        "sum_costo": "100000.00",
+        "codigo_rubro": "4"
+      },
+      {
+        "count": "20",
+        "desc_gasto": "Otros",
+        "sum_costo": "50000.00",
+        "codigo_rubro": "5"
+      }
+    ],
+    "detail": [
+      {
+        "fecha": "2025-12-31",
+        "hora": "18:30:00",
+        "tema": "Pago de alquiler diciembre",
+        "costo": "50000.00",
+        "sucursal": 1,
+        "codigo": "1",
+        "rubro": "Alquiler"
+      },
+      {
+        "fecha": "2025-12-31",
+        "hora": "15:20:00",
+        "tema": "Luz y agua",
+        "costo": "25000.50",
+        "sucursal": 1,
+        "codigo": "2",
+        "rubro": "Servicios"
+      },
+      {
+        "fecha": "2025-12-30",
+        "hora": "12:00:00",
+        "tema": "Sueldo empleados",
+        "costo": "100000.00",
+        "sucursal": 2,
+        "codigo": "3",
+        "rubro": "Personal"
+      },
+      {
+        "fecha": "2025-12-30",
+        "hora": "10:15:00",
+        "tema": "Reparación aire acondicionado",
+        "costo": "15000.00",
+        "sucursal": 1,
+        "codigo": "4",
+        "rubro": "Mantenimiento"
+      },
+      {
+        "fecha": "2025-12-29",
+        "hora": "14:45:00",
+        "tema": "Gastos varios",
+        "costo": "5000.00",
+        "sucursal": 1,
+        "codigo": "5",
+        "rubro": "Otros"
+      }
+    ]
+  }
+}
