@@ -1,0 +1,46 @@
+{
+  "filters": {
+    "fecha_inicio": "2025-12-01",
+    "fecha_fin": "2025-12-31",
+    "start_date": "2025-12-01",
+    "end_date": "2025-12-31",
+    "unit": "vcode",
+    "period_days": 30,
+    "period_months": 1,
+    "period_years": 0,
+    "is_same_day": false
+  },
+  "summary": {
+    "function_used": "ventas_rpt_a_periodo",
+    "total_items": 150,
+    "unit": "vcode"
+  },
+  "data": [
+    {
+      "id": 12345,
+      "hora": "14:30:00",
+      "tpago": 50000.00,
+      "cntropas": 3,
+      "clientenombre": "Juan Pérez",
+      "tefectivo": 30000.00,
+      "tcredito": 20000.00,
+      "tbanco": 0.00,
+      "treservado": 0.00,
+      "tfavor": 0.00,
+      "vendedor": "María",
+      "tipo": "Venta",
+      "dni": "12345678",
+      "resiva": true,
+      "casoesp": null,
+      "nencargado": "001",
+      "cretmp": null,
+      "fecha": "2025-12-15",
+      "sucursal": 1,
+      "ntiqrepetir": 0,
+      "vcode_id": 12345,
+      "b_mercadopago": false,
+      "d_num_caja": 1,
+      "d_num_terminal": 1
+    }
+  ]
+}

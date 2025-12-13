@@ -229,39 +229,74 @@ async function getVentasReport(req) {
                     // unit이 'vcode'인 경우 직접 쿼리 구성
                     let directQuery;
                     
-                    // unit이 'vcode'인 경우 직접 쿼리 구성
-                    directQuery = `
-                        SELECT 
-                            vcode_id as id,
-                            hora,
-                            tpago,
-                            cntropas,
-                            clientenombre,
-                            tefectivo,
-                            tcredito,
-                            tbanco,
-                            treservado,
-                            tfavor,
-                            vendedor,
-                            tipo,
-                            dni,
-                            resiva,
-                            casoesp,
-                            nencargado,
-                            cretmp,
-                            fecha,
-                            sucursal,
-                            ntiqrepetir,
-                            vcode_id,
-                            b_mercadopago,
-                            d_num_caja,
-                            d_num_terminal
-                        FROM public.vcodes
-                        WHERE fecha >= :fechaInicio 
-                            AND fecha <= :fechaFin 
-                            AND borrado = false
-                        ORDER BY vcode_id ASC
-                    `;
+                    // 하루치 보고서인 경우 (ventas_rpt_a_day)
+                    if (period.isSameDay) {
+                        directQuery = `
+                            SELECT 
+                                RIGHT(vcode, 5) as vcode,
+                                tpago,
+                                cntropas,
+                                clientenombre,
+                                tefectivo,
+                                tcredito,
+                                tbanco,
+                                treservado,
+                                tfavor,
+                                vendedor,
+                                tipo,
+                                dni,
+                                hora,
+                                fecha,
+                                resiva,
+                                casoesp,
+                                nencargado,
+                                cretmp,
+                                sucursal,
+                                ntiqrepetir,
+                                b_mercadopago,
+                                d_num_caja,
+                                d_num_terminal,
+                                vcode_id as id
+                            FROM public.vcodes
+                            WHERE fecha = :fechaInicio 
+                                AND borrado IS FALSE
+                            ORDER BY vcode_id ASC
+                        `;
+                    } else {
+                        // 기간 보고서인 경우
+                        directQuery = `
+                            SELECT 
+                                RIGHT(vcode, 5) as vcode,
+                                tpago,
+                                cntropas,
+                                clientenombre,
+                                tefectivo,
+                                tcredito,
+                                tbanco,
+                                treservado,
+                                tfavor,
+                                vendedor,
+                                tipo,
+                                dni,
+                                hora,
+                                fecha,
+                                resiva,
+                                casoesp,
+                                nencargado,
+                                cretmp,
+                                sucursal,
+                                ntiqrepetir,
+                                b_mercadopago,
+                                d_num_caja,
+                                d_num_terminal,
+                                vcode_id as id
+                            FROM public.vcodes
+                            WHERE fecha >= :fechaInicio 
+                                AND fecha <= :fechaFin 
+                                AND borrado IS FALSE
+                            ORDER BY vcode_id ASC
+                        `;
+                    }
                 
                 const directResults = await sequelize.query(directQuery, {
                     replacements: {

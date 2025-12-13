@@ -1,0 +1,44 @@
+{
+  "filters": {
+    "fecha_inicio": "2025-12-01",
+    "fecha_fin": "2025-12-31",
+    "start_date": "2025-12-01",
+    "end_date": "2025-12-31",
+    "unit": "day",
+    "period_days": 30,
+    "period_months": 1,
+    "period_years": 0,
+    "is_same_day": false
+  },
+  "summary": {
+    "function_used": "direct_query_day",
+    "total_items": 30,
+    "unit": "day"
+  },
+  "data": [
+    {
+      "fecha": "2025-12-31",
+      "eventcount": "25",
+      "tvents": 1250000.00,
+      "tcntropas": 75,
+      "tefectivo": 750000.00,
+      "tcredito": 400000.00,
+      "tbanco": 100000.00,
+      "treservado": 0.00,
+      "tfavor": 0.00,
+      "sucursal": 1
+    },
+    {
+      "fecha": "2025-12-30",
+      "eventcount": "20",
+      "tvents": 1000000.00,
+      "tcntropas": 60,
+      "tefectivo": 600000.00,
+      "tcredito": 300000.00,
+      "tbanco": 100000.00,
+      "treservado": 0.00,
+      "tfavor": 0.00,
+      "sucursal": 1
+    }
+  ]
+}
