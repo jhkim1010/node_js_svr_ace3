@@ -53,20 +53,43 @@ async function getGastosReport(req) {
     `;
 
     // 두 번째 쿼리: 상세 데이터
+    // WHERE 조건 재구성 (g1 별칭 사용)
+    let detailWhereConditions = [];
+    const detailQueryParams = [];
+    let detailParamIndex = 1;
+
+    // 날짜 필터 (fecha > fechaInicio)
+    detailWhereConditions.push(`g1.fecha > $${detailParamIndex}`);
+    detailQueryParams.push(fechaInicio);
+    detailParamIndex++;
+
+    // 종료일이 있으면 추가 필터
+    if (fechaFin) {
+        detailWhereConditions.push(`g1.fecha <= $${detailParamIndex}`);
+        detailQueryParams.push(fechaFin);
+        detailParamIndex++;
+    }
+
+    // 삭제되지 않은 항목만 조회
+    detailWhereConditions.push(`g1.borrado IS FALSE`);
+
+    const detailWhereClause = 'WHERE ' + detailWhereConditions.join(' AND ');
+
     const detailQuery = `
         SELECT 
-            g.fecha,
-            g.hora,
-            g.tema,
-            g.costo,
-            g.sucursal,
-            g.codigo,
-            gi.desc_gasto as rubro
-        FROM gastos g
+            fecha,
+            hora,
+            tema,
+            costo,
+            sucursal,
+            g1.codigo,
+            gi.desc_gasto as rubro,
+            g1.id_ga
+        FROM gastos g1
         INNER JOIN gasto_info gi 
-            ON gi.codigo = g.codigo
-        ${whereClause}
-        ORDER BY g.fecha DESC, g.hora DESC
+            ON gi.codigo = g1.codigo
+        ${detailWhereClause}
+        ORDER BY g1.fecha DESC, g1.hora DESC
     `;
 
     // 두 쿼리 실행
@@ -76,7 +99,7 @@ async function getGastosReport(req) {
             type: Sequelize.QueryTypes.SELECT
         }),
         sequelize.query(detailQuery, {
-            bind: queryParams.length > 0 ? queryParams : undefined,
+            bind: detailQueryParams.length > 0 ? detailQueryParams : undefined,
             type: Sequelize.QueryTypes.SELECT
         })
     ]);
