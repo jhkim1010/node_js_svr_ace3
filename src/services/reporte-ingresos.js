@@ -30,6 +30,7 @@ async function getIngresosReport(req) {
             MAX(desc3) as descripcion,
             COUNT(*) as tEvent,
             SUM(i.cant3) as tCant,
+            MAX(i.ref_id_codigo) as id_codigo,
             sucursal
         FROM ingresos i
         WHERE fecha BETWEEN $1 AND $2 
