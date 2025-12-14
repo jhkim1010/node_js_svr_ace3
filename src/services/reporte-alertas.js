@@ -26,6 +26,7 @@ async function getAlertasReport(req) {
             l.sucursal
         FROM logs l
         WHERE fecha BETWEEN $1 AND $2
+            AND alerta IS TRUE
         ORDER BY l.fecha DESC, hora DESC
     `;
 
