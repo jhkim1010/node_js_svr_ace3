@@ -38,13 +38,21 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
     try {
+        // Log incoming request
+        const dataCount = Array.isArray(req.body.data) ? req.body.data.length : (req.body.data ? 1 : 0);
+        const operation = req.body.operation || 'CREATE';
+        const dbName = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
+        console.log(`[Vcodes POST] ${dbName} | Received: operation=${operation}, dataCount=${dataCount}, path=${req.path}`);
+        
         const Vcode = getModelForRequest(req, 'Vcode');
         
         // BATCH_SYNC 작업 처리 (Vcodes 전용 핸들러 사용)
         // vcodes는 vcode_id와 sucursal의 복합 unique key를 사용
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
+            console.log(`[Vcodes POST] ${dbName} | Processing BATCH_SYNC with ${req.body.data.length} items`);
             const result = await handleVcodesBatchSync(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             await notifyBatchSync(req, Vcode, result);
+            console.log(`[Vcodes POST] ${dbName} | BATCH_SYNC completed: ${result.processed} processed, ${result.created} created, ${result.updated} updated, ${result.skipped || 0} skipped, ${result.failed} failed`);
             return res.status(200).json(result);
         }
         
