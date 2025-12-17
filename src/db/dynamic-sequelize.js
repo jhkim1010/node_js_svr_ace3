@@ -191,9 +191,9 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
         // LISTEN 설정 실패는 조용히 무시 (이미 설정되어 있을 수 있음)
     });
     
-    // 현재 전체 연결 풀 사용량 확인
-    const { totalUsed } = getTotalPoolUsage();
-    console.log(`[Connection Pool] ✅ 새로운 연결 생성: ${database} (현재: ${totalUsed}/${TOTAL_POOL_MAX})`);
+    // 현재 전체 연결 풀 사용량 확인 (연결 추가 후)
+    const { totalUsed: currentTotalUsed } = getTotalPoolUsage();
+    console.log(`[Connection Pool] ✅ 새로운 연결 생성: ${database} (현재: ${currentTotalUsed}/${TOTAL_POOL_MAX})`);
     
     return sequelize;
 }
