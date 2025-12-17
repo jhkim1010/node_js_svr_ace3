@@ -372,9 +372,23 @@ router.post('/', async (req, res) => {
         });
         
         console.log('[resumen_del_dia] res.json() 호출 직전');
+        console.log('[resumen_del_dia] 클라이언트 연결 상태:', {
+            _clientDisconnected: req._clientDisconnected,
+            aborted: req.aborted,
+            destroyed: req.destroyed,
+            socketDestroyed: req.socket?.destroyed,
+            socketEnded: req.socket?.ended
+        });
+        
+        // 클라이언트 연결이 끊어진 것으로 잘못 감지된 경우 무시
+        if (req._clientDisconnected && !req.aborted && !req.destroyed && !req.socket?.destroyed) {
+            console.log('[resumen_del_dia] 경고: 클라이언트 연결이 끊어진 것으로 잘못 감지됨, 응답 전송 계속');
+            req._clientDisconnected = false; // 플래그 리셋
+        }
+        
         // 응답 전송 (다른 라우터와 동일한 방식으로 - return 추가)
         const result = res.json(responseData);
-        console.log('[resumen_del_dia] res.json() 호출 완료, 반환값:', result);
+        console.log('[resumen_del_dia] res.json() 호출 완료');
         return result;
     } catch (err) {
         console.error('[resumen_del_dia] 에러 발생:', {
