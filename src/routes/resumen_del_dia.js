@@ -338,8 +338,15 @@ router.post('/', async (req, res) => {
         };
         
         console.log('[resumen_del_dia] 응답 데이터 준비 완료');
-        res.json(responseData);
-        console.log('[resumen_del_dia] 응답 전송 완료');
+        console.log('[resumen_del_dia] 응답 데이터 크기:', JSON.stringify(responseData).length, 'bytes');
+        
+        // 응답 전송 (명시적으로 처리)
+        if (!res.headersSent) {
+            res.json(responseData);
+            console.log('[resumen_del_dia] 응답 전송 완료 (headersSent:', res.headersSent, ')');
+        } else {
+            console.error('[resumen_del_dia] 경고: 응답 헤더가 이미 전송됨');
+        }
     } catch (err) {
         console.error('[resumen_del_dia] 에러 발생:', {
             message: err.message,
