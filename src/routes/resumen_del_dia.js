@@ -311,6 +311,14 @@ router.post('/', async (req, res) => {
         }));
         
         const responseData = {
+            fecha: targetDate || otherDate, // 요청된 날짜 또는 현재 날짜 (YYYY-MM-DD)
+            fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
+            fecha_otros: otherDate, // 다른 쿼리에 사용된 날짜
+            vcodes: vcodeSummary, // Sucursal별 배열
+            gastos: gastosSummary, // Sucursal별 배열
+            vdetalle: vdetalleSummary, // Sucursal별 배열
+            vcodes_mpago: vcodeMpagoSummary, // Sucursal별 배열
+            ingresos: ingresosSummary, // Sucursal별 배열
             stocks: stocksSummary // Sucursal별 배열
         };
         
