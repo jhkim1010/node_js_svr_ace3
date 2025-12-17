@@ -38,6 +38,11 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
     try {
+        // Set timeout and keep-alive headers to prevent 502 errors
+        res.setTimeout(300000); // 5 minutes timeout
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('Keep-Alive', 'timeout=300');
+        
         // Log incoming request
         const dataCount = Array.isArray(req.body.data) ? req.body.data.length : (req.body.data ? 1 : 0);
         const operation = req.body.operation || 'CREATE';
