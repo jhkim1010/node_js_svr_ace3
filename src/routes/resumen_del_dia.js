@@ -6,6 +6,16 @@ const { isClientDisconnected } = require('../middleware/client-disconnect-handle
 const router = Router();
 
 router.post('/', async (req, res) => {
+    console.log('[resumen_del_dia] 요청 받음:', {
+        body: req.body,
+        dbConfig: req.dbConfig ? {
+            host: req.dbConfig.host,
+            port: req.dbConfig.port,
+            database: req.dbConfig.database,
+            user: req.dbConfig.user
+        } : null
+    });
+    
     try {
         // 필수 DB 헤더 검증
         const missingHeaders = [];
@@ -20,6 +30,7 @@ router.post('/', async (req, res) => {
         }
         
         if (missingHeaders.length > 0) {
+            console.log('[resumen_del_dia] 필수 헤더 부족:', missingHeaders);
             return res.status(400).json({
                 success: false,
                 error: '필수 정보 부족',
@@ -38,10 +49,15 @@ router.post('/', async (req, res) => {
             });
         }
         
+        console.log('[resumen_del_dia] 모델 가져오기 시작');
         const Vcode = getModelForRequest(req, 'Vcode');
+        console.log('[resumen_del_dia] Vcode 모델 가져옴');
         const Gastos = getModelForRequest(req, 'Gastos');
+        console.log('[resumen_del_dia] Gastos 모델 가져옴');
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
+        console.log('[resumen_del_dia] Vdetalle 모델 가져옴');
         const Ingresos = getModelForRequest(req, 'Ingresos');
+        console.log('[resumen_del_dia] Ingresos 모델 가져옴');
         const sequelize = Vcode.sequelize;
         
         // 요청 본문에서 date와 sucursal 받기
@@ -321,14 +337,27 @@ router.post('/', async (req, res) => {
             stocks: stocksSummary // Sucursal별 배열
         };
         
+        console.log('[resumen_del_dia] 응답 데이터 준비 완료');
         res.json(responseData);
+        console.log('[resumen_del_dia] 응답 전송 완료');
     } catch (err) {
-        res.status(500).json({ 
-            error: 'Failed to get resumen del dia', 
-            details: err.message,
-            errorType: err.constructor.name,
-            originalError: err.original ? err.original.message : null
+        console.error('[resumen_del_dia] 에러 발생:', {
+            message: err.message,
+            type: err.constructor.name,
+            stack: err.stack,
+            original: err.original ? err.original.message : null
         });
+        
+        if (!res.headersSent) {
+            res.status(500).json({ 
+                error: 'Failed to get resumen del dia', 
+                details: err.message,
+                errorType: err.constructor.name,
+                originalError: err.original ? err.original.message : null
+            });
+        } else {
+            console.error('[resumen_del_dia] 응답이 이미 전송되어 에러 응답을 보낼 수 없음');
+        }
     }
 });
 
