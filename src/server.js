@@ -8,6 +8,7 @@ const { parseDbHeader } = require('./middleware/db-header');
 const { loadBcolorview } = require('./middleware/bcolorview-loader');
 const { responseLogger } = require('./middleware/response-logger');
 const { operationLogger } = require('./middleware/operation-logger');
+const { clientDisconnectHandler } = require('./middleware/client-disconnect-handler');
 const { initializeWebSocket, getWebSocketServer } = require('./services/websocket-service');
 const { displayBuildInfo } = require('./utils/build-info');
 const { startMonitoring, getMonitoringStatus, startPostgresConnectionMonitoring } = require('./services/monitoring-service');
@@ -256,6 +257,17 @@ app.use('/api', (req, res, next) => {
         return next(); // WebSocket 서버로 전달
     }
     operationLogger(req, res, next);
+});
+
+// 클라이언트 연결 종료 감지 미들웨어 (모든 요청에 적용)
+// WebSocket 경로는 제외
+app.use((req, res, next) => {
+    // WebSocket 업그레이드 요청인 경우 Express 미들웨어 건너뛰기
+    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || req.originalUrl === '/ws' ||
+        (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
+        return next(); // WebSocket 서버로 전달
+    }
+    clientDisconnectHandler(req, res, next);
 });
 
 // 응답 로깅 미들웨어 (모든 요청에 적용)

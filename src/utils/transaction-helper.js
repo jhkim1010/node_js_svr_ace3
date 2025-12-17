@@ -20,8 +20,34 @@ async function safeRollback(transaction) {
     }
 }
 
+/**
+ * 클라이언트 연결 종료 시 트랜잭션 롤백 및 연결 해제
+ * @param {Object} req - Express request 객체
+ * @param {Object} transaction - Sequelize transaction 객체
+ * @returns {boolean} 클라이언트 연결이 끊어졌으면 true
+ */
+async function handleClientDisconnect(req, transaction) {
+    const { isClientDisconnected } = require('../middleware/client-disconnect-handler');
+    
+    if (isClientDisconnected(req)) {
+        // 클라이언트 연결이 끊어진 경우 트랜잭션 롤백
+        if (transaction && !transaction.finished) {
+            try {
+                await safeRollback(transaction);
+                console.log(`[Client Disconnect] 트랜잭션 롤백 완료 (연결 풀 해제)`);
+            } catch (rollbackErr) {
+                console.error(`[Client Disconnect] 트랜잭션 롤백 실패:`, rollbackErr.message);
+            }
+        }
+        return true;
+    }
+    
+    return false;
+}
+
 module.exports = {
     safeCommit,
-    safeRollback
+    safeRollback,
+    handleClientDisconnect
 };
 

@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
+const { isClientDisconnected } = require('../middleware/client-disconnect-handler');
 
 const router = Router();
 
@@ -84,6 +85,11 @@ router.post('/', async (req, res) => {
         // sucursal 필터링 추가 (제공된 경우)
         if (sucursal) {
             vcodeWhereConditions.push({ sucursal: sucursal });
+        }
+        
+        // 클라이언트 연결 종료 체크
+        if (isClientDisconnected(req)) {
+            return; // 클라이언트 연결이 끊어졌으면 조기 종료 (연결 풀 낭비 방지)
         }
         
         const vcodeResult = await Vcode.findAll({
