@@ -171,20 +171,10 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     connectionPool.set(key, sequelize);
     
     // 첫 번째 연결인 경우 PostgreSQL 서버의 max_connections 조회 (비동기, 백그라운드)
+    // 경고 메시지는 출력하지 않음
     if (connectionPool.size === 1 && cachedPgMaxConnections === null) {
-        getPostgresMaxConnections(sequelize).then(pgMax => {
-            // 조회된 값이 현재 pool.max보다 작으면 경고
-            if (pgMax < poolMax) {
-                console.warn(`[Connection Pool] ⚠️ PostgreSQL 서버 max_connections (${pgMax})가 pool.max (${poolMax})보다 작습니다.`);
-                console.warn(`[Connection Pool] 각 데이터베이스가 필요에 따라 사용하되, 서버 한계(${pgMax}개)를 초과하지 않도록 주의하세요.`);
-                console.warn(`[Connection Pool] 여러 데이터베이스 사용 시 총 연결 수가 서버 한계를 초과하지 않도록 모니터링하세요.`);
-            } else {
-                console.log(`[Connection Pool] ✅ PostgreSQL 서버 max_connections (${pgMax})가 충분합니다.`);
-            }
-        }).catch((err) => {
-            // 조회 실패 시 경고만 표시 (실제 연결은 정상 작동)
-            console.warn(`[Connection Pool] ⚠️ PostgreSQL max_connections 조회 실패: ${err.message}`);
-            console.warn(`[Connection Pool] 기본값(100)을 사용합니다. 설정이 변경되었다면 서버를 재시작하세요.`);
+        getPostgresMaxConnections(sequelize).catch(() => {
+            // 조회 실패는 무시
         });
     }
     

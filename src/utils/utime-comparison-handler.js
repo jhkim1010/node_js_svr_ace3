@@ -133,13 +133,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                             }
                         } catch (ingresoIdErr) {
-                            // 에러 발생 시에만 로그 출력 (간단히)
-                            if (modelName === 'Ingresos') {
-                                const dbConfig = req.dbConfig || {};
-                                const database = dbConfig.database || '알 수 없음';
-                                console.error(`[Ingresos] Database: ${database}`);
-                            }
-                            // 에러 발생 시 복합 key 조회로 진행
+                            // 에러 발생 시 복합 key 조회로 진행 (로그 출력하지 않음)
                         }
                     }
                     
@@ -1353,13 +1347,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const constraintMatch = errorMsg ? errorMsg.match(/constraint "([^"]+)"/) : null;
                             const constraintName = constraintMatch ? constraintMatch[1] : null;
                             
-                            // 에러 발생 시 데이터베이스 이름만 간단히 표시
-                            if (modelName === 'Ingresos') {
-                                const dbConfig = req.dbConfig || {};
-                                const database = dbConfig.database || '알 수 없음';
-                                console.error(`[Ingresos] Database: ${database}`);
-                            }
-                            
                             try {
                                 // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
@@ -1543,12 +1530,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             
                                             // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
                                         } catch (updateErr) {
-                                            // UPDATE 실패 시 데이터베이스 이름만 간단히 표시
-                                            if (modelName === 'Ingresos') {
-                                                const dbConfig = req.dbConfig || {};
-                                                const database = dbConfig.database || '알 수 없음';
-                                                console.error(`[Ingresos] Database: ${database}`);
-                                            }
                                             throw updateErr;
                                         }
                                     } else {
@@ -1567,13 +1548,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     }
                                 } else {
                                     // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
-                                    // 데이터베이스 이름만 간단히 표시
-                                    if (modelName === 'Ingresos') {
-                                        const dbConfig = req.dbConfig || {};
-                                        const database = dbConfig.database || '알 수 없음';
-                                        console.error(`[Ingresos] Database: ${database}`);
-                                    }
-                                
                                     // 독립 트랜잭션 사용 중이므로 SAVEPOINT 롤백 불필요
                                     throw createErr;
                                 }
@@ -1608,12 +1582,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             
             // 디버깅: Ingresos 에러 상세 로그
             if (modelName === 'Ingresos') {
-                // 에러 발생 시 데이터베이스 이름만 간단히 표시
-                if (modelName === 'Ingresos') {
-                    const dbConfig = req.dbConfig || {};
-                    const database = dbConfig.database || '알 수 없음';
-                    console.error(`[Ingresos] Database: ${database}`);
-                }
             }
             
             // 에러를 errors 배열에 추가하고 다음 항목 계속 처리
