@@ -1634,25 +1634,28 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
     if (results.length > 0 || errors.length > 0) {
             const totalCount = req.body.data.length;
             
-            // Log each item's processing result
+            // Log each item's processing result (only once, sorted by index)
             if (results.length > 0) {
-                results.forEach((item, idx) => {
+                // Sort by index to ensure correct order
+                const sortedResults = [...results].sort((a, b) => (a.index || 0) - (b.index || 0));
+                
+                sortedResults.forEach((item) => {
                     // Try to get identifier from multiple sources (prioritize original request data)
                     let identifier = null;
                     
-                    // First try: original request data (most reliable)
-                    if (req.body.data && req.body.data[item.index] !== undefined) {
+                    // First try: original request data (most reliable) - item.index is 0-based
+                    if (req.body.data && Array.isArray(req.body.data) && item.index !== undefined && item.index >= 0 && item.index < req.body.data.length) {
                         identifier = req.body.data[item.index];
                     }
                     
-                    // Second try: item.identifier
-                    if (!identifier && item.identifier) {
-                        identifier = item.identifier;
-                    }
-                    
-                    // Third try: item.data
+                    // Second try: item.data (from database result)
                     if (!identifier && item.data) {
                         identifier = item.data;
+                    }
+                    
+                    // Third try: item.identifier
+                    if (!identifier && item.identifier) {
+                        identifier = item.identifier;
                     }
                     
                     const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
@@ -1661,34 +1664,37 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     const action = item.action || 'unknown';
                     const reason = item.reason_en || item.reason || (action === 'updated' ? 'Updated' : action === 'created' ? 'Created' : action === 'skipped' ? 'Skipped' : 'N/A');
                     
-                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${item.index + 1}/${totalCount}: ${action.toUpperCase()} | vcode_id=${vcodeId}, sucursal=${sucursal}, vcode=${vcode} | ${reason}`);
+                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${(item.index || 0) + 1}/${totalCount}: ${action.toUpperCase()} | vcode_id=${vcodeId}, sucursal=${sucursal}, vcode=${vcode} | ${reason}`);
                 });
             }
             
             if (errors.length > 0) {
-                errors.forEach((error, idx) => {
+                // Sort by index to ensure correct order
+                const sortedErrors = [...errors].sort((a, b) => (a.index || 0) - (b.index || 0));
+                
+                sortedErrors.forEach((error) => {
                     // Try to get identifier from multiple sources (prioritize original request data)
                     let identifier = null;
                     
-                    // First try: original request data (most reliable)
-                    if (req.body.data && req.body.data[error.index] !== undefined) {
+                    // First try: original request data (most reliable) - error.index is 0-based
+                    if (req.body.data && Array.isArray(req.body.data) && error.index !== undefined && error.index >= 0 && error.index < req.body.data.length) {
                         identifier = req.body.data[error.index];
                     }
                     
-                    // Second try: error.identifier
-                    if (!identifier && error.identifier) {
-                        identifier = error.identifier;
-                    }
-                    
-                    // Third try: error.data
+                    // Second try: error.data
                     if (!identifier && error.data) {
                         identifier = error.data;
+                    }
+                    
+                    // Third try: error.identifier
+                    if (!identifier && error.identifier) {
+                        identifier = error.identifier;
                     }
                     
                     const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
                     const sucursal = identifier?.sucursal || 'N/A';
                     const vcode = identifier?.vcode || 'N/A';
-                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${error.index + 1}/${totalCount}: FAILED | vcode_id=${vcodeId}, sucursal=${sucursal}, vcode=${vcode} | ${error.error || 'N/A'}`);
+                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${(error.index || 0) + 1}/${totalCount}: FAILED | vcode_id=${vcodeId}, sucursal=${sucursal}, vcode=${vcode} | ${error.error || 'N/A'}`);
                 });
             }
             
