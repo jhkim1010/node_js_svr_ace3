@@ -191,14 +191,25 @@ async function getVentasReport(req) {
         try {
             // 함수 호출 쿼리 (PostgreSQL 함수 호출 형식)
             // 파라미터 타입을 명시적으로 지정 (DATE 타입으로 캐스팅)
-            query = `SELECT * FROM ${functionName}($1::DATE, $2::DATE)`;
-            queryParams = [fechaInicio, fechaFin];
-
-            // SQL 쿼리 실행
-            const results = await sequelize.query(query, {
-                bind: queryParams,
-                type: Sequelize.QueryTypes.SELECT
-            });
+            // 먼저 public 스키마를 시도하고, 실패하면 스키마 없이 시도
+            let results;
+            try {
+                // public 스키마에서 시도
+                query = `SELECT * FROM public.${functionName}($1::DATE, $2::DATE)`;
+                queryParams = [fechaInicio, fechaFin];
+                results = await sequelize.query(query, {
+                    bind: queryParams,
+                    type: Sequelize.QueryTypes.SELECT
+                });
+            } catch (schemaErr) {
+                // public 스키마 실패 시 스키마 없이 시도 (search_path 사용)
+                query = `SELECT * FROM ${functionName}($1::DATE, $2::DATE)`;
+                queryParams = [fechaInicio, fechaFin];
+                results = await sequelize.query(query, {
+                    bind: queryParams,
+                    type: Sequelize.QueryTypes.SELECT
+                });
+            }
 
             // 결과가 배열인지 확인
             data = Array.isArray(results) ? results : [];
