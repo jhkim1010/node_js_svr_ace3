@@ -117,6 +117,7 @@ router.post('/', async (req, res) => {
         //     return;
         // }
         
+        console.log('[resumen_del_dia] 쿼리 1 시작: Vcode.findAll');
         const vcodeResult = await Vcode.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'operation_count'],
@@ -136,6 +137,7 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
+        console.log('[resumen_del_dia] 쿼리 1 완료: Vcode.findAll, 결과 개수:', vcodeResult?.length || 0);
         
         // 쿼리 2: gastos 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha = target_date AND borrado is false
@@ -149,6 +151,7 @@ router.post('/', async (req, res) => {
             gastosWhereConditions.push({ sucursal: sucursal });
         }
         
+        console.log('[resumen_del_dia] 쿼리 2 시작: Gastos.findAll');
         const gastosResult = await Gastos.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'gasto_count'],
@@ -162,6 +165,7 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
+        console.log('[resumen_del_dia] 쿼리 2 완료: Gastos.findAll, 결과 개수:', gastosResult?.length || 0);
         
         // 쿼리 3: vdetalle 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha1 = target_date AND borrado is false AND codigo1 = 'de'
@@ -176,6 +180,7 @@ router.post('/', async (req, res) => {
             vdetalleWhereConditions.push({ sucursal: sucursal });
         }
         
+        console.log('[resumen_del_dia] 쿼리 3 시작: Vdetalle.findAll');
         const vdetalleResult = await Vdetalle.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_discount_event'],
@@ -189,6 +194,7 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
+        console.log('[resumen_del_dia] 쿼리 3 완료: Vdetalle.findAll, 결과 개수:', vdetalleResult?.length || 0);
         
         // 쿼리 4: vcodes 데이터 집계 (MercadoPago) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is true
@@ -204,6 +210,7 @@ router.post('/', async (req, res) => {
             vcodeMpagoWhereConditions.push({ sucursal: sucursal });
         }
         
+        console.log('[resumen_del_dia] 쿼리 4 시작: Vcode.findAll (MercadoPago)');
         const vcodeMpagoResult = await Vcode.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_mpago_total'],
@@ -217,6 +224,7 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
+        console.log('[resumen_del_dia] 쿼리 4 완료: Vcode.findAll (MercadoPago), 결과 개수:', vcodeMpagoResult?.length || 0);
         
         // 쿼리 5: ingresos 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha = target_date AND borrado is false
@@ -230,6 +238,7 @@ router.post('/', async (req, res) => {
             ingresosWhereConditions.push({ sucursal: sucursal });
         }
         
+        console.log('[resumen_del_dia] 쿼리 5 시작: Ingresos.findAll');
         const ingresosResult = await Ingresos.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'ingreso_events'],
@@ -243,6 +252,7 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
+        console.log('[resumen_del_dia] 쿼리 5 완료: Ingresos.findAll, 결과 개수:', ingresosResult?.length || 0);
         
         // 쿼리 6: stocks 데이터 집계 (screendetails2_id) - Sucursal별 그룹화
         const stocksQueryParams = [];
@@ -272,10 +282,12 @@ router.post('/', async (req, res) => {
             ORDER BY si.sucursal ASC
         `;
 
+        console.log('[resumen_del_dia] 쿼리 6 시작: stocks query');
         const stocksResult = await sequelize.query(stocksQuery, {
             bind: stocksQueryParams.length > 0 ? stocksQueryParams : undefined,
             type: Sequelize.QueryTypes.SELECT
         });
+        console.log('[resumen_del_dia] 쿼리 6 완료: stocks query, 결과 개수:', stocksResult?.length || 0);
         
         // Sucursal별로 그룹화된 결과를 배열로 변환
         const vcodeSummary = (vcodeResult || []).map(item => ({
