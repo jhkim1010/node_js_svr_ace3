@@ -1,7 +1,8 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
-const { handleVdetalleBatchSync, handleVdetalleArrayData } = require('../utils/vdetalle-handler');
+const { handleVdetalleBatchSync } = require('../utils/vdetalle-handler');
+const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError } = require('../utils/error-handler');
@@ -46,9 +47,9 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도) (Vdetalle 전용 핸들러 사용)
+        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도) (utime 비교를 통한 개별 처리)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleVdetalleArrayData(req, res, Vdetalle, ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'Vdetalle');
+            const result = await handleUtimeComparisonArrayData(req, res, Vdetalle, ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'Vdetalle');
             return res.status(200).json(result);
         }
         
@@ -78,11 +79,11 @@ router.put('/:id', async (req, res) => {
     try {
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
         
-        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우) - Vdetalle 전용 핸들러 사용
+        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우) - utime 비교를 통한 개별 처리
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleVdetalleArrayData, Vdetalle, ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'Vdetalle');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Vdetalle, ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'Vdetalle');
             await notifyBatchSync(req, Vdetalle, result);
             return res.status(200).json(result);
         }

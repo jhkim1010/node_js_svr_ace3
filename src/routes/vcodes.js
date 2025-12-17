@@ -2,7 +2,8 @@ const { Router } = require('express');
 const { Sequelize } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
-const { handleVcodesBatchSync, handleVcodesArrayData } = require('../utils/vcodes-handler');
+const { handleVcodesBatchSync } = require('../utils/vcodes-handler');
+const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
@@ -47,9 +48,9 @@ router.post('/', async (req, res) => {
             return res.status(200).json(result);
         }
         
-        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도) (Vcodes 전용 핸들러 사용)
+        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도) (utime 비교를 통한 개별 처리)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleVcodesArrayData(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
+            const result = await handleUtimeComparisonArrayData(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             return res.status(200).json(result);
         }
         
@@ -114,11 +115,11 @@ router.put('/:id', async (req, res) => {
     try {
         const Vcode = getModelForRequest(req, 'Vcode');
         
-        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우) - Vcodes 전용 핸들러 사용
+        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우) - utime 비교를 통한 개별 처리
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleVcodesArrayData, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             await notifyBatchSync(req, Vcode, result);
             return res.status(200).json(result);
         }
