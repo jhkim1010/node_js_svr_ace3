@@ -342,8 +342,18 @@ router.post('/', async (req, res) => {
         
         // 응답 전송 (명시적으로 처리)
         if (!res.headersSent) {
-            res.json(responseData);
-            console.log('[resumen_del_dia] 응답 전송 완료 (headersSent:', res.headersSent, ')');
+            try {
+                res.json(responseData);
+                // 응답이 실제로 전송되었는지 확인
+                process.nextTick(() => {
+                    console.log('[resumen_del_dia] 응답 전송 확인 (headersSent:', res.headersSent, ', finished:', res.finished, ')');
+                });
+            } catch (sendErr) {
+                console.error('[resumen_del_dia] 응답 전송 중 에러:', sendErr);
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Failed to send response', details: sendErr.message });
+                }
+            }
         } else {
             console.error('[resumen_del_dia] 경고: 응답 헤더가 이미 전송됨');
         }
