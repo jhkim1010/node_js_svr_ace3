@@ -37,47 +37,170 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
+    // 502 에러 추적을 위한 변수들
+    const requestStartTime = Date.now();
+    const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    let responseSent = false;
+    let processingStartTime = null;
+    let processingEndTime = null;
+    
+    const dbName = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
+    const dataCount = Array.isArray(req.body.data) ? req.body.data.length : (req.body.data ? 1 : 0);
+    const operation = req.body.operation || 'CREATE';
+    
+    // 연결 상태 추적
+    const logConnectionState = (stage) => {
+        const elapsed = Date.now() - requestStartTime;
+        const socketState = req.socket ? {
+            destroyed: req.socket.destroyed,
+            readable: req.socket.readable,
+            writable: req.socket.writable,
+            readyState: req.socket.readyState
+        } : 'no socket';
+        
+        console.log(`[502 Tracker] ${requestId} | ${dbName} | ${stage} | elapsed=${elapsed}ms | socket=${JSON.stringify(socketState)} | headersSent=${res.headersSent} | responseSent=${responseSent}`);
+    };
+    
+    // 타임아웃 감지
+    res.setTimeout(300000, () => {
+        const elapsed = Date.now() - requestStartTime;
+        console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ TIMEOUT DETECTED | elapsed=${elapsed}ms | responseSent=${responseSent} | headersSent=${res.headersSent}`);
+        logConnectionState('TIMEOUT');
+        
+        if (!responseSent && !res.headersSent) {
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ Response not sent before timeout - this will cause 502 error`);
+            res.status(504).json({ 
+                error: 'Gateway Timeout', 
+                message: 'Request processing exceeded timeout limit',
+                requestId: requestId,
+                elapsed: elapsed
+            });
+            responseSent = true;
+        }
+    });
+    
+    // 연결 종료 감지
+    req.on('close', () => {
+        const elapsed = Date.now() - requestStartTime;
+        if (!responseSent) {
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ CLIENT DISCONNECTED | elapsed=${elapsed}ms | responseSent=${responseSent} | This may cause 502 error`);
+            logConnectionState('CLIENT_DISCONNECTED');
+        }
+    });
+    
+    // 응답 전송 감지
+    const originalJson = res.json.bind(res);
+    res.json = function(body) {
+        responseSent = true;
+        const elapsed = Date.now() - requestStartTime;
+        const processingTime = processingEndTime ? processingEndTime - processingStartTime : null;
+        
+        console.log(`[502 Tracker] ${requestId} | ${dbName} | ✅ RESPONSE SENT | elapsed=${elapsed}ms | processingTime=${processingTime}ms | status=${res.statusCode}`);
+        logConnectionState('RESPONSE_SENT');
+        
+        return originalJson(body);
+    };
+    
+    // 에러 발생 감지
+    res.on('error', (err) => {
+        const elapsed = Date.now() - requestStartTime;
+        console.error(`[502 Tracker] ${requestId} | ${dbName} | ❌ RESPONSE ERROR | elapsed=${elapsed}ms | error=${err.message} | responseSent=${responseSent}`);
+        logConnectionState('RESPONSE_ERROR');
+    });
+    
+    // 응답 완료 감지
+    res.on('finish', () => {
+        const elapsed = Date.now() - requestStartTime;
+        const processingTime = processingEndTime ? processingEndTime - processingStartTime : null;
+        console.log(`[502 Tracker] ${requestId} | ${dbName} | ✅ RESPONSE FINISHED | elapsed=${elapsed}ms | processingTime=${processingTime}ms | status=${res.statusCode}`);
+    });
+    
     try {
         // Set timeout and keep-alive headers to prevent 502 errors
-        res.setTimeout(300000); // 5 minutes timeout
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('Keep-Alive', 'timeout=300');
         
         // Log incoming request
-        const dataCount = Array.isArray(req.body.data) ? req.body.data.length : (req.body.data ? 1 : 0);
-        const operation = req.body.operation || 'CREATE';
-        const dbName = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
-        console.log(`[Vcodes POST] ${dbName} | Received: operation=${operation}, dataCount=${dataCount}, path=${req.path}`);
+        console.log(`[Vcodes POST] ${dbName} | Received: operation=${operation}, dataCount=${dataCount}, path=${req.path} | requestId=${requestId}`);
+        logConnectionState('REQUEST_RECEIVED');
         
+        processingStartTime = Date.now();
         const Vcode = getModelForRequest(req, 'Vcode');
         
         // BATCH_SYNC 작업 처리 (Vcodes 전용 핸들러 사용)
         // vcodes는 vcode_id와 sucursal의 복합 unique key를 사용
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            console.log(`[Vcodes POST] ${dbName} | Processing BATCH_SYNC with ${req.body.data.length} items`);
+            console.log(`[Vcodes POST] ${dbName} | Processing BATCH_SYNC with ${req.body.data.length} items | requestId=${requestId}`);
+            logConnectionState('BATCH_SYNC_START');
+            
             const result = await handleVcodesBatchSync(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
+            
+            processingEndTime = Date.now();
+            const processingTime = processingEndTime - processingStartTime;
+            console.log(`[502 Tracker] ${requestId} | ${dbName} | BATCH_SYNC processing completed | processingTime=${processingTime}ms`);
+            logConnectionState('BATCH_SYNC_PROCESSING_COMPLETE');
+            
             await notifyBatchSync(req, Vcode, result);
-            console.log(`[Vcodes POST] ${dbName} | BATCH_SYNC completed: ${result.processed} processed, ${result.created} created, ${result.updated} updated, ${result.skipped || 0} skipped, ${result.failed} failed`);
+            
+            console.log(`[Vcodes POST] ${dbName} | BATCH_SYNC completed: ${result.processed} processed, ${result.created} created, ${result.updated} updated, ${result.skipped || 0} skipped, ${result.failed} failed | requestId=${requestId}`);
+            logConnectionState('BATCH_SYNC_BEFORE_RESPONSE');
+            
             return res.status(200).json(result);
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도) (utime 비교를 통한 개별 처리)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            console.log(`[Vcodes POST] ${dbName} | Processing ${operation} with ${req.body.data.length} items using utime comparison`);
+            console.log(`[Vcodes POST] ${dbName} | Processing ${operation} with ${req.body.data.length} items using utime comparison | requestId=${requestId}`);
+            logConnectionState(`${operation}_START`);
+            
             const result = await handleUtimeComparisonArrayData(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             
+            processingEndTime = Date.now();
+            const processingTime = processingEndTime - processingStartTime;
+            console.log(`[502 Tracker] ${requestId} | ${dbName} | ${operation} processing completed | processingTime=${processingTime}ms`);
+            logConnectionState(`${operation}_PROCESSING_COMPLETE`);
+            
             // Summary log only (detailed logs are already printed in handleUtimeComparisonArrayData)
-            console.log(`[Vcodes POST] ${dbName} | ${operation} completed: ${result.processed || 0} processed, ${result.created || 0} created, ${result.updated || 0} updated, ${result.skipped || 0} skipped, ${result.failed || 0} failed`);
+            console.log(`[Vcodes POST] ${dbName} | ${operation} completed: ${result.processed || 0} processed, ${result.created || 0} created, ${result.updated || 0} updated, ${result.skipped || 0} skipped, ${result.failed || 0} failed | requestId=${requestId}`);
+            logConnectionState(`${operation}_BEFORE_RESPONSE`);
+            
             return res.status(200).json(result);
         }
         
         // 일반 단일 생성 요청 처리 (복합 unique key 기반으로 UPDATE/CREATE 결정)
+        logConnectionState('SINGLE_ITEM_START');
         const result = await handleSingleItem(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
+        
+        processingEndTime = Date.now();
+        const processingTime = processingEndTime - processingStartTime;
+        console.log(`[502 Tracker] ${requestId} | ${dbName} | Single item processing completed | processingTime=${processingTime}ms`);
+        logConnectionState('SINGLE_ITEM_BEFORE_RESPONSE');
+        
         await notifyDbChange(req, Vcode, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
+        processingEndTime = Date.now();
+        const elapsed = Date.now() - requestStartTime;
+        const processingTime = processingEndTime - processingStartTime;
+        
+        console.error(`[502 Tracker] ${requestId} | ${dbName} | ❌ ERROR OCCURRED | elapsed=${elapsed}ms | processingTime=${processingTime}ms | error=${err.message}`);
+        logConnectionState('ERROR_OCCURRED');
+        
+        // 연결 상태 확인
+        if (!req.socket || req.socket.destroyed) {
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ Socket destroyed before error response - 502 likely`);
+        }
+        
+        if (res.headersSent) {
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ Headers already sent - cannot send error response`);
+            return;
+        }
+        
         handleInsertUpdateError(err, req, 'Vcode', ['vcode_id', 'sucursal'], 'vcodes');
         const errorResponse = buildDatabaseErrorResponse(err, req, 'create vcode');
+        errorResponse.requestId = requestId;
+        errorResponse.elapsed = elapsed;
+        errorResponse.processingTime = processingTime;
         
         // 외래키 제약 조건 위반 감지 및 정보 추가
         const errorMsg = err.original ? err.original.message : err.message;
@@ -122,7 +245,14 @@ router.post('/', async (req, res) => {
             }
         }
         
-        res.status(400).json(errorResponse);
+        try {
+            res.status(400).json(errorResponse);
+            responseSent = true;
+            console.log(`[502 Tracker] ${requestId} | ${dbName} | ✅ Error response sent`);
+        } catch (responseErr) {
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | ❌ Failed to send error response: ${responseErr.message}`);
+            logConnectionState('ERROR_RESPONSE_FAILED');
+        }
     }
 });
 
