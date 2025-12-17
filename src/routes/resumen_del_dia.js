@@ -6,16 +6,6 @@ const { isClientDisconnected } = require('../middleware/client-disconnect-handle
 const router = Router();
 
 router.post('/', async (req, res) => {
-    console.log('[resumen_del_dia] 요청 받음:', {
-        body: req.body,
-        dbConfig: req.dbConfig ? {
-            host: req.dbConfig.host,
-            port: req.dbConfig.port,
-            database: req.dbConfig.database,
-            user: req.dbConfig.user
-        } : null
-    });
-    
     try {
         // 필수 DB 헤더 검증
         const missingHeaders = [];
@@ -49,15 +39,10 @@ router.post('/', async (req, res) => {
             });
         }
         
-        console.log('[resumen_del_dia] 모델 가져오기 시작');
         const Vcode = getModelForRequest(req, 'Vcode');
-        console.log('[resumen_del_dia] Vcode 모델 가져옴');
         const Gastos = getModelForRequest(req, 'Gastos');
-        console.log('[resumen_del_dia] Gastos 모델 가져옴');
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
-        console.log('[resumen_del_dia] Vdetalle 모델 가져옴');
         const Ingresos = getModelForRequest(req, 'Ingresos');
-        console.log('[resumen_del_dia] Ingresos 모델 가져옴');
         const sequelize = Vcode.sequelize;
         
         // 요청 본문에서 date와 sucursal 받기
@@ -117,7 +102,6 @@ router.post('/', async (req, res) => {
         //     return;
         // }
         
-        console.log('[resumen_del_dia] 쿼리 1 시작: Vcode.findAll');
         const vcodeResult = await Vcode.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'operation_count'],
@@ -137,7 +121,6 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
-        console.log('[resumen_del_dia] 쿼리 1 완료: Vcode.findAll, 결과 개수:', vcodeResult?.length || 0);
         
         // 쿼리 2: gastos 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha = target_date AND borrado is false
@@ -151,7 +134,6 @@ router.post('/', async (req, res) => {
             gastosWhereConditions.push({ sucursal: sucursal });
         }
         
-        console.log('[resumen_del_dia] 쿼리 2 시작: Gastos.findAll');
         const gastosResult = await Gastos.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'gasto_count'],
@@ -165,7 +147,6 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
-        console.log('[resumen_del_dia] 쿼리 2 완료: Gastos.findAll, 결과 개수:', gastosResult?.length || 0);
         
         // 쿼리 3: vdetalle 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha1 = target_date AND borrado is false AND codigo1 = 'de'
@@ -180,7 +161,6 @@ router.post('/', async (req, res) => {
             vdetalleWhereConditions.push({ sucursal: sucursal });
         }
         
-        console.log('[resumen_del_dia] 쿼리 3 시작: Vdetalle.findAll');
         const vdetalleResult = await Vdetalle.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_discount_event'],
@@ -194,7 +174,6 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
-        console.log('[resumen_del_dia] 쿼리 3 완료: Vdetalle.findAll, 결과 개수:', vdetalleResult?.length || 0);
         
         // 쿼리 4: vcodes 데이터 집계 (MercadoPago) - Sucursal별 그룹화
         // 조건: fecha = target_date AND b_cancelado is false AND borrado is false AND b_mercadopago is true
@@ -210,7 +189,6 @@ router.post('/', async (req, res) => {
             vcodeMpagoWhereConditions.push({ sucursal: sucursal });
         }
         
-        console.log('[resumen_del_dia] 쿼리 4 시작: Vcode.findAll (MercadoPago)');
         const vcodeMpagoResult = await Vcode.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count_mpago_total'],
@@ -224,7 +202,6 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
-        console.log('[resumen_del_dia] 쿼리 4 완료: Vcode.findAll (MercadoPago), 결과 개수:', vcodeMpagoResult?.length || 0);
         
         // 쿼리 5: ingresos 데이터 집계 - Sucursal별 그룹화
         // 조건: fecha = target_date AND borrado is false
@@ -238,7 +215,6 @@ router.post('/', async (req, res) => {
             ingresosWhereConditions.push({ sucursal: sucursal });
         }
         
-        console.log('[resumen_del_dia] 쿼리 5 시작: Ingresos.findAll');
         const ingresosResult = await Ingresos.findAll({
             attributes: [
                 [sequelize.fn('COUNT', sequelize.col('*')), 'ingreso_events'],
@@ -252,7 +228,6 @@ router.post('/', async (req, res) => {
             order: [['sucursal', 'ASC']],
             raw: true
         });
-        console.log('[resumen_del_dia] 쿼리 5 완료: Ingresos.findAll, 결과 개수:', ingresosResult?.length || 0);
         
         // 쿼리 6: stocks 데이터 집계 (screendetails2_id) - Sucursal별 그룹화
         const stocksQueryParams = [];
@@ -282,12 +257,10 @@ router.post('/', async (req, res) => {
             ORDER BY si.sucursal ASC
         `;
 
-        console.log('[resumen_del_dia] 쿼리 6 시작: stocks query');
         const stocksResult = await sequelize.query(stocksQuery, {
             bind: stocksQueryParams.length > 0 ? stocksQueryParams : undefined,
             type: Sequelize.QueryTypes.SELECT
         });
-        console.log('[resumen_del_dia] 쿼리 6 완료: stocks query, 결과 개수:', stocksResult?.length || 0);
         
         // Sucursal별로 그룹화된 결과를 배열로 변환
         const vcodeSummary = (vcodeResult || []).map(item => ({
@@ -349,47 +322,18 @@ router.post('/', async (req, res) => {
             stocks: stocksSummary // Sucursal별 배열
         };
         
-        console.log('[resumen_del_dia] 응답 데이터 준비 완료');
-        console.log('[resumen_del_dia] 응답 데이터 크기:', JSON.stringify(responseData).length, 'bytes');
-        console.log('[resumen_del_dia] res 객체 상태:', {
-            headersSent: res.headersSent,
-            finished: res.finished,
-            writable: res.writable,
-            writableEnded: res.writableEnded
-        });
-        
-        // 응답 전송 확인을 위한 이벤트 리스너
-        res.on('finish', () => {
-            console.log('[resumen_del_dia] 응답 전송 완료 (finish 이벤트)');
-        });
-        
-        res.on('close', () => {
-            console.log('[resumen_del_dia] 응답 연결 종료 (close 이벤트)');
-        });
-        
+        // 응답 전송 중 에러만 로깅
         res.on('error', (err) => {
             console.error('[resumen_del_dia] 응답 전송 중 에러:', err);
         });
         
-        console.log('[resumen_del_dia] res.json() 호출 직전');
-        console.log('[resumen_del_dia] 클라이언트 연결 상태:', {
-            _clientDisconnected: req._clientDisconnected,
-            aborted: req.aborted,
-            destroyed: req.destroyed,
-            socketDestroyed: req.socket?.destroyed,
-            socketEnded: req.socket?.ended
-        });
-        
         // 클라이언트 연결이 끊어진 것으로 잘못 감지된 경우 무시
         if (req._clientDisconnected && !req.aborted && !req.destroyed && !req.socket?.destroyed) {
-            console.log('[resumen_del_dia] 경고: 클라이언트 연결이 끊어진 것으로 잘못 감지됨, 응답 전송 계속');
             req._clientDisconnected = false; // 플래그 리셋
         }
         
-        // 응답 전송 (다른 라우터와 동일한 방식으로 - return 추가)
-        const result = res.json(responseData);
-        console.log('[resumen_del_dia] res.json() 호출 완료');
-        return result;
+        // 응답 전송
+        return res.json(responseData);
     } catch (err) {
         console.error('[resumen_del_dia] 에러 발생:', {
             message: err.message,
