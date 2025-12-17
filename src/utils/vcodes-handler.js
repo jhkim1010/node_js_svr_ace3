@@ -27,6 +27,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
     
     try {
         const uniqueKeys = getUniqueKeys(Model, primaryKey);
+        const dbName = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
         
         // 각 항목을 하나씩 조사하여 처리
         for (let i = 0; i < req.body.data.length; i++) {
@@ -113,7 +114,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                                     utimeComparison = `Both client and server have no utime`;
                                 }
                                 
-                                results.push({ 
+                                const resultItem = { 
                                     index: i, 
                                     action: 'updated', 
                                     reason: 'client_utime_newer',
@@ -123,8 +124,10 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                                     data: updated,
                                     serverUtime: serverUtimeStr,
                                     clientUtime: clientUtimeStr
-                                });
+                                };
+                                results.push(resultItem);
                                 updatedCount++;
+                                console.log(`[Vcodes BatchSync] ${dbName} | Item ${i + 1}/${req.body.data.length}: UPDATED | vcode_id=${identifier.vcode_id}, sucursal=${identifier.sucursal} | ${resultItem.reason_en}`);
                             } else {
                                 const createData = { ...filteredItem };
                                 // utime을 문자열로 보장하여 timezone 변환 방지
@@ -140,15 +143,17 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                                     vcode: filteredItem.vcode || created.vcode
                                 };
                                 
-                                results.push({ 
+                                const resultItem = { 
                                     index: i, 
                                     action: 'created', 
                                     reason: 'new_record',
                                     reason_en: 'Created new record (UPDATE count was 0, so INSERT was performed)',
                                     identifier: identifier,
                                     data: created 
-                                });
+                                };
+                                results.push(resultItem);
                                 createdCount++;
+                                console.log(`[Vcodes BatchSync] ${dbName} | Item ${i + 1}/${req.body.data.length}: CREATED | vcode_id=${identifier.vcode_id}, sucursal=${identifier.sucursal} | ${resultItem.reason_en}`);
                             }
                         } else {
                             // 서버 utime이 더 높거나 같으면 스킵
@@ -174,7 +179,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                                 reasonEn = `Skipped because utime comparison is not possible`;
                             }
                             
-                            results.push({ 
+                            const resultItem = { 
                                 index: i, 
                                 action: 'skipped', 
                                 reason: 'server_utime_newer',
@@ -184,8 +189,10 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                                 data: existingRecord,
                                 serverUtime: serverUtimeStr,
                                 clientUtime: clientUtimeStr
-                            });
+                            };
+                            results.push(resultItem);
                             skippedCount++;
+                            console.log(`[Vcodes BatchSync] ${dbName} | Item ${i + 1}/${req.body.data.length}: SKIPPED | vcode_id=${identifier.vcode_id}, sucursal=${identifier.sucursal} | ${resultItem.reason_en}`);
                         }
                     } else {
                         // 레코드가 없으면 INSERT 시도
@@ -204,15 +211,17 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                                 vcode: filteredItem.vcode || created.vcode
                             };
                             
-                            results.push({ 
+                            const resultItem = { 
                                 index: i, 
                                 action: 'created', 
                                 reason: 'new_record',
                                 reason_en: 'Created new record because no existing record was found',
                                 identifier: identifier,
                                 data: created 
-                            });
+                            };
+                            results.push(resultItem);
                             createdCount++;
+                            console.log(`[Vcodes BatchSync] ${dbName} | Item ${i + 1}/${req.body.data.length}: CREATED | vcode_id=${identifier.vcode_id}, sucursal=${identifier.sucursal} | ${resultItem.reason_en}`);
                         } catch (createErr) {
                             // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
                             if (isUniqueConstraintError(createErr)) {
@@ -439,7 +448,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                     vcode: errorItem.vcode
                 } : null;
                 
-                errors.push({ 
+                const errorItem_result = { 
                     index: i, 
                     action: 'failed',
                     reason: 'error_occurred',
@@ -453,7 +462,11 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                     },
                     identifier: errorIdentifier,
                     data: errorItem
-                });
+                };
+                errors.push(errorItem_result);
+                const errorVcodeId = errorIdentifier?.vcode_id || 'N/A';
+                const errorSucursal = errorIdentifier?.sucursal || 'N/A';
+                console.log(`[Vcodes BatchSync] ${dbName} | Item ${i + 1}/${req.body.data.length}: FAILED | vcode_id=${errorVcodeId}, sucursal=${errorSucursal} | ${errorItem_result.reason_en}`);
             }
         }
         

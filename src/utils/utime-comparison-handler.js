@@ -31,6 +31,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
         throw new Error('Sequelize instance not found in Model');
     }
     
+    const dbName = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
     const results = [];
     const errors = [];
     let createdCount = 0;
@@ -1604,6 +1605,27 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
     // 모든 항목 처리 완료 후 결과 반환
     if (results.length > 0 || errors.length > 0) {
             const totalCount = req.body.data.length;
+            
+            // Log each item's processing result
+            if (results.length > 0) {
+                results.forEach((item, idx) => {
+                    const identifier = item.identifier || item.data || {};
+                    const vcodeId = identifier.vcode_id || identifier.ingreso_id || 'N/A';
+                    const sucursal = identifier.sucursal || 'N/A';
+                    const action = item.action || 'unknown';
+                    const reason = item.reason_en || item.reason || 'N/A';
+                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${item.index + 1}/${totalCount}: ${action.toUpperCase()} | vcode_id=${vcodeId}, sucursal=${sucursal} | ${reason}`);
+                });
+            }
+            
+            if (errors.length > 0) {
+                errors.forEach((error, idx) => {
+                    const identifier = error.identifier || error.data || {};
+                    const vcodeId = identifier.vcode_id || identifier.ingreso_id || 'N/A';
+                    const sucursal = identifier.sucursal || 'N/A';
+                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${error.index + 1}/${totalCount}: FAILED | vcode_id=${vcodeId}, sucursal=${sucursal} | ${error.error || 'N/A'}`);
+                });
+            }
             
             const result = {
                 success: true,
