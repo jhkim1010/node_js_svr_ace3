@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
-const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
+const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
+const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError } = require('../utils/error-handler');
@@ -37,26 +38,22 @@ router.post('/', async (req, res) => {
     try {
         const Creditoventas = getModelForRequest(req, 'Creditoventas');
         
-        // BATCH_SYNC 작업 처리
-        if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            // creditoventas는 creditoventa_id만 기본 키로 사용
-            const result = await handleBatchSync(req, res, Creditoventas, 'creditoventa_id', 'Creditoventas');
+        // BATCH_SYNC 또는 배열 데이터 처리 (utime 비교를 통한 개별 처리)
+        // creditoventas는 creditoventa_id만 기본 키로 사용
+        if ((req.body.operation === 'BATCH_SYNC' || Array.isArray(req.body.data)) && Array.isArray(req.body.data) && req.body.data.length > 0) {
+            // 50개를 넘으면 배치로 나눠서 처리 (연결 풀 효율적 사용)
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Creditoventas, 'creditoventa_id', 'Creditoventas');
             await notifyBatchSync(req, Creditoventas, result);
-            return res.status(200).json(result);
-        }
-        
-        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
-        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleArrayData(req, res, Creditoventas, 'creditoventa_id', 'Creditoventas');
             return res.status(200).json(result);
         }
         
         // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우)
         const rawData = req.body.new_data || req.body;
         if (Array.isArray(rawData)) {
-            // 배열인 경우 BATCH_SYNC와 동일하게 처리
+            // 배열인 경우 utime 비교를 통한 개별 처리
             req.body.data = rawData;
-            const result = await handleBatchSync(req, res, Creditoventas, 'creditoventa_id', 'Creditoventas');
+            req.body.operation = req.body.operation || 'BATCH_SYNC';
+            const result = await handleUtimeComparisonArrayData(req, res, Creditoventas, 'creditoventa_id', 'Creditoventas');
             await notifyBatchSync(req, Creditoventas, result);
             return res.status(200).json(result);
         }
@@ -81,11 +78,11 @@ router.put('/:id', async (req, res) => {
     try {
         const Creditoventas = getModelForRequest(req, 'Creditoventas');
         
-        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
+        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우) - utime 비교를 통한 개별 처리
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleArrayData, Creditoventas, 'creditoventa_id', 'Creditoventas');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Creditoventas, 'creditoventa_id', 'Creditoventas');
             await notifyBatchSync(req, Creditoventas, result);
             return res.status(200).json(result);
         }
