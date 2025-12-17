@@ -1,7 +1,8 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
-const { isClientDisconnected } = require('../middleware/client-disconnect-handler');
+// isClientDisconnected 제거됨 - 모든 통신을 방해하는 문제로 인해 비활성화
+// const { isClientDisconnected } = require('../middleware/client-disconnect-handler');
 
 const router = Router();
 

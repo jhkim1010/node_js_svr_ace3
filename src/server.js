@@ -8,7 +8,8 @@ const { parseDbHeader } = require('./middleware/db-header');
 const { loadBcolorview } = require('./middleware/bcolorview-loader');
 const { responseLogger } = require('./middleware/response-logger');
 const { operationLogger } = require('./middleware/operation-logger');
-const { clientDisconnectHandler } = require('./middleware/client-disconnect-handler');
+// clientDisconnectHandler 미들웨어 제거됨 - 모든 통신을 방해하는 문제로 인해 비활성화
+// const { clientDisconnectHandler } = require('./middleware/client-disconnect-handler');
 const { initializeWebSocket, getWebSocketServer } = require('./services/websocket-service');
 const { displayBuildInfo } = require('./utils/build-info');
 const { startMonitoring, getMonitoringStatus, startPostgresConnectionMonitoring } = require('./services/monitoring-service');
@@ -32,6 +33,19 @@ server.on('request', (req, res) => {
         // Express가 처리하지 않도록 함 (ws 라이브러리가 처리함)
         return;
     }
+    
+    // ⚠️ 소켓 상태 확인 (502 에러 추적용)
+    const connectionHeader = req.headers['connection']?.toLowerCase();
+    const isConnectionClose = connectionHeader === 'close';
+    const socketDestroyed = !req.socket || req.socket.destroyed;
+    const socketWritable = req.socket && req.socket.writable;
+    
+    // 소켓이 이미 닫혀있고 Connection: close가 아닌 경우만 경고
+    if (socketDestroyed && !isConnectionClose) {
+        console.warn(`[Server] ⚠️ Request received with destroyed socket (without Connection: close): ${req.method} ${req.url}`);
+        console.warn(`[Server] Socket state: destroyed=${socketDestroyed}, writable=${socketWritable}, connection=${connectionHeader || 'not set'}`);
+    }
+    
     // 일반 HTTP 요청만 Express가 처리
     app(req, res);
 });
@@ -259,23 +273,23 @@ app.use('/api', (req, res, next) => {
     operationLogger(req, res, next);
 });
 
-// 클라이언트 연결 종료 감지 미들웨어 (모든 요청에 적용)
-// WebSocket 경로는 제외
-app.use((req, res, next) => {
-    // WebSocket 업그레이드 요청인 경우 Express 미들웨어 건너뛰기
-    if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || req.originalUrl === '/ws' ||
-        (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
-        return next(); // WebSocket 서버로 전달
-    }
-    
-    // resumen_del_dia 경로는 clientDisconnectHandler 건너뛰기 (nginx를 통한 요청에서 잘못 감지되는 문제)
-    if (req.path === '/api/resumen_del_dia' || req.originalUrl === '/api/resumen_del_dia' || 
-        req.url === '/api/resumen_del_dia' || req.url.startsWith('/api/resumen_del_dia')) {
-        return next(); // clientDisconnectHandler 건너뛰기
-    }
-    
-    clientDisconnectHandler(req, res, next);
-});
+// 클라이언트 연결 종료 감지 미들웨어 제거됨 - 모든 통신을 방해하는 문제로 인해 비활성화
+// clientDisconnectHandler가 모든 라우터에서 문제를 일으켜서 완전히 제거함
+// app.use((req, res, next) => {
+//     // WebSocket 업그레이드 요청인 경우 Express 미들웨어 건너뛰기
+//     if (req.path === '/ws' || req.url === '/ws' || req.originalUrl === '/api/ws' || req.originalUrl === '/ws' ||
+//         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
+//         return next(); // WebSocket 서버로 전달
+//     }
+//     
+//     // resumen_del_dia 경로는 clientDisconnectHandler 건너뛰기 (nginx를 통한 요청에서 잘못 감지되는 문제)
+//     if (req.path === '/api/resumen_del_dia' || req.originalUrl === '/api/resumen_del_dia' || 
+//         req.url === '/api/resumen_del_dia' || req.url.startsWith('/api/resumen_del_dia')) {
+//         return next(); // clientDisconnectHandler 건너뛰기
+//     }
+//     
+//     clientDisconnectHandler(req, res, next);
+// });
 
 // 응답 로깅 미들웨어 (모든 요청에 적용)
 // WebSocket 경로는 제외

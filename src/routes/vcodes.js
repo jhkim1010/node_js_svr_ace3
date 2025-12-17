@@ -158,33 +158,38 @@ router.post('/', async (req, res) => {
         const socketWritableAtStart = req.socket && req.socket.writable;
         const socketReadableAtStart = req.socket && req.socket.readable;
         const socketReadyStateAtStart = req.socket?.readyState;
+        const connectionHeader = req.headers['connection']?.toLowerCase();
+        const isConnectionClose = connectionHeader === 'close';
         
+        // Connection: close 헤더가 있으면 응답 후 연결을 닫겠다는 의미이므로 정상 동작
+        // 하지만 소켓이 이미 destroyed 상태면 문제가 있음
         if (socketDestroyedAtStart || !socketWritableAtStart) {
-            console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️⚠️⚠️ CRITICAL: SOCKET ALREADY DESTROYED AT REQUEST START!`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} | This means the socket was closed BEFORE this request was received!`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} | Socket state: destroyed=${socketDestroyedAtStart}, writable=${socketWritableAtStart}, readable=${socketReadableAtStart}, readyState=${socketReadyStateAtStart}`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} | Request method: ${req.method}, URL: ${req.url}, path: ${req.path}`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} | Request headers: ${JSON.stringify({
-                'user-agent': req.headers['user-agent'],
-                'connection': req.headers['connection'],
-                'content-type': req.headers['content-type'],
-                'content-length': req.headers['content-length']
-            })}`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ ROOT CAUSE: This is likely a Nginx/proxy issue!`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} | Check Nginx configuration:`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} |   1. proxy_read_timeout should be >= 300s`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} |   2. proxy_connect_timeout should be >= 300s`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} |   3. proxy_send_timeout should be >= 300s`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} |   4. keepalive_timeout should be >= 300s`);
-            console.error(`[502 Tracker] ${requestId} | ${dbName} |   5. Previous request may not have completed properly, causing connection to be closed`);
+            console.warn(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ WARNING: SOCKET STATE ISSUE AT REQUEST START`);
+            console.warn(`[502 Tracker] ${requestId} | ${dbName} | Socket state: destroyed=${socketDestroyedAtStart}, writable=${socketWritableAtStart}, readable=${socketReadableAtStart}, readyState=${socketReadyStateAtStart}`);
+            console.warn(`[502 Tracker] ${requestId} | ${dbName} | Connection header: ${connectionHeader || 'not set'}`);
+            console.warn(`[502 Tracker] ${requestId} | ${dbName} | Request method: ${req.method}, URL: ${req.url}, path: ${req.path}`);
             
-            // 소켓이 이미 닫혀있으면 처리하지 않고 즉시 종료
-            // 응답을 보낼 수 없으므로 에러만 로깅
-            logConnectionState('REQUEST_REJECTED_SOCKET_DESTROYED');
+            // Connection: close 헤더가 있으면 정상 동작일 수 있음
+            // 하지만 소켓이 이미 destroyed 상태면 문제가 있음
+            if (isConnectionClose) {
+                console.warn(`[502 Tracker] ${requestId} | ${dbName} | Note: Connection: close header detected - this is normal, but socket destroyed state is unusual`);
+            } else {
+                console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️⚠️⚠️ CRITICAL: SOCKET DESTROYED WITHOUT Connection: close HEADER!`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} | This means the socket was closed BEFORE this request was received!`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ ROOT CAUSE: This is likely a Nginx/proxy issue!`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} | Check Nginx configuration:`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} |   1. proxy_read_timeout should be >= 300s`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} |   2. proxy_connect_timeout should be >= 300s`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} |   3. proxy_send_timeout should be >= 300s`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} |   4. keepalive_timeout should be >= 300s`);
+            }
             
-            // 소켓이 닫혀있어도 일단 처리 시도 (에러가 발생할 것이지만 로깅을 위해)
-            // 실제로는 처리할 수 없으므로 early return
-            return;
+            logConnectionState('SOCKET_STATE_CHECK');
+            
+            // ⚠️ 중요: 소켓이 닫혀있어도 요청은 처리 시도
+            // Connection: close 헤더가 있으면 응답 후 연결을 닫겠다는 의미이므로
+            // 요청 자체는 처리해야 함. 응답 시도 시 소켓이 닫혀있으면 에러가 발생하지만
+            // 그때 처리하는 것이 맞음
         }
         
         logConnectionState('REQUEST_RECEIVED');
