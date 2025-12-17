@@ -80,6 +80,18 @@ function operationLogger(req, res, next) {
         
         // req에 operation 정보 저장 (다른 미들웨어나 핸들러에서 사용 가능)
         req._operation = operation;
+        
+        // 요청 로그 출력
+        const path = req.originalUrl || req.path || req.url;
+        const routerName = extractRouterName(path);
+        const dbName = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
+        console.log(`→ ${dbName} | ${req.method} ${path} | ${operation} | ${dataCount}개`);
+    } else {
+        // GET 요청도 로깅
+        const path = req.originalUrl || req.path || req.url;
+        const routerName = extractRouterName(path);
+        const dbName = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
+        console.log(`→ ${dbName} | ${req.method} ${path}`);
     }
     
     next();
