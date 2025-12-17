@@ -133,11 +133,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                             }
                         } catch (ingresoIdErr) {
-                            // 에러 발생 시에만 로그 출력
+                            // 에러 발생 시에만 로그 출력 (간단히)
                             if (modelName === 'Ingresos') {
-                                const ingresoIdErrorMsg = ingresoIdErr.original ? ingresoIdErr.original.message : ingresoIdErr.message;
-                                console.error(`[Ingresos DEBUG] ingreso_id 조회 중 에러 - 항목 ${i + 1}/${req.body.data.length}`);
-                                console.error(`[Ingresos DEBUG] ingreso_id=${filteredItem.ingreso_id}, 에러: ${ingresoIdErrorMsg}`);
+                                const dbConfig = req.dbConfig || {};
+                                const database = dbConfig.database || '알 수 없음';
+                                console.error(`[Ingresos] Database: ${database}`);
                             }
                             // 에러 발생 시 복합 key 조회로 진행
                         }
@@ -1353,11 +1353,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const constraintMatch = errorMsg ? errorMsg.match(/constraint "([^"]+)"/) : null;
                             const constraintName = constraintMatch ? constraintMatch[1] : null;
                             
-                            // 에러 발생 시에만 디버깅 정보 출력
+                            // 에러 발생 시 데이터베이스 이름만 간단히 표시
                             if (modelName === 'Ingresos') {
-                                console.error(`[Ingresos DEBUG] INSERT 실패 - 항목 ${i + 1}/${req.body.data.length}`);
-                                console.error(`[Ingresos DEBUG] Constraint: ${constraintName || 'unknown'}`);
-                                console.error(`[Ingresos DEBUG] Attempted keys: ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`);
+                                const dbConfig = req.dbConfig || {};
+                                const database = dbConfig.database || '알 수 없음';
+                                console.error(`[Ingresos] Database: ${database}`);
                             }
                             
                             try {
@@ -1365,9 +1365,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
                                 // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
-                                if (modelName === 'Ingresos') {
-                                    console.error(`[Ingresos DEBUG] SAVEPOINT 롤백 실패: ${rollbackErr.message}`);
-                                }
                             }
                             
                             // 모든 unique key (primary key + 복합 unique key 포함)로 레코드 조회 시도
@@ -1501,10 +1498,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         }
                                     }
                                     
-                                    if (modelName === 'Ingresos') {
-                                        console.error(`[Ingresos DEBUG] utime 비교: client=${clientUtimeStr}, server=${serverUtimeStr}`);
-                                    }
-                                    
                                     // utime 비교
                                     let shouldUpdate = false;
                                     
@@ -1516,10 +1509,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         shouldUpdate = clientUtimeStr > serverUtimeStr;
                                     } else {
                                         shouldUpdate = false;
-                                    }
-                                    
-                                    if (modelName === 'Ingresos') {
-                                        console.error(`[Ingresos DEBUG] shouldUpdate=${shouldUpdate}`);
                                     }
                                     
                                     if (shouldUpdate) {
@@ -1554,11 +1543,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             
                                             // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
                                         } catch (updateErr) {
-                                            // UPDATE 실패 시에만 로그 출력
+                                            // UPDATE 실패 시 데이터베이스 이름만 간단히 표시
                                             if (modelName === 'Ingresos') {
-                                                const updateErrorMsg = updateErr.original ? updateErr.original.message : updateErr.message;
-                                                console.error(`[Ingresos DEBUG] UPDATE 실패 - 항목 ${i + 1}/${req.body.data.length}`);
-                                                console.error(`[Ingresos DEBUG] where=${JSON.stringify(retryWhereCondition)}, 에러: ${updateErrorMsg}`);
+                                                const dbConfig = req.dbConfig || {};
+                                                const database = dbConfig.database || '알 수 없음';
+                                                console.error(`[Ingresos] Database: ${database}`);
                                             }
                                             throw updateErr;
                                         }
@@ -1577,15 +1566,17 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
                                     }
                                 } else {
-                                    // 레코드를 찾을 수 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
-                                if (modelName === 'Ingresos') {
-                                    console.error(`[Ingresos DEBUG] 레코드를 찾을 수 없음 - 원래 에러 재발생`);
-                                    console.error(`[Ingresos DEBUG] 원래 에러: ${errorMsg}`);
-                                }
+                                    // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
+                                    // 데이터베이스 이름만 간단히 표시
+                                    if (modelName === 'Ingresos') {
+                                        const dbConfig = req.dbConfig || {};
+                                        const database = dbConfig.database || '알 수 없음';
+                                        console.error(`[Ingresos] Database: ${database}`);
+                                    }
                                 
-                                // 독립 트랜잭션 사용 중이므로 SAVEPOINT 롤백 불필요
-                                throw createErr;
-                            }
+                                    // 독립 트랜잭션 사용 중이므로 SAVEPOINT 롤백 불필요
+                                    throw createErr;
+                                }
                         } else {
                             // unique constraint 에러가 아니거나 primary key가 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
                             try {
@@ -1617,14 +1608,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             
             // 디버깅: Ingresos 에러 상세 로그
             if (modelName === 'Ingresos') {
-                const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
-                const itemConstraintMatch = itemErrorMsg ? itemErrorMsg.match(/constraint "([^"]+)"/) : null;
-                const itemConstraintName = itemConstraintMatch ? itemConstraintMatch[1] : null;
-                
-                console.error(`[Ingresos DEBUG] itemErr catch 블록 진입 - 항목 ${i + 1}/${req.body.data.length}`);
-                console.error(`[Ingresos DEBUG] 에러 타입: ${itemErr.constructor.name}`);
-                console.error(`[Ingresos DEBUG] 에러 메시지: ${itemErrorMsg}`);
-                console.error(`[Ingresos DEBUG] Constraint: ${itemConstraintName || 'none'}`);
+                // 에러 발생 시 데이터베이스 이름만 간단히 표시
+                if (modelName === 'Ingresos') {
+                    const dbConfig = req.dbConfig || {};
+                    const database = dbConfig.database || '알 수 없음';
+                    console.error(`[Ingresos] Database: ${database}`);
+                }
             }
             
             // 에러를 errors 배열에 추가하고 다음 항목 계속 처리

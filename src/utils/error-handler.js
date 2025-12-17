@@ -116,61 +116,8 @@ function handleInsertUpdateError(err, req, modelName, primaryKey, tableName) {
                              errorMsg.includes('is not present in table');
     
     if (isForeignKeyError) {
-        // 외래키 제약 조건 위반 상세 분석
-        // PostgreSQL 형식: "Key (column_name)=(value) is not present in table \"referenced_table\""
-        // 또는: "insert or update on table \"table_name\" violates foreign key constraint \"constraint_name\""
-        
-        const keyMatch = errorMsg.match(/Key \(([^)]+)\)=\(([^)]+)\)/i);
-        const tableMatch = errorMsg.match(/is not present in table ['"]([^'"]+)['"]/i) ||
-                          errorMsg.match(/table ['"]([^'"]+)['"]/i);
-        const constraintMatch = errorMsg.match(/constraint ['"]([^'"]+)['"]/i);
-        
-        const columnName = keyMatch ? keyMatch[1].trim() : null;
-        const columnValue = keyMatch ? keyMatch[2].trim() : null;
-        const referencedTable = tableMatch ? tableMatch[1] : null;
-        const constraintName = constraintMatch ? constraintMatch[1] : null;
-        
-        console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: Foreign key constraint violation`);
-        console.error(`   Problem Source: ${errorClassification.description}`);
-        console.error(`   Reason: ${errorClassification.reason}`);
-        console.error(`   Error Message: ${errorMsg}`);
-        
-        if (columnName && columnValue) {
-            console.error(`   Foreign Key Column: ${columnName}`);
-            console.error(`   Invalid Value: ${columnValue}`);
-            console.error(`   Description: 컬럼 '${columnName}'의 값 '${columnValue}'가 참조하는 테이블에 존재하지 않습니다`);
-            
-            if (referencedTable) {
-                console.error(`   Referenced Table: ${referencedTable}`);
-                console.error(`   Solution: '${referencedTable}' 테이블에 값 '${columnValue}'가 존재하는지 확인하세요`);
-            }
-            
-            // 요청 본문에서 해당 컬럼 확인
-            const bodyData = req.body.new_data || req.body.data || req.body;
-            if (bodyData) {
-                const dataToCheck = Array.isArray(bodyData) ? bodyData[0] : bodyData;
-                if (dataToCheck && typeof dataToCheck === 'object') {
-                    if (dataToCheck[columnName] !== undefined) {
-                        console.error(`   Request Data: ${columnName} = ${JSON.stringify(dataToCheck[columnName])}`);
-                        if (String(dataToCheck[columnName]) !== String(columnValue)) {
-                            console.error(`   ⚠️  주의: 요청 데이터의 값(${JSON.stringify(dataToCheck[columnName])})과 에러 메시지의 값(${columnValue})이 다릅니다`);
-                        }
-                    } else {
-                        console.error(`   Request Data: ${columnName} 필드가 요청 데이터에 없습니다`);
-                    }
-                }
-            }
-        } else {
-            // 컬럼 정보를 추출할 수 없는 경우
-            console.error(`   Note: 외래키 제약 조건 위반이 감지되었지만 컬럼 정보를 추출할 수 없습니다`);
-            if (constraintName) {
-                console.error(`   Constraint Name: ${constraintName}`);
-            }
-            if (referencedTable) {
-                console.error(`   Referenced Table: ${referencedTable}`);
-            }
-        }
-        
+        // 외래키 제약 조건 위반 - 데이터베이스 이름만 간단히 표시
+        console.error(`ERROR: ${modelName} INSERT/UPDATE failed [${errorClassification.source}]: Foreign key constraint violation - Database: ${database}`);
         return; // 외래키 오류는 여기서 처리 완료
     }
     
