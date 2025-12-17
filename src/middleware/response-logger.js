@@ -51,14 +51,18 @@ function responseLogger(req, res, next) {
         const method = (req.method || '').toUpperCase();
         const operationWithMethod = `${method}/${operation}`;
         
+        // 상태 코드에 따른 성공/실패 표시
+        const statusEmoji = isSuccess ? '✅' : '❌';
+        const statusText = isSuccess ? '' : ` | Status: ${statusCode}`;
+        
         // 처리 통계 정보가 있으면 총 개수만 출력 (pagination으로 나눠서 들어올 때도 총 개수만 표시)
         if (req._processingStats) {
             const stats = req._processingStats;
             const skippedText = stats.skipped > 0 ? ` | Skipped: ${stats.skipped}` : '';
-            console.log(`${dbName} | ${routerName} | ${operationWithMethod} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}${skippedText}`);
+            console.log(`${statusEmoji} ${dbName} | ${routerName} | ${operationWithMethod} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}${skippedText}${statusText}`);
         } else {
             // 1줄로 출력
-            console.log(`${dbName} | ${routerName} | ${operationWithMethod} | ${dataCount}개`);
+            console.log(`${statusEmoji} ${dbName} | ${routerName} | ${operationWithMethod} | ${dataCount}개${statusText}`);
         }
     });
     

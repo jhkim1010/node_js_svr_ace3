@@ -249,6 +249,20 @@ function parseDbHeader(req, res, next) {
         ssl: dbSsl === 'true' || dbSsl === '1'
     };
     
+    // DB 헤더 파싱 완료 후 요청 로그 출력 (DB 정보 포함)
+    if (req.method && ['POST', 'PUT', 'DELETE', 'PATCH', 'GET'].includes(req.method)) {
+        const path = req.originalUrl || req.path || req.url;
+        const dbNameForLog = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
+        const operation = req._operation || (req.method === 'POST' ? 'CREATE' : req.method === 'PUT' ? 'UPDATE' : req.method === 'DELETE' ? 'DELETE' : 'READ');
+        const dataCount = req._dataCount || 1;
+        
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+            console.log(`→ ${dbNameForLog} | ${req.method} ${path} | ${operation} | ${dataCount}개`);
+        } else {
+            console.log(`→ ${dbNameForLog} | ${req.method} ${path}`);
+        }
+    }
+    
     next();
 }
 
