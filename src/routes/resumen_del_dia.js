@@ -339,6 +339,12 @@ router.post('/', async (req, res) => {
         
         console.log('[resumen_del_dia] 응답 데이터 준비 완료');
         console.log('[resumen_del_dia] 응답 데이터 크기:', JSON.stringify(responseData).length, 'bytes');
+        console.log('[resumen_del_dia] res 객체 상태:', {
+            headersSent: res.headersSent,
+            finished: res.finished,
+            writable: res.writable,
+            writableEnded: res.writableEnded
+        });
         
         // 응답 전송 확인을 위한 이벤트 리스너
         res.on('finish', () => {
@@ -349,8 +355,15 @@ router.post('/', async (req, res) => {
             console.log('[resumen_del_dia] 응답 연결 종료 (close 이벤트)');
         });
         
+        res.on('error', (err) => {
+            console.error('[resumen_del_dia] 응답 전송 중 에러:', err);
+        });
+        
+        console.log('[resumen_del_dia] res.json() 호출 직전');
         // 응답 전송 (다른 라우터와 동일한 방식으로 - return 추가)
-        return res.json(responseData);
+        const result = res.json(responseData);
+        console.log('[resumen_del_dia] res.json() 호출 완료, 반환값:', result);
+        return result;
     } catch (err) {
         console.error('[resumen_del_dia] 에러 발생:', {
             message: err.message,
