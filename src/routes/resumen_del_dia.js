@@ -87,18 +87,19 @@ router.post('/', async (req, res) => {
             vcodeWhereConditions.push({ sucursal: sucursal });
         }
         
-        // 클라이언트 연결 종료 체크
-        if (isClientDisconnected(req)) {
-            // 클라이언트 연결이 끊어졌으면 조기 종료 (연결 풀 낭비 방지)
-            // 하지만 응답은 보내야 함 (nginx가 타임아웃을 기다리지 않도록)
-            if (!res.headersSent) {
-                return res.status(499).json({ 
-                    error: 'Client closed request',
-                    message: 'Client disconnected before response could be sent'
-                });
-            }
-            return;
-        }
+        // 클라이언트 연결 종료 체크 (nginx를 통한 요청에서는 신뢰할 수 없으므로 주석 처리)
+        // nginx를 통한 요청에서는 소켓 상태가 다를 수 있어서 잘못 감지될 수 있음
+        // if (isClientDisconnected(req)) {
+        //     // 클라이언트 연결이 끊어졌으면 조기 종료 (연결 풀 낭비 방지)
+        //     // 하지만 응답은 보내야 함 (nginx가 타임아웃을 기다리지 않도록)
+        //     if (!res.headersSent) {
+        //         return res.status(499).json({ 
+        //             error: 'Client closed request',
+        //             message: 'Client disconnected before response could be sent'
+        //         });
+        //     }
+        //     return;
+        // }
         
         const vcodeResult = await Vcode.findAll({
             attributes: [
