@@ -88,17 +88,47 @@ router.post('/', async (req, res) => {
         }
     });
     
-    // 응답 전송 감지
+    // 응답 전송 감지 및 소켓 상태 확인
     const originalJson = res.json.bind(res);
     res.json = function(body) {
-        responseSent = true;
         const elapsed = Date.now() - requestStartTime;
         const processingTime = processingEndTime ? processingEndTime - processingStartTime : null;
         
+        // 소켓 상태 확인 (매우 중요!)
+        const socketDestroyed = !req.socket || req.socket.destroyed;
+        const socketWritable = req.socket && req.socket.writable;
+        const socketReadable = req.socket && req.socket.readable;
+        const socketReadyState = req.socket?.readyState;
+        
+        // 소켓이 이미 닫혀있거나 쓸 수 없는 상태인지 확인
+        if (socketDestroyed || !socketWritable) {
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️⚠️⚠️ SOCKET DESTROYED BEFORE RESPONSE | elapsed=${elapsed}ms | This will cause 502 error!`);
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | Socket state: destroyed=${socketDestroyed}, writable=${socketWritable}, readable=${socketReadable}, readyState=${socketReadyState}`);
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | Response headersSent=${res.headersSent}, responseSent=${responseSent}`);
+            logConnectionState('SOCKET_DESTROYED_BEFORE_RESPONSE');
+            
+            // 소켓이 이미 닫혀있으면 응답을 보낼 수 없음
+            if (socketDestroyed) {
+                console.error(`[502 Tracker] ${requestId} | ${dbName} | ❌ Cannot send response - socket already destroyed. Client will receive 502 error.`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️ This is the ROOT CAUSE of 502 error!`);
+                // 응답을 보내려고 시도하지 않음 (이미 소켓이 닫혀있으므로)
+                return res;
+            }
+        }
+        
+        // 응답 전송 시도
+        responseSent = true;
         console.log(`[502 Tracker] ${requestId} | ${dbName} | ✅ RESPONSE SENT | elapsed=${elapsed}ms | processingTime=${processingTime}ms | status=${res.statusCode}`);
         logConnectionState('RESPONSE_SENT');
         
-        return originalJson(body);
+        try {
+            return originalJson(body);
+        } catch (jsonErr) {
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | ❌ Failed to send JSON response: ${jsonErr.message}`);
+            console.error(`[502 Tracker] ${requestId} | ${dbName} | Error stack: ${jsonErr.stack}`);
+            logConnectionState('JSON_RESPONSE_FAILED');
+            throw jsonErr;
+        }
     };
     
     // 에러 발생 감지
@@ -159,6 +189,15 @@ router.post('/', async (req, res) => {
             const processingTime = processingEndTime - processingStartTime;
             console.log(`[502 Tracker] ${requestId} | ${dbName} | ${operation} processing completed | processingTime=${processingTime}ms`);
             logConnectionState(`${operation}_PROCESSING_COMPLETE`);
+            
+            // 소켓 상태 확인 (처리 완료 후, 응답 전송 전)
+            const socketDestroyed = !req.socket || req.socket.destroyed;
+            const socketWritable = req.socket && req.socket.writable;
+            if (socketDestroyed || !socketWritable) {
+                console.error(`[502 Tracker] ${requestId} | ${dbName} | ⚠️⚠️⚠️ SOCKET DESTROYED AFTER PROCESSING | elapsed=${Date.now() - requestStartTime}ms | This will cause 502 error!`);
+                console.error(`[502 Tracker] ${requestId} | ${dbName} | Socket state: destroyed=${socketDestroyed}, writable=${socketWritable}, readable=${req.socket?.readable}`);
+                logConnectionState('SOCKET_DESTROYED_AFTER_PROCESSING');
+            }
             
             // Summary log only (detailed logs are already printed in handleUtimeComparisonArrayData)
             console.log(`[Vcodes POST] ${dbName} | ${operation} completed: ${result.processed || 0} processed, ${result.created || 0} created, ${result.updated || 0} updated, ${result.skipped || 0} skipped, ${result.failed || 0} failed | requestId=${requestId}`);

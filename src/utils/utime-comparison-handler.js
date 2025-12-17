@@ -671,12 +671,21 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                             } else {
                                 // 서버 utime이 더 높거나 같으면 스킵
+                                // Extract identifier from existingRecord or filteredItem
+                                const identifier = {
+                                    vcode_id: filteredItem.vcode_id || existingRecord?.vcode_id,
+                                    sucursal: filteredItem.sucursal || existingRecord?.sucursal,
+                                    vcode: filteredItem.vcode || existingRecord?.vcode
+                                };
+                                
                                 results.push({ 
                                     index: i, 
                                     action: 'skipped', 
                                     reason: 'server_utime_newer',
+                                    reason_en: 'Skipped because server utime is newer or equal',
                                     serverUtime: serverUtimeStr,
                                     clientUtime: clientUtimeStr,
+                                    identifier: identifier,
                                     data: existingRecord 
                                 });
                                 skippedCount++;
