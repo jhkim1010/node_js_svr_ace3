@@ -340,23 +340,9 @@ router.post('/', async (req, res) => {
         console.log('[resumen_del_dia] 응답 데이터 준비 완료');
         console.log('[resumen_del_dia] 응답 데이터 크기:', JSON.stringify(responseData).length, 'bytes');
         
-        // 응답 전송 (명시적으로 처리)
-        if (!res.headersSent) {
-            try {
-                res.json(responseData);
-                // 응답이 실제로 전송되었는지 확인
-                process.nextTick(() => {
-                    console.log('[resumen_del_dia] 응답 전송 확인 (headersSent:', res.headersSent, ', finished:', res.finished, ')');
-                });
-            } catch (sendErr) {
-                console.error('[resumen_del_dia] 응답 전송 중 에러:', sendErr);
-                if (!res.headersSent) {
-                    res.status(500).json({ error: 'Failed to send response', details: sendErr.message });
-                }
-            }
-        } else {
-            console.error('[resumen_del_dia] 경고: 응답 헤더가 이미 전송됨');
-        }
+        // 응답 전송 (다른 라우터와 동일한 방식으로 단순화)
+        res.json(responseData);
+        console.log('[resumen_del_dia] res.json() 호출 완료');
     } catch (err) {
         console.error('[resumen_del_dia] 에러 발생:', {
             message: err.message,
