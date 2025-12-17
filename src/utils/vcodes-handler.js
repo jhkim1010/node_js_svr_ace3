@@ -1,6 +1,9 @@
 // Vcodes 테이블 전용 핸들러
+const { Sequelize } = require('sequelize');
 const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKey, buildWhereCondition, isUniqueConstraintError } = require('./batch-sync-handler');
 const { classifyError } = require('./error-classifier');
+const { convertUtimeToString, extractUtimeStringFromRecord, shouldUpdateBasedOnUtime } = require('./utime-helpers');
+const { convertUtimeToSequelizeLiteral } = require('./utime-helpers');
 
 async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
     // 데이터 개수를 req에 저장 (로깅용)
@@ -20,6 +23,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
     const errors = [];
     let createdCount = 0;
     let updatedCount = 0;
+    let skippedCount = 0;
     
     try {
         const uniqueKeys = getUniqueKeys(Model, primaryKey);
@@ -37,40 +41,177 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                 const cleanedItem = removeSyncField(item);
                 const filteredItem = filterModelFields(Model, cleanedItem);
                 
+                // 클라이언트 utime 추출
+                const clientUtimeStr = convertUtimeToString(filteredItem.utime);
+                
                 // Vcodes 특화: vcode 필드로도 확인 가능
                 const availableUniqueKey = findAvailableUniqueKey(filteredItem, uniqueKeys);
                 
                 if (availableUniqueKey) {
                     const whereCondition = buildWhereCondition(filteredItem, availableUniqueKey);
                     
-                    // 먼저 기존 레코드 조회
+                    // 먼저 기존 레코드 조회 (utime_str 포함)
                     const existingRecord = Array.isArray(availableUniqueKey)
-                        ? await Model.findOne({ where: whereCondition, transaction })
-                        : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                        ? await Model.findOne({ 
+                            where: whereCondition, 
+                            transaction,
+                            attributes: {
+                                include: [
+                                    [Sequelize.literal(`utime::text`), 'utime_str']
+                                ]
+                            },
+                            raw: true
+                        })
+                        : await Model.findByPk(filteredItem[availableUniqueKey], { 
+                            transaction,
+                            attributes: {
+                                include: [
+                                    [Sequelize.literal(`utime::text`), 'utime_str']
+                                ]
+                            },
+                            raw: true
+                        });
                     
                     if (existingRecord) {
-                        const updateData = { ...filteredItem };
-                        const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
-                        keysToRemove.forEach(key => delete updateData[key]);
+                        // 서버 utime 추출
+                        const serverUtimeStr = await extractUtimeStringFromRecord(existingRecord, Model, whereCondition, transaction);
                         
-                        const [count] = await Model.update(updateData, { where: whereCondition, transaction });
+                        // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트
+                        const shouldUpdate = shouldUpdateBasedOnUtime(clientUtimeStr, serverUtimeStr);
                         
-                        if (count > 0) {
-                            const updated = Array.isArray(availableUniqueKey)
-                                ? await Model.findOne({ where: whereCondition, transaction })
-                                : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                            results.push({ index: i, action: 'updated', data: updated });
-                            updatedCount++;
+                        if (shouldUpdate) {
+                            const updateData = { ...filteredItem };
+                            const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                            keysToRemove.forEach(key => delete updateData[key]);
+                            
+                            // utime을 문자열로 보장하여 timezone 변환 방지
+                            if (updateData.utime) {
+                                updateData.utime = convertUtimeToSequelizeLiteral(updateData.utime);
+                            }
+                            
+                            const [count] = await Model.update(updateData, { where: whereCondition, transaction });
+                            
+                            if (count > 0) {
+                                const updated = Array.isArray(availableUniqueKey)
+                                    ? await Model.findOne({ where: whereCondition, transaction })
+                                    : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                
+                                // 식별 정보 추출
+                                const identifier = {
+                                    vcode_id: filteredItem.vcode_id || existingRecord.vcode_id,
+                                    sucursal: filteredItem.sucursal || existingRecord.sucursal,
+                                    vcode: filteredItem.vcode || existingRecord.vcode
+                                };
+                                
+                                // utime comparison description
+                                let utimeComparison = '';
+                                if (clientUtimeStr && serverUtimeStr) {
+                                    utimeComparison = `Client utime(${clientUtimeStr}) > Server utime(${serverUtimeStr})`;
+                                } else if (clientUtimeStr && !serverUtimeStr) {
+                                    utimeComparison = `Client utime(${clientUtimeStr}) exists, Server utime missing`;
+                                } else if (!clientUtimeStr && !serverUtimeStr) {
+                                    utimeComparison = `Both client and server have no utime`;
+                                }
+                                
+                                results.push({ 
+                                    index: i, 
+                                    action: 'updated', 
+                                    reason: 'client_utime_newer',
+                                    reason_en: 'Updated because client utime is newer',
+                                    utime_comparison: utimeComparison,
+                                    identifier: identifier,
+                                    data: updated,
+                                    serverUtime: serverUtimeStr,
+                                    clientUtime: clientUtimeStr
+                                });
+                                updatedCount++;
+                            } else {
+                                const createData = { ...filteredItem };
+                                // utime을 문자열로 보장하여 timezone 변환 방지
+                                if (createData.utime) {
+                                    createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
+                                }
+                                const created = await Model.create(createData, { transaction });
+                                
+                                // 식별 정보 추출
+                                const identifier = {
+                                    vcode_id: filteredItem.vcode_id || created.vcode_id,
+                                    sucursal: filteredItem.sucursal || created.sucursal,
+                                    vcode: filteredItem.vcode || created.vcode
+                                };
+                                
+                                results.push({ 
+                                    index: i, 
+                                    action: 'created', 
+                                    reason: 'new_record',
+                                    reason_en: 'Created new record (UPDATE count was 0, so INSERT was performed)',
+                                    identifier: identifier,
+                                    data: created 
+                                });
+                                createdCount++;
+                            }
                         } else {
-                            const created = await Model.create(filteredItem, { transaction });
-                            results.push({ index: i, action: 'created', data: created });
-                            createdCount++;
+                            // 서버 utime이 더 높거나 같으면 스킵
+                            
+                            // 식별 정보 추출
+                            const identifier = {
+                                vcode_id: filteredItem.vcode_id || existingRecord.vcode_id,
+                                sucursal: filteredItem.sucursal || existingRecord.sucursal,
+                                vcode: filteredItem.vcode || existingRecord.vcode
+                            };
+                            
+                            // utime comparison description
+                            let utimeComparison = '';
+                            let reasonEn = '';
+                            if (clientUtimeStr && serverUtimeStr) {
+                                utimeComparison = `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`;
+                                reasonEn = `Skipped because server utime(${serverUtimeStr}) is newer than or equal to client utime(${clientUtimeStr})`;
+                            } else if (!clientUtimeStr && serverUtimeStr) {
+                                utimeComparison = `Client utime missing, Server utime(${serverUtimeStr}) exists`;
+                                reasonEn = `Skipped because only server has utime`;
+                            } else {
+                                utimeComparison = `Both client and server have no utime`;
+                                reasonEn = `Skipped because utime comparison is not possible`;
+                            }
+                            
+                            results.push({ 
+                                index: i, 
+                                action: 'skipped', 
+                                reason: 'server_utime_newer',
+                                reason_en: reasonEn,
+                                utime_comparison: utimeComparison,
+                                identifier: identifier,
+                                data: existingRecord,
+                                serverUtime: serverUtimeStr,
+                                clientUtime: clientUtimeStr
+                            });
+                            skippedCount++;
                         }
                     } else {
                         // 레코드가 없으면 INSERT 시도
                         try {
-                            const created = await Model.create(filteredItem, { transaction });
-                            results.push({ index: i, action: 'created', data: created });
+                            const createData = { ...filteredItem };
+                            // utime을 문자열로 보장하여 timezone 변환 방지
+                            if (createData.utime) {
+                                createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
+                            }
+                            const created = await Model.create(createData, { transaction });
+                            
+                            // 식별 정보 추출
+                            const identifier = {
+                                vcode_id: filteredItem.vcode_id || created.vcode_id,
+                                sucursal: filteredItem.sucursal || created.sucursal,
+                                vcode: filteredItem.vcode || created.vcode
+                            };
+                            
+                            results.push({ 
+                                index: i, 
+                                action: 'created', 
+                                reason: 'new_record',
+                                reason_en: 'Created new record because no existing record was found',
+                                identifier: identifier,
+                                data: created 
+                            });
                             createdCount++;
                         } catch (createErr) {
                             // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 UPDATE로 재시도
@@ -81,26 +222,140 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                                     
                                     // 레코드가 실제로 존재하는지 다시 확인 (동시성 문제 대비)
                                     const retryRecord = Array.isArray(availableUniqueKey)
-                                        ? await Model.findOne({ where: whereCondition, transaction })
-                                        : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                        ? await Model.findOne({ 
+                                            where: whereCondition, 
+                                            transaction,
+                                            attributes: {
+                                                include: [
+                                                    [Sequelize.literal(`utime::text`), 'utime_str']
+                                                ]
+                                            },
+                                            raw: true
+                                        })
+                                        : await Model.findByPk(filteredItem[availableUniqueKey], { 
+                                            transaction,
+                                            attributes: {
+                                                include: [
+                                                    [Sequelize.literal(`utime::text`), 'utime_str']
+                                                ]
+                                            },
+                                            raw: true
+                                        });
                                     
                                     if (retryRecord) {
-                                        // 레코드가 존재하면 UPDATE
-                                        const updateData = { ...filteredItem };
-                                        const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
-                                        keysToRemove.forEach(key => delete updateData[key]);
+                                        // 서버 utime 추출
+                                        const serverUtimeStr = await extractUtimeStringFromRecord(retryRecord, Model, whereCondition, transaction);
                                         
-                                        await Model.update(updateData, { where: whereCondition, transaction });
-                                        const updated = Array.isArray(availableUniqueKey)
-                                            ? await Model.findOne({ where: whereCondition, transaction })
-                                            : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                        results.push({ index: i, action: 'updated', data: updated });
-                                        updatedCount++;
+                                        // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트
+                                        const shouldUpdate = shouldUpdateBasedOnUtime(clientUtimeStr, serverUtimeStr);
+                                        
+                                        if (shouldUpdate) {
+                                            // 레코드가 존재하면 UPDATE
+                                            const updateData = { ...filteredItem };
+                                            const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
+                                            keysToRemove.forEach(key => delete updateData[key]);
+                                            
+                                            // utime을 문자열로 보장하여 timezone 변환 방지
+                                            if (updateData.utime) {
+                                                updateData.utime = convertUtimeToSequelizeLiteral(updateData.utime);
+                                            }
+                                            
+                                            await Model.update(updateData, { where: whereCondition, transaction });
+                                            const updated = Array.isArray(availableUniqueKey)
+                                                ? await Model.findOne({ where: whereCondition, transaction })
+                                                : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
+                                            
+                                            // 식별 정보 추출
+                                            const identifier = {
+                                                vcode_id: filteredItem.vcode_id || updated.vcode_id,
+                                                sucursal: filteredItem.sucursal || updated.sucursal,
+                                                vcode: filteredItem.vcode || updated.vcode
+                                            };
+                                            
+                                            // utime comparison description
+                                            let utimeComparison = '';
+                                            if (clientUtimeStr && serverUtimeStr) {
+                                                utimeComparison = `Client utime(${clientUtimeStr}) > Server utime(${serverUtimeStr})`;
+                                            } else if (clientUtimeStr && !serverUtimeStr) {
+                                                utimeComparison = `Client utime(${clientUtimeStr}) exists, Server utime missing`;
+                                            } else if (!clientUtimeStr && !serverUtimeStr) {
+                                                utimeComparison = `Both client and server have no utime`;
+                                            }
+                                            
+                                            results.push({ 
+                                                index: i, 
+                                                action: 'updated', 
+                                                reason: 'client_utime_newer_retry',
+                                                reason_en: 'Retry after INSERT failure: Updated because client utime is newer',
+                                                utime_comparison: utimeComparison,
+                                                identifier: identifier,
+                                                data: updated,
+                                                serverUtime: serverUtimeStr,
+                                                clientUtime: clientUtimeStr
+                                            });
+                                            updatedCount++;
+                                        } else {
+                                            // 서버 utime이 더 높거나 같으면 스킵
+                                            
+                                            // 식별 정보 추출
+                                            const identifier = {
+                                                vcode_id: filteredItem.vcode_id || retryRecord.vcode_id,
+                                                sucursal: filteredItem.sucursal || retryRecord.sucursal,
+                                                vcode: filteredItem.vcode || retryRecord.vcode
+                                            };
+                                            
+                                            // utime comparison description
+                                            let utimeComparison = '';
+                                            let reasonEn = '';
+                                            if (clientUtimeStr && serverUtimeStr) {
+                                                utimeComparison = `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`;
+                                                reasonEn = `Retry after INSERT failure: Skipped because server utime(${serverUtimeStr}) is newer than or equal to client utime(${clientUtimeStr})`;
+                                            } else if (!clientUtimeStr && serverUtimeStr) {
+                                                utimeComparison = `Client utime missing, Server utime(${serverUtimeStr}) exists`;
+                                                reasonEn = `Retry after INSERT failure: Skipped because only server has utime`;
+                                            } else {
+                                                utimeComparison = `Both client and server have no utime`;
+                                                reasonEn = `Retry after INSERT failure: Skipped because utime comparison is not possible`;
+                                            }
+                                            
+                                            results.push({ 
+                                                index: i, 
+                                                action: 'skipped', 
+                                                reason: 'server_utime_newer_retry',
+                                                reason_en: reasonEn,
+                                                utime_comparison: utimeComparison,
+                                                identifier: identifier,
+                                                data: retryRecord,
+                                                serverUtime: serverUtimeStr,
+                                                clientUtime: clientUtimeStr
+                                            });
+                                            skippedCount++;
+                                        }
                                     } else {
                                         // 레코드를 찾을 수 없으면 다시 INSERT 시도 (동시성 문제로 인해 발생할 수 있음)
                                         try {
-                                            const created = await Model.create(filteredItem, { transaction });
-                                            results.push({ index: i, action: 'created', data: created });
+                                            const createData = { ...filteredItem };
+                                            // utime을 문자열로 보장하여 timezone 변환 방지
+                                            if (createData.utime) {
+                                                createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
+                                            }
+                                            const created = await Model.create(createData, { transaction });
+                                            
+                                            // 식별 정보 추출
+                                            const identifier = {
+                                                vcode_id: filteredItem.vcode_id || created.vcode_id,
+                                                sucursal: filteredItem.sucursal || created.sucursal,
+                                                vcode: filteredItem.vcode || created.vcode
+                                            };
+                                            
+                                            results.push({ 
+                                                index: i, 
+                                                action: 'created', 
+                                                reason: 'new_record_retry',
+                                                reason_en: 'Retry after INSERT failure: Created new record because record was not found',
+                                                identifier: identifier,
+                                                data: created 
+                                            });
                                             createdCount++;
                                         } catch (retryCreateErr) {
                                             // 재시도 INSERT도 실패하면 원래 에러를 다시 던짐
@@ -120,8 +375,28 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                 } else {
                     // unique key가 없으면 INSERT 시도
                     try {
-                        const created = await Model.create(filteredItem, { transaction });
-                        results.push({ index: i, action: 'created', data: created });
+                        const createData = { ...filteredItem };
+                        // utime을 문자열로 보장하여 timezone 변환 방지
+                        if (createData.utime) {
+                            createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
+                        }
+                        const created = await Model.create(createData, { transaction });
+                        
+                        // 식별 정보 추출
+                        const identifier = {
+                            vcode_id: filteredItem.vcode_id || created.vcode_id,
+                            sucursal: filteredItem.sucursal || created.sucursal,
+                            vcode: filteredItem.vcode || created.vcode
+                        };
+                        
+                        results.push({ 
+                            index: i, 
+                            action: 'created', 
+                            reason: 'new_record_no_unique_key',
+                            reason_en: 'Created new record because no unique key was found',
+                            identifier: identifier,
+                            data: created 
+                        });
                         createdCount++;
                     } catch (createErr) {
                         // unique constraint 에러가 발생하면 SAVEPOINT로 롤백 후 재시도
@@ -155,11 +430,29 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                 console.error(`ERROR: Vcodes INSERT/UPDATE failed (item ${i}) [${errorClassification.source}]: ${err.message}`);
                 console.error(`   Problem Source: ${errorClassification.description}`);
                 console.error(`   Reason: ${errorClassification.reason}`);
+                
+                // 에러 발생 시에도 식별 정보 추출 시도
+                const errorItem = item || req.body.data[i] || null;
+                const errorIdentifier = errorItem ? {
+                    vcode_id: errorItem.vcode_id,
+                    sucursal: errorItem.sucursal,
+                    vcode: errorItem.vcode
+                } : null;
+                
                 errors.push({ 
                     index: i, 
+                    action: 'failed',
+                    reason: 'error_occurred',
+                    reason_en: `Error occurred during processing: ${err.message}`,
                     error: err.message,
                     errorType: err.constructor.name,
-                    data: item || req.body.data[i] || null
+                    errorClassification: {
+                        source: errorClassification.source,
+                        description: errorClassification.description,
+                        reason: errorClassification.reason
+                    },
+                    identifier: errorIdentifier,
+                    data: errorItem
                 });
             }
         }
@@ -177,14 +470,16 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
         }
         
         const totalCount = req.body.data.length;
+        const skippedMessage = skippedCount > 0 ? `, ${skippedCount} skipped` : '';
         const result = {
             success: true,
-            message: `Vcodes processing complete: ${results.length} succeeded (${createdCount} created, ${updatedCount} updated), ${errors.length} failed`,
+            message: `Vcodes processing complete: ${results.length} succeeded (${createdCount} created, ${updatedCount} updated${skippedMessage}), ${errors.length} failed`,
             processed: results.length,
             failed: errors.length,
             total: totalCount,
             created: createdCount,
             updated: updatedCount,
+            skipped: skippedCount,
             results: results,
             errors: errors.length > 0 ? errors : undefined
         };
@@ -195,6 +490,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                 created: createdCount,
                 updated: updatedCount,
                 deleted: 0,
+                skipped: skippedCount,
                 failed: errors.length
             };
         }
