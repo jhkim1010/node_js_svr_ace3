@@ -349,9 +349,8 @@ router.post('/', async (req, res) => {
             console.log('[resumen_del_dia] 응답 연결 종료 (close 이벤트)');
         });
         
-        // 응답 전송 (다른 라우터와 동일한 방식으로 단순화)
-        res.json(responseData);
-        console.log('[resumen_del_dia] res.json() 호출 완료 (headersSent:', res.headersSent, ')');
+        // 응답 전송 (다른 라우터와 동일한 방식으로 - return 추가)
+        return res.json(responseData);
     } catch (err) {
         console.error('[resumen_del_dia] 에러 발생:', {
             message: err.message,
