@@ -61,27 +61,7 @@ router.post('/', async (req, res) => {
             console.log(`[Vcodes POST] ${dbName} | Processing ${operation} with ${req.body.data.length} items using utime comparison`);
             const result = await handleUtimeComparisonArrayData(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             
-            // Log each item's processing result
-            if (result.results && result.results.length > 0) {
-                result.results.forEach((item, idx) => {
-                    const identifier = item.identifier || item.data || {};
-                    const vcodeId = identifier.vcode_id || 'N/A';
-                    const sucursal = identifier.sucursal || 'N/A';
-                    const action = item.action || 'unknown';
-                    const reason = item.reason_en || item.reason || 'N/A';
-                    console.log(`[Vcodes POST] ${dbName} | Item ${idx + 1}/${result.results.length}: ${action.toUpperCase()} | vcode_id=${vcodeId}, sucursal=${sucursal} | ${reason}`);
-                });
-            }
-            
-            if (result.errors && result.errors.length > 0) {
-                result.errors.forEach((error, idx) => {
-                    const identifier = error.identifier || error.data || {};
-                    const vcodeId = identifier.vcode_id || 'N/A';
-                    const sucursal = identifier.sucursal || 'N/A';
-                    console.log(`[Vcodes POST] ${dbName} | Item ${idx + 1}/${result.errors.length}: FAILED | vcode_id=${vcodeId}, sucursal=${sucursal} | ${error.reason_en || error.reason || error.error || 'N/A'}`);
-                });
-            }
-            
+            // Summary log only (detailed logs are already printed in handleUtimeComparisonArrayData)
             console.log(`[Vcodes POST] ${dbName} | ${operation} completed: ${result.processed || 0} processed, ${result.created || 0} created, ${result.updated || 0} updated, ${result.skipped || 0} skipped, ${result.failed || 0} failed`);
             return res.status(200).json(result);
         }

@@ -1637,13 +1637,22 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             // Log each item's processing result
             if (results.length > 0) {
                 results.forEach((item, idx) => {
-                    // Try to get identifier from multiple sources
-                    let identifier = item.identifier;
+                    // Try to get identifier from multiple sources (prioritize original request data)
+                    let identifier = null;
+                    
+                    // First try: original request data (most reliable)
+                    if (req.body.data && req.body.data[item.index] !== undefined) {
+                        identifier = req.body.data[item.index];
+                    }
+                    
+                    // Second try: item.identifier
+                    if (!identifier && item.identifier) {
+                        identifier = item.identifier;
+                    }
+                    
+                    // Third try: item.data
                     if (!identifier && item.data) {
                         identifier = item.data;
-                    }
-                    if (!identifier && req.body.data && req.body.data[item.index]) {
-                        identifier = req.body.data[item.index];
                     }
                     
                     const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
@@ -1658,13 +1667,22 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             
             if (errors.length > 0) {
                 errors.forEach((error, idx) => {
-                    // Try to get identifier from multiple sources
-                    let identifier = error.identifier;
+                    // Try to get identifier from multiple sources (prioritize original request data)
+                    let identifier = null;
+                    
+                    // First try: original request data (most reliable)
+                    if (req.body.data && req.body.data[error.index] !== undefined) {
+                        identifier = req.body.data[error.index];
+                    }
+                    
+                    // Second try: error.identifier
+                    if (!identifier && error.identifier) {
+                        identifier = error.identifier;
+                    }
+                    
+                    // Third try: error.data
                     if (!identifier && error.data) {
                         identifier = error.data;
-                    }
-                    if (!identifier && req.body.data && req.body.data[error.index]) {
-                        identifier = req.body.data[error.index];
                     }
                     
                     const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
