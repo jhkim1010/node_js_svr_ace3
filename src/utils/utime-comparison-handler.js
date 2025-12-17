@@ -632,7 +632,35 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 const updated = Array.isArray(availableUniqueKey)
                                     ? await Model.findOne({ where: whereCondition, transaction })
                                     : await Model.findByPk(filteredItem[availableUniqueKey], { transaction });
-                                results.push({ index: i, action: 'updated', data: updated });
+                                
+                                // Extract identifier
+                                const identifier = {
+                                    vcode_id: filteredItem.vcode_id || updated?.vcode_id,
+                                    sucursal: filteredItem.sucursal || updated?.sucursal,
+                                    vcode: filteredItem.vcode || updated?.vcode
+                                };
+                                
+                                // utime comparison description
+                                let utimeComparison = '';
+                                if (clientUtimeStr && serverUtimeStr) {
+                                    utimeComparison = `Client utime(${clientUtimeStr}) > Server utime(${serverUtimeStr})`;
+                                } else if (clientUtimeStr && !serverUtimeStr) {
+                                    utimeComparison = `Client utime(${clientUtimeStr}) exists, Server utime missing`;
+                                } else if (!clientUtimeStr && !serverUtimeStr) {
+                                    utimeComparison = `Both client and server have no utime`;
+                                }
+                                
+                                results.push({ 
+                                    index: i, 
+                                    action: 'updated', 
+                                    reason: 'client_utime_newer',
+                                    reason_en: 'Updated because client utime is newer',
+                                    utime_comparison: utimeComparison,
+                                    identifier: identifier,
+                                    data: updated,
+                                    serverUtime: serverUtimeStr,
+                                    clientUtime: clientUtimeStr
+                                });
                                 updatedCount++;
                                 
                                 // SAVEPOINT 해제
@@ -1609,21 +1637,40 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             // Log each item's processing result
             if (results.length > 0) {
                 results.forEach((item, idx) => {
-                    const identifier = item.identifier || item.data || {};
-                    const vcodeId = identifier.vcode_id || identifier.ingreso_id || 'N/A';
-                    const sucursal = identifier.sucursal || 'N/A';
+                    // Try to get identifier from multiple sources
+                    let identifier = item.identifier;
+                    if (!identifier && item.data) {
+                        identifier = item.data;
+                    }
+                    if (!identifier && req.body.data && req.body.data[item.index]) {
+                        identifier = req.body.data[item.index];
+                    }
+                    
+                    const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
+                    const sucursal = identifier?.sucursal || 'N/A';
+                    const vcode = identifier?.vcode || 'N/A';
                     const action = item.action || 'unknown';
-                    const reason = item.reason_en || item.reason || 'N/A';
-                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${item.index + 1}/${totalCount}: ${action.toUpperCase()} | vcode_id=${vcodeId}, sucursal=${sucursal} | ${reason}`);
+                    const reason = item.reason_en || item.reason || (action === 'updated' ? 'Updated' : action === 'created' ? 'Created' : action === 'skipped' ? 'Skipped' : 'N/A');
+                    
+                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${item.index + 1}/${totalCount}: ${action.toUpperCase()} | vcode_id=${vcodeId}, sucursal=${sucursal}, vcode=${vcode} | ${reason}`);
                 });
             }
             
             if (errors.length > 0) {
                 errors.forEach((error, idx) => {
-                    const identifier = error.identifier || error.data || {};
-                    const vcodeId = identifier.vcode_id || identifier.ingreso_id || 'N/A';
-                    const sucursal = identifier.sucursal || 'N/A';
-                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${error.index + 1}/${totalCount}: FAILED | vcode_id=${vcodeId}, sucursal=${sucursal} | ${error.error || 'N/A'}`);
+                    // Try to get identifier from multiple sources
+                    let identifier = error.identifier;
+                    if (!identifier && error.data) {
+                        identifier = error.data;
+                    }
+                    if (!identifier && req.body.data && req.body.data[error.index]) {
+                        identifier = req.body.data[error.index];
+                    }
+                    
+                    const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
+                    const sucursal = identifier?.sucursal || 'N/A';
+                    const vcode = identifier?.vcode || 'N/A';
+                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${error.index + 1}/${totalCount}: FAILED | vcode_id=${vcodeId}, sucursal=${sucursal}, vcode=${vcode} | ${error.error || 'N/A'}`);
                 });
             }
             
