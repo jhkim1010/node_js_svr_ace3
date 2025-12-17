@@ -267,6 +267,13 @@ app.use((req, res, next) => {
         (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket')) {
         return next(); // WebSocket 서버로 전달
     }
+    
+    // resumen_del_dia 경로는 clientDisconnectHandler 건너뛰기 (nginx를 통한 요청에서 잘못 감지되는 문제)
+    if (req.path === '/api/resumen_del_dia' || req.originalUrl === '/api/resumen_del_dia' || 
+        req.url === '/api/resumen_del_dia' || req.url.startsWith('/api/resumen_del_dia')) {
+        return next(); // clientDisconnectHandler 건너뛰기
+    }
+    
     clientDisconnectHandler(req, res, next);
 });
 
