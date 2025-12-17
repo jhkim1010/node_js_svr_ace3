@@ -34,18 +34,6 @@ server.on('request', (req, res) => {
         return;
     }
     
-    // ⚠️ 소켓 상태 확인 (502 에러 추적용)
-    const connectionHeader = req.headers['connection']?.toLowerCase();
-    const isConnectionClose = connectionHeader === 'close';
-    const socketDestroyed = !req.socket || req.socket.destroyed;
-    const socketWritable = req.socket && req.socket.writable;
-    
-    // 소켓이 이미 닫혀있고 Connection: close가 아닌 경우만 경고
-    if (socketDestroyed && !isConnectionClose) {
-        console.warn(`[Server] ⚠️ Request received with destroyed socket (without Connection: close): ${req.method} ${req.url}`);
-        console.warn(`[Server] Socket state: destroyed=${socketDestroyed}, writable=${socketWritable}, connection=${connectionHeader || 'not set'}`);
-    }
-    
     // 일반 HTTP 요청만 Express가 처리
     app(req, res);
 });
