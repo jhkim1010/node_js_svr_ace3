@@ -39,10 +39,10 @@ router.post('/', async (req, res) => {
         const Creditoventas = getModelForRequest(req, 'Creditoventas');
         
         // BATCH_SYNC 또는 배열 데이터 처리 (utime 비교를 통한 개별 처리)
-        // creditoventas는 creditoventa_id만 기본 키로 사용
+        // creditoventas는 creditoventa_id와 sucursal의 복합 unique key를 사용
         if ((req.body.operation === 'BATCH_SYNC' || Array.isArray(req.body.data)) && Array.isArray(req.body.data) && req.body.data.length > 0) {
             // 50개를 넘으면 배치로 나눠서 처리 (연결 풀 효율적 사용)
-            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Creditoventas, 'creditoventa_id', 'Creditoventas');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Creditoventas, ['creditoventa_id', 'sucursal'], 'Creditoventas');
             await notifyBatchSync(req, Creditoventas, result);
             return res.status(200).json(result);
         }
@@ -53,17 +53,17 @@ router.post('/', async (req, res) => {
             // 배열인 경우 utime 비교를 통한 개별 처리
             req.body.data = rawData;
             req.body.operation = req.body.operation || 'BATCH_SYNC';
-            const result = await handleUtimeComparisonArrayData(req, res, Creditoventas, 'creditoventa_id', 'Creditoventas');
+            const result = await handleUtimeComparisonArrayData(req, res, Creditoventas, ['creditoventa_id', 'sucursal'], 'Creditoventas');
             await notifyBatchSync(req, Creditoventas, result);
             return res.status(200).json(result);
         }
         
-        // 일반 단일 생성 요청 처리 (unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Creditoventas, 'creditoventa_id', 'Creditoventas');
+        // 일반 단일 생성 요청 처리 (복합 unique key 기반으로 UPDATE/CREATE 결정)
+        const result = await handleSingleItem(req, res, Creditoventas, ['creditoventa_id', 'sucursal'], 'Creditoventas');
         await notifyDbChange(req, Creditoventas, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
-        handleInsertUpdateError(err, req, 'Creditoventas', 'creditoventa_id', 'creditoventas');
+        handleInsertUpdateError(err, req, 'Creditoventas', ['creditoventa_id', 'sucursal'], 'creditoventas');
         res.status(400).json({ 
             error: 'Failed to create creditoventa', 
             details: err.message,
@@ -82,7 +82,7 @@ router.put('/:id', async (req, res) => {
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Creditoventas, 'creditoventa_id', 'Creditoventas');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Creditoventas, ['creditoventa_id', 'sucursal'], 'Creditoventas');
             await notifyBatchSync(req, Creditoventas, result);
             return res.status(200).json(result);
         }
