@@ -181,8 +181,10 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
             } else {
                 console.log(`[Connection Pool] ✅ PostgreSQL 서버 max_connections (${pgMax})가 충분합니다.`);
             }
-        }).catch(() => {
-            // 조회 실패는 무시
+        }).catch((err) => {
+            // 조회 실패 시 경고만 표시 (실제 연결은 정상 작동)
+            console.warn(`[Connection Pool] ⚠️ PostgreSQL max_connections 조회 실패: ${err.message}`);
+            console.warn(`[Connection Pool] 기본값(100)을 사용합니다. 설정이 변경되었다면 서버를 재시작하세요.`);
         });
     }
     
