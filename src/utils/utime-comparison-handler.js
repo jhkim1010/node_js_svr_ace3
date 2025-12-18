@@ -259,7 +259,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
 
                     try {
                         const created = await Model.create(createData, { transaction });
-                        results.push({ index: i, action: 'created', data: created });
+                        // Extract identifier from filteredItem for logging
+                        const identifier = {
+                            vcode_id: filteredItem.vcode_id,
+                            ingreso_id: filteredItem.ingreso_id,
+                            sucursal: filteredItem.sucursal,
+                            vcode: filteredItem.vcode,
+                            id_vdetalle: filteredItem.id_vdetalle,
+                            creditoventa_id: filteredItem.creditoventa_id
+                        };
+                        results.push({ index: i, action: 'created', data: created, identifier });
                         createdCount++;
 
                         // SAVEPOINT 해제
@@ -850,7 +859,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                                 try {
                                     const created = await Model.create(createData, { transaction });
-                                    results.push({ index: i, action: 'created', data: created });
+                                    // Extract identifier from filteredItem for logging
+                                    const identifier = {
+                                        vcode_id: filteredItem.vcode_id,
+                                        ingreso_id: filteredItem.ingreso_id,
+                                        sucursal: filteredItem.sucursal,
+                                        vcode: filteredItem.vcode,
+                                        id_vdetalle: filteredItem.id_vdetalle,
+                                        creditoventa_id: filteredItem.creditoventa_id
+                                    };
+                                    results.push({ index: i, action: 'created', data: created, identifier });
                                     createdCount++;
                                     
                                     // SAVEPOINT 해제
@@ -1132,7 +1150,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         }
                         try {
                         const created = await Model.create(createData, { transaction });
-                        results.push({ index: i, action: 'created', data: created });
+                        // Extract identifier from filteredItem for logging
+                        const identifier = {
+                            vcode_id: filteredItem.vcode_id,
+                            ingreso_id: filteredItem.ingreso_id,
+                            sucursal: filteredItem.sucursal,
+                            vcode: filteredItem.vcode,
+                            id_vdetalle: filteredItem.id_vdetalle,
+                            creditoventa_id: filteredItem.creditoventa_id
+                        };
+                        results.push({ index: i, action: 'created', data: created, identifier });
                         createdCount++;
                             
                             // SAVEPOINT 해제
@@ -1376,7 +1403,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
                     try {
                     const created = await Model.create(createData, { transaction });
-                    results.push({ index: i, action: 'created', data: created });
+                    // Extract identifier from filteredItem for logging
+                    const identifier = {
+                        vcode_id: filteredItem.vcode_id,
+                        ingreso_id: filteredItem.ingreso_id,
+                        sucursal: filteredItem.sucursal,
+                        vcode: filteredItem.vcode,
+                        id_vdetalle: filteredItem.id_vdetalle,
+                        creditoventa_id: filteredItem.creditoventa_id
+                    };
+                    results.push({ index: i, action: 'created', data: created, identifier });
                     createdCount++;
                     } catch (createErr) {
                         // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 모든 unique key로 레코드를 조회하여 utime 비교 수행
@@ -1657,14 +1693,57 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         identifier = req.body.data[item.index];
                     }
                     
-                    // Second try: item.data (from database result)
-                    if (!identifier && item.data) {
-                        identifier = item.data;
-                    }
-                    
-                    // Third try: item.identifier
+                    // Second try: item.identifier (explicitly saved identifier)
                     if (!identifier && item.identifier) {
                         identifier = item.identifier;
+                    }
+                    
+                    // Third try: item.data (from database result)
+                    if (!identifier && item.data) {
+                        // Handle Sequelize instance
+                        if (item.data && typeof item.data === 'object') {
+                            // Try toJSON() first (most reliable for Sequelize instances)
+                            if (typeof item.data.toJSON === 'function') {
+                                try {
+                                    identifier = item.data.toJSON();
+                                } catch (e) {
+                                    // Fallback to dataValues
+                                    identifier = item.data.dataValues || item.data;
+                                }
+                            } else if (item.data.dataValues) {
+                                // Sequelize instance with dataValues property
+                                identifier = item.data.dataValues;
+                            } else if (typeof item.data.get === 'function') {
+                                // Sequelize instance with get method - extract common identifier fields
+                                identifier = {};
+                                const commonFields = ['vcode_id', 'ingreso_id', 'sucursal', 'vcode', 'id_vdetalle', 'creditoventa_id'];
+                                commonFields.forEach(key => {
+                                    try {
+                                        const value = item.data.get(key);
+                                        if (value !== undefined && value !== null) {
+                                            identifier[key] = value;
+                                        }
+                                    } catch (e) {
+                                        // Ignore errors when getting field
+                                    }
+                                });
+                                // If no common fields found, try to get all fields
+                                if (Object.keys(identifier).length === 0) {
+                                    try {
+                                        const json = item.data.toJSON ? item.data.toJSON() : null;
+                                        if (json) identifier = json;
+                                    } catch (e) {
+                                        // Fallback to plain object
+                                        identifier = item.data;
+                                    }
+                                }
+                            } else {
+                                // Plain object
+                                identifier = item.data;
+                            }
+                        } else {
+                            identifier = item.data;
+                        }
                     }
                     
                     const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
@@ -1690,14 +1769,57 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         identifier = req.body.data[error.index];
                     }
                     
-                    // Second try: error.data
-                    if (!identifier && error.data) {
-                        identifier = error.data;
-                    }
-                    
-                    // Third try: error.identifier
+                    // Second try: error.identifier (explicitly saved identifier)
                     if (!identifier && error.identifier) {
                         identifier = error.identifier;
+                    }
+                    
+                    // Third try: error.data
+                    if (!identifier && error.data) {
+                        // Handle Sequelize instance
+                        if (error.data && typeof error.data === 'object') {
+                            // Try toJSON() first (most reliable for Sequelize instances)
+                            if (typeof error.data.toJSON === 'function') {
+                                try {
+                                    identifier = error.data.toJSON();
+                                } catch (e) {
+                                    // Fallback to dataValues
+                                    identifier = error.data.dataValues || error.data;
+                                }
+                            } else if (error.data.dataValues) {
+                                // Sequelize instance with dataValues property
+                                identifier = error.data.dataValues;
+                            } else if (typeof error.data.get === 'function') {
+                                // Sequelize instance with get method - extract common identifier fields
+                                identifier = {};
+                                const commonFields = ['vcode_id', 'ingreso_id', 'sucursal', 'vcode', 'id_vdetalle', 'creditoventa_id'];
+                                commonFields.forEach(key => {
+                                    try {
+                                        const value = error.data.get(key);
+                                        if (value !== undefined && value !== null) {
+                                            identifier[key] = value;
+                                        }
+                                    } catch (e) {
+                                        // Ignore errors when getting field
+                                    }
+                                });
+                                // If no common fields found, try to get all fields
+                                if (Object.keys(identifier).length === 0) {
+                                    try {
+                                        const json = error.data.toJSON ? error.data.toJSON() : null;
+                                        if (json) identifier = json;
+                                    } catch (e) {
+                                        // Fallback to plain object
+                                        identifier = error.data;
+                                    }
+                                }
+                            } else {
+                                // Plain object
+                                identifier = error.data;
+                            }
+                        } else {
+                            identifier = error.data;
+                        }
                     }
                     
                     const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
