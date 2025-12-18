@@ -1746,13 +1746,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         }
                     }
                     
-                    const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
-                    const sucursal = identifier?.sucursal || 'N/A';
-                    const vcode = identifier?.vcode || 'N/A';
-                    const action = item.action || 'unknown';
-                    const reason = item.reason_en || item.reason || (action === 'updated' ? 'Updated' : action === 'created' ? 'Created' : action === 'skipped' ? 'Skipped' : 'N/A');
-                    
-                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${(item.index || 0) + 1}/${totalCount}: ${action.toUpperCase()} | vcode_id=${vcodeId}, sucursal=${sucursal}, vcode=${vcode} | ${reason}`);
                 });
             }
             
@@ -1822,10 +1815,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         }
                     }
                     
-                    const vcodeId = identifier?.vcode_id || identifier?.ingreso_id || 'N/A';
-                    const sucursal = identifier?.sucursal || 'N/A';
-                    const vcode = identifier?.vcode || 'N/A';
-                    console.log(`[Vcodes UtimeComparison] ${dbName} | Item ${(error.index || 0) + 1}/${totalCount}: FAILED | vcode_id=${vcodeId}, sucursal=${sucursal}, vcode=${vcode} | ${error.error || 'N/A'}`);
                 });
             }
             
