@@ -44,6 +44,7 @@ router.post('/', async (req, res) => {
         const Gastos = getModelForRequest(req, 'Gastos');
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
         const Ingresos = getModelForRequest(req, 'Ingresos');
+        const Fventas = getModelForRequest(req, 'Fventas');
         const sequelize = Vcode.sequelize;
         
         // 요청 본문에서 date와 sucursal 받기
@@ -266,6 +267,35 @@ router.post('/', async (req, res) => {
             type: Sequelize.QueryTypes.SELECT
         });
         
+        // 쿼리 7: fventas 데이터 집계 - tipofactura별 그룹화
+        // 조건: fecha = target_date AND borrado is false
+        const fventasWhereConditions = [
+            Sequelize.where(
+                Sequelize.fn('DATE', Sequelize.col('fecha')),
+                otherDate
+            ),
+            { borrado: false }
+        ];
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            fventasWhereConditions.push({ sucursal: sucursal });
+        }
+        
+        const fventasResult = await Fventas.findAll({
+            attributes: [
+                [sequelize.fn('COUNT', sequelize.col('*')), 'count'],
+                [sequelize.fn('SUM', sequelize.col('monto')), 'sum_monto'],
+                'tipofactura'
+            ],
+            where: {
+                [Sequelize.Op.and]: fventasWhereConditions
+            },
+            group: ['tipofactura'],
+            order: [['tipofactura', 'ASC']],
+            raw: true
+        });
+        
         // Sucursal별로 그룹화된 결과를 배열로 변환
         const vcodeSummary = (vcodeResult || []).map(item => ({
             sucursal: item.sucursal || null,
@@ -314,6 +344,12 @@ router.post('/', async (req, res) => {
             finalStock: parseFloat(item.finalstock || 0)
         }));
         
+        const fventasSummary = (fventasResult || []).map(item => ({
+            tipofactura: item.tipofactura || null,
+            count: parseInt(item.count || 0, 10),
+            sum_monto: parseFloat(item.sum_monto || 0)
+        }));
+        
         const responseData = {
             fecha: targetDate || otherDate, // 요청된 날짜 또는 현재 날짜 (YYYY-MM-DD)
             fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
@@ -323,7 +359,8 @@ router.post('/', async (req, res) => {
             vdetalle: vdetalleSummary, // Sucursal별 배열
             vcodes_mpago: vcodeMpagoSummary, // Sucursal별 배열
             ingresos: ingresosSummary, // Sucursal별 배열
-            stocks: stocksSummary // Sucursal별 배열
+            stocks: stocksSummary, // Sucursal별 배열
+            fventas: fventasSummary // tipofactura별 배열
         };
         
         // 응답 전송 중 에러만 로깅

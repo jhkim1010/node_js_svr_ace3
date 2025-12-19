@@ -17,13 +17,11 @@ function defineFventasModel(sequelize) {
         numcheque: { type: DataTypes.STRING(20), allowNull: true },
         numfactura: { 
             type: DataTypes.STRING(20), 
-            allowNull: false,
-            primaryKey: true
+            allowNull: false
         },
         tipofactura: { 
             type: DataTypes.STRING(3), 
-            allowNull: false,
-            primaryKey: true
+            allowNull: false
         },
         sucursal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 2 },
         utime: { type: DataTypes.DATE, allowNull: true },
