@@ -219,40 +219,13 @@ app.post('/api/health', async (req, res) => {
             username: username
         });
     } catch (err) {
-        // 에러 발생 위치 추적
-        const errorStack = err.stack || '';
-        const errorLine = errorStack.split('\n')[1] || 'Unknown location';
-        
-        // 에러 상세 정보 추출
         let errorMessage = err.original ? err.original.message : err.message;
-        const errorCode = err.original ? err.original.code : err.code;
-        const errorName = err.original ? err.original.name : err.name;
-        
         // 연결 한계 도달 오류 메시지 간소화
         if (errorMessage && errorMessage.includes('remaining connection slots are reserved for non-replication superuser connections')) {
             errorMessage = 'database 연결 한계도달';
         }
-        
-        // 서버 콘솔에 상세 에러 로그 출력
-        console.error('\n❌ [API /api/health] 에러 발생:');
-        console.error(`   위치: ${errorLine.trim()}`);
-        console.error(`   에러 타입: ${err.constructor.name}`);
-        console.error(`   에러 이름: ${errorName || 'N/A'}`);
-        console.error(`   에러 코드: ${errorCode || 'N/A'}`);
-        console.error(`   에러 메시지: ${errorMessage || 'N/A'}`);
-        console.error(`   연결 정보:`);
-        console.error(`     - Host: ${dbHost || 'N/A'}`);
-        console.error(`     - Port: ${dbPort || 'N/A'}`);
-        console.error(`     - Database: ${databaseName || 'N/A'}`);
-        console.error(`     - Username: ${username || 'N/A'}`);
-        if (err.stack) {
-            console.error(`   스택 트레이스:`);
-            const stackLines = err.stack.split('\n').slice(0, 5); // 처음 5줄만 출력
-            stackLines.forEach((line, index) => {
-                console.error(`     ${index + 1}. ${line.trim()}`);
-            });
-        }
-        console.error('');
+        const errorCode = err.original ? err.original.code : err.code;
+        const errorName = err.original ? err.original.name : err.name;
         
         // 연결 거부 오류 진단
         const { diagnoseConnectionRefusedError } = require('./utils/error-classifier');
@@ -266,12 +239,11 @@ app.post('/api/health', async (req, res) => {
             errorType: err.constructor.name,
             errorCode: errorCode,
             errorName: errorName,
-            errorLocation: errorLine.trim(),
             connectionInfo: {
-                host: dbHost || 'N/A',
-                port: dbPort || 'N/A',
-                database: databaseName || 'N/A',
-                username: username || 'N/A'
+                host: dbHost,
+                port: dbPort,
+                database: databaseName,
+                username: username
             }
         };
         
@@ -400,75 +372,15 @@ app.use((err, req, res, next) => {
         });
     }
     
-    // 에러 발생 위치 추적
-    const errorStack = err.stack || '';
-    const errorLines = errorStack.split('\n');
-    const errorLocation = errorLines.length > 1 ? errorLines[1].trim() : 'Unknown location';
-    const errorFile = errorLocation.match(/\((.+):(\d+):(\d+)\)/) || errorLocation.match(/at (.+):(\d+):(\d+)/);
-    
-    // 요청 정보 추출
-    const requestPath = req.originalUrl || req.path || req.url || 'Unknown';
-    const requestMethod = req.method || 'Unknown';
-    const requestHeaders = {
-        'x-db-host': req.headers['x-db-host'] || 'N/A',
-        'x-db-port': req.headers['x-db-port'] || 'N/A',
-        'x-db-name': req.headers['x-db-name'] || 'N/A',
-        'x-db-user': req.headers['x-db-user'] || 'N/A'
-    };
-    
     // 연결 한계 도달 오류 메시지 간소화
     let errorDetails = err.message;
-    const errorCode = err.original ? err.original.code : err.code;
-    const errorName = err.original ? err.original.name : err.name;
-    
-    // 상세 에러 로그 출력
-    console.error('\n❌ [전역 에러 핸들러] 처리되지 않은 에러 발생:');
-    console.error(`   요청: ${requestMethod} ${requestPath}`);
-    console.error(`   에러 타입: ${err.constructor.name}`);
-    console.error(`   에러 이름: ${errorName || 'N/A'}`);
-    console.error(`   에러 코드: ${errorCode || 'N/A'}`);
-    console.error(`   에러 메시지: ${errorDetails || 'N/A'}`);
-    console.error(`   발생 위치: ${errorLocation}`);
-    if (errorFile && errorFile[1]) {
-        console.error(`   파일: ${errorFile[1]}:${errorFile[2] || 'N/A'}`);
-    }
-    console.error(`   데이터베이스: ${database}`);
-    console.error(`   테이블: ${tableName || 'N/A'}`);
-    console.error(`   DB 연결 정보:`);
-    console.error(`     - Host: ${dbConfig.host || 'N/A'}`);
-    console.error(`     - Port: ${dbConfig.port || 'N/A'}`);
-    console.error(`     - Database: ${dbConfig.database || 'N/A'}`);
-    console.error(`     - User: ${dbConfig.user || 'N/A'}`);
-    console.error(`   요청 헤더:`);
-    Object.entries(requestHeaders).forEach(([key, value]) => {
-        console.error(`     - ${key}: ${value}`);
-    });
-    if (err.stack) {
-        console.error(`   스택 트레이스:`);
-        const stackLines = err.stack.split('\n').slice(0, 8); // 처음 8줄만 출력
-        stackLines.forEach((line, index) => {
-            console.error(`     ${index + 1}. ${line.trim()}`);
-        });
-    }
-    console.error('');
-    
     if (errorDetails && errorDetails.includes('remaining connection slots are reserved for non-replication superuser connections')) {
         errorDetails = 'database 연결 한계도달';
+        console.error('database 연결 한계도달');
+    } else {
+        console.error('Unhandled error:', err);
     }
-    
-    // 클라이언트 응답 (보안상 스택 트레이스는 제외)
-    const errorResponse = {
-        error: 'Internal Server Error',
-        details: errorDetails,
-        errorType: err.constructor.name,
-        errorCode: errorCode,
-        errorName: errorName,
-        errorLocation: errorFile ? `${errorFile[1]}:${errorFile[2] || 'N/A'}` : errorLocation,
-        path: requestPath,
-        method: requestMethod
-    };
-    
-    res.status(500).json(errorResponse);
+    res.status(500).json({ error: 'Internal Server Error', details: errorDetails });
 });
 
 async function start() {

@@ -124,9 +124,12 @@ router.post('/', async (req, res) => {
         });
         
         // 쿼리 2: gastos 데이터 집계 - Sucursal별 그룹화
-        // 조건: fecha = target_date AND borrado is false
+        // 조건: fecha = target_date (정확히 해당 날짜만) AND borrado is false
         const gastosWhereConditions = [
-            { fecha: otherDate },
+            Sequelize.where(
+                Sequelize.fn('DATE', Sequelize.col('fecha')),
+                otherDate
+            ),
             { borrado: false }
         ];
         

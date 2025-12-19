@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { Sequelize } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
@@ -12,8 +13,152 @@ const router = Router();
 router.get('/', async (req, res) => {
     try {
         const Gastos = getModelForRequest(req, 'Gastos');
-        const records = await Gastos.findAll({ limit: 100, order: [['id_ga', 'DESC']] });
-        res.json(records);
+        const sequelize = Gastos.sequelize;
+        const { Op } = Sequelize;
+        
+        // 날짜 파라미터 확인 (query 또는 body)
+        const fecha = req.query.fecha || req.body.fecha;
+        const fechaInicio = req.query.fecha_inicio || req.query.start_date || req.body.fecha_inicio || req.body.start_date;
+        const fechaFin = req.query.fecha_fin || req.query.end_date || req.body.fecha_fin || req.body.end_date;
+        
+        // sucursal 파라미터 확인
+        const sucursal = req.query.sucursal || req.body.sucursal;
+        
+        // 검색어 파라미터 확인
+        const filteringWord = req.query.filtering_word || req.query.filteringWord || req.body.filtering_word || req.body.filteringWord || req.query.search || req.body.search;
+        
+        // 페이지네이션 파라미터 확인 (id_ga 기준)
+        const lastIdGa = req.query.last_id_ga || req.body.last_id_ga;
+        
+        // WHERE 조건 구성
+        let whereConditions = [];
+        
+        // 날짜 필터링
+        if (fecha) {
+            // 특정 날짜만 조회 (정확히 일치)
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(fecha)) {
+                return res.status(400).json({ 
+                    error: 'Invalid fecha format. Expected YYYY-MM-DD',
+                    received: fecha
+                });
+            }
+            whereConditions.push(
+                Sequelize.where(
+                    Sequelize.fn('DATE', Sequelize.col('fecha')),
+                    fecha
+                )
+            );
+        } else if (fechaInicio) {
+            // 날짜 범위 조회
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(fechaInicio)) {
+                return res.status(400).json({ 
+                    error: 'Invalid fecha_inicio format. Expected YYYY-MM-DD',
+                    received: fechaInicio
+                });
+            }
+            
+            whereConditions.push(
+                Sequelize.where(
+                    Sequelize.fn('DATE', Sequelize.col('fecha')),
+                    { [Op.gte]: fechaInicio }
+                )
+            );
+            
+            if (fechaFin) {
+                if (!dateRegex.test(fechaFin)) {
+                    return res.status(400).json({ 
+                        error: 'Invalid fecha_fin format. Expected YYYY-MM-DD',
+                        received: fechaFin
+                    });
+                }
+                whereConditions.push(
+                    Sequelize.where(
+                        Sequelize.fn('DATE', Sequelize.col('fecha')),
+                        { [Op.lte]: fechaFin }
+                    )
+                );
+            }
+        }
+        
+        // 삭제되지 않은 항목만 조회
+        whereConditions.push({ borrado: false });
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            const sucursalNum = parseInt(sucursal, 10);
+            if (!isNaN(sucursalNum)) {
+                whereConditions.push({ sucursal: sucursalNum });
+            }
+        }
+        
+        // filtering_word 검색 조건 추가 (tema, codigo, nencargado에서 검색)
+        if (filteringWord && filteringWord.trim()) {
+            const searchTerm = `%${filteringWord.trim()}%`;
+            whereConditions.push({
+                [Op.or]: [
+                    { tema: { [Op.iLike]: searchTerm } },
+                    { codigo: { [Op.iLike]: searchTerm } },
+                    { nencargado: { [Op.iLike]: searchTerm } }
+                ]
+            });
+        }
+        
+        // 페이지네이션: id_ga가 제공되면 해당 ID보다 큰 것만 조회
+        if (lastIdGa) {
+            const idGa = parseInt(lastIdGa, 10);
+            if (isNaN(idGa)) {
+                return res.status(400).json({ error: 'Invalid last_id_ga format' });
+            }
+            whereConditions.push({ id_ga: { [Op.gt]: idGa } });
+        }
+        
+        // 총 데이터 개수 조회
+        const totalCount = await Gastos.count({ 
+            where: {
+                [Op.and]: whereConditions
+            }
+        });
+        
+        // 100개 단위로 제한
+        const limit = 100;
+        const records = await Gastos.findAll({ 
+            where: {
+                [Op.and]: whereConditions
+            },
+            limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
+            order: [['id_ga', 'DESC']] // id_ga 내림차순 정렬
+        });
+        
+        // 다음 배치가 있는지 확인
+        const hasMore = records.length > limit;
+        const data = hasMore ? records.slice(0, limit) : records;
+        
+        // 다음 요청을 위한 last_id_ga 계산 (마지막 레코드의 id_ga)
+        let nextLastIdGa = null;
+        if (data.length > 0) {
+            const lastRecord = data[data.length - 1];
+            if (lastRecord.id_ga !== null && lastRecord.id_ga !== undefined) {
+                nextLastIdGa = String(lastRecord.id_ga);
+            }
+        }
+        
+        // 페이지네이션 정보와 함께 응답
+        const responseData = {
+            data: data,
+            pagination: {
+                count: data.length,
+                total: totalCount,
+                hasMore: hasMore,
+                nextLastIdGa: nextLastIdGa // id_ga 기반 페이징을 위한 nextLastIdGa
+            }
+        };
+        
+        // 응답 로거에서 사용할 데이터 개수 저장
+        req._responseDataCount = data.length;
+        
+        res.json(responseData);
     } catch (err) {
         console.error('\nERROR: Gastos fetch error:');
         console.error('   Error type:', err.constructor.name);

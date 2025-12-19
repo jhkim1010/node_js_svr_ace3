@@ -20,8 +20,8 @@ async function getGastosReport(req) {
     const queryParams = [];
     let paramIndex = 1;
 
-    // 날짜 필터 (fecha > fechaInicio)
-    whereConditions.push(`g.fecha > $${paramIndex}`);
+    // 날짜 필터 (fecha >= fechaInicio) - 시작일 포함
+    whereConditions.push(`g.fecha >= $${paramIndex}`);
     queryParams.push(fechaInicio);
     paramIndex++;
 
@@ -58,8 +58,8 @@ async function getGastosReport(req) {
     const detailQueryParams = [];
     let detailParamIndex = 1;
 
-    // 날짜 필터 (fecha > fechaInicio)
-    detailWhereConditions.push(`g1.fecha > $${detailParamIndex}`);
+    // 날짜 필터 (fecha >= fechaInicio) - 시작일 포함
+    detailWhereConditions.push(`g1.fecha >= $${detailParamIndex}`);
     detailQueryParams.push(fechaInicio);
     detailParamIndex++;
 
