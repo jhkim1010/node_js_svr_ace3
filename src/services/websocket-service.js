@@ -44,6 +44,9 @@ const dbClientGroups = new Map();
 // 클라이언트 정보 저장 (ws.id -> { clientId, dbKey, sucursal })
 const clientInfo = new Map();
 
+// 클라이언트별 페이지네이션 큐 관리 (ws.id -> [{ table, operation, data, timestamp }, ...])
+const clientPaginationQueues = new Map();
+
 // 고유 ID 생성기
 let clientIdCounter = 0;
 function generateClientId() {
@@ -158,7 +161,12 @@ function initializeWebSocket(server) {
                 // register-client 메시지 처리
                 if (data.type === 'register-client' || data.action === 'register-client') {
                     handleRegisterClient(ws, data);
-                } else {
+                } 
+                // fetch-more 메시지 처리 (페이지네이션)
+                else if (data.type === 'fetch-more' || data.action === 'fetch-more') {
+                    handleFetchMore(ws, data);
+                } 
+                else {
                     // 기타 메시지 처리 (필요시 확장)
                     console.log(`[WebSocket] 알 수 없는 메시지 타입: ${data.type || 'unknown'}`);
                 }
@@ -235,6 +243,9 @@ function initializeWebSocket(server) {
             
             // 클라이언트 정보 제거
             clientInfo.delete(ws.id);
+            
+            // 페이지네이션 큐 제거
+            clientPaginationQueues.delete(ws.id);
         });
 
         // 오류 처리
@@ -304,6 +315,152 @@ function handleRegisterClient(ws, data) {
     } else {
         console.log(`[WebSocket] ❌ 클라이언트 등록 실패: dbKey 생성 불가. data:`, data);
         sendError(ws, 'Failed to register client: dbKey generation failed');
+    }
+}
+
+// 페이지네이션된 데이터 전송 (20개씩)
+function sendPaginatedData(ws, message) {
+    const dataArray = Array.isArray(message.data) ? message.data : (message.data ? [message.data] : []);
+    const pageSize = 20;
+    
+    if (dataArray.length === 0) {
+        // 데이터가 없으면 그냥 전송
+        sendMessage(ws, message);
+        return;
+    }
+    
+    if (dataArray.length <= pageSize) {
+        // 20개 이하면 그냥 전송
+        sendMessage(ws, {
+            ...message,
+            data: dataArray,
+            pagination: {
+                total: dataArray.length,
+                currentPage: 1,
+                pageSize: pageSize,
+                hasMore: false
+            }
+        });
+        return;
+    }
+    
+    // 20개 초과면 첫 20개만 전송하고 나머지는 큐에 저장
+    const firstPage = dataArray.slice(0, pageSize);
+    const remainingData = dataArray.slice(pageSize);
+    
+    // 고유한 changeId 생성 (타임스탬프 + 랜덤 문자열 + 클라이언트 ID)
+    const changeId = `${message.table}_${message.operation}_${Date.now()}_${Math.random().toString(36).substring(2, 15)}_${ws.id}`;
+    
+    // 첫 페이지 전송
+    sendMessage(ws, {
+        ...message,
+        data: firstPage,
+        pagination: {
+            total: dataArray.length,
+            currentPage: 1,
+            pageSize: pageSize,
+            hasMore: true,
+            changeId: changeId
+        }
+    });
+    
+    // 나머지 데이터를 큐에 저장
+    if (!clientPaginationQueues.has(ws.id)) {
+        clientPaginationQueues.set(ws.id, []);
+    }
+    
+    const queue = clientPaginationQueues.get(ws.id);
+    queue.push({
+        changeId: changeId,
+        table: message.table,
+        operation: message.operation,
+        data: remainingData,
+        timestamp: Date.now(),
+        total: dataArray.length,
+        pageSize: pageSize
+    });
+}
+
+// fetch-more 메시지 처리
+function handleFetchMore(ws, data) {
+    const changeId = data.changeId;
+    const page = data.page || 2; // 기본값: 2페이지
+    
+    if (!changeId) {
+        sendError(ws, 'changeId is required for fetch-more');
+        return;
+    }
+    
+    const queue = clientPaginationQueues.get(ws.id);
+    if (!queue || queue.length === 0) {
+        sendMessage(ws, {
+            type: 'fetch-more-response',
+            changeId: changeId,
+            data: [],
+            pagination: {
+                hasMore: false,
+                message: 'No more data available'
+            }
+        });
+        return;
+    }
+    
+    // changeId로 큐에서 찾기
+    const changeIndex = queue.findIndex(item => item.changeId === changeId);
+    if (changeIndex === -1) {
+        sendMessage(ws, {
+            type: 'fetch-more-response',
+            changeId: changeId,
+            data: [],
+            pagination: {
+                hasMore: false,
+                message: 'Change not found in queue'
+            }
+        });
+        return;
+    }
+    
+    const change = queue[changeIndex];
+    const pageSize = change.pageSize || 20;
+    const startIndex = (page - 2) * pageSize; // 첫 페이지는 이미 전송했으므로 page-2
+    const endIndex = startIndex + pageSize;
+    
+    if (startIndex >= change.data.length) {
+        // 더 이상 데이터가 없으면 큐에서 제거
+        queue.splice(changeIndex, 1);
+        sendMessage(ws, {
+            type: 'fetch-more-response',
+            changeId: changeId,
+            data: [],
+            pagination: {
+                hasMore: false,
+                message: 'No more data available'
+            }
+        });
+        return;
+    }
+    
+    // 다음 페이지 데이터 전송
+    const pageData = change.data.slice(startIndex, endIndex);
+    const hasMore = endIndex < change.data.length;
+    
+    sendMessage(ws, {
+        type: 'fetch-more-response',
+        changeId: changeId,
+        table: change.table,
+        operation: change.operation,
+        data: pageData,
+        pagination: {
+            total: change.total,
+            currentPage: page,
+            pageSize: pageSize,
+            hasMore: hasMore
+        }
+    });
+    
+    // 마지막 페이지를 전송했으면 큐에서 제거
+    if (!hasMore) {
+        queue.splice(changeIndex, 1);
     }
 }
 
@@ -604,7 +761,8 @@ function broadcastToDbClients(dbKey, excludeClientId, data) {
         }
         
         if (shouldSend) {
-            sendMessage(ws, message);
+            // 페이지네이션 처리: 데이터를 20개씩 나눠서 전송
+            sendPaginatedData(ws, message);
             sentCount++;
         } else {
             filteredCount++;
