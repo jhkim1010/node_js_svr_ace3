@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const vcodesRouter = require('./vcodes');
 const vdetalleRouter = require('./vdetalle');
+const vdetallesRouter = require('./vdetalles');
 const parametrosRouter = require('./parametros');
 const ingresosRouter = require('./ingresos');
 const codigosRouter = require('./codigos');
@@ -25,6 +26,7 @@ const router = Router();
 // Health는 server.js에서 처리 (헤더 불필요)
 router.use('/vcodes', vcodesRouter);
 router.use('/vdetalle', vdetalleRouter);
+router.use('/vdetalles', vdetallesRouter);
 router.use('/parametros', parametrosRouter);
 router.use('/ingresos', ingresosRouter);
 router.use('/codigos', codigosRouter);
