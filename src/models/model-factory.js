@@ -17,6 +17,7 @@ const { defineLogsModel } = require('./Logs');
 const { defineVendedoresModel } = require('./Vendedores');
 const { defineManagersModel } = require('./Managers');
 const { defineFventasModel } = require('./Fventas');
+const { defineSeniasVinculadosModel } = require('./SeniasVinculados');
 
 // 모델 정의 함수들
 const modelDefinitions = {
@@ -38,6 +39,7 @@ const modelDefinitions = {
     'Vendedores': defineVendedoresModel,
     'Managers': defineManagersModel,
     'Fventas': defineFventasModel,
+    'SeniasVinculados': defineSeniasVinculadosModel,
 };
 
 function getModelForRequest(req, modelName) {
