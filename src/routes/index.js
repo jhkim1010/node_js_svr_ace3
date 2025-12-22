@@ -25,8 +25,9 @@ const router = Router();
 
 // Health는 server.js에서 처리 (헤더 불필요)
 router.use('/vcodes', vcodesRouter);
-router.use('/vdetalle', vdetalleRouter);
+// vdetalles를 vdetalle보다 먼저 등록하여 경로 충돌 방지
 router.use('/vdetalles', vdetallesRouter);
+router.use('/vdetalle', vdetalleRouter);
 router.use('/parametros', parametrosRouter);
 router.use('/ingresos', ingresosRouter);
 router.use('/codigos', codigosRouter);

@@ -6,8 +6,11 @@ const router = Router();
 // venta 세부 정보 조회 (vcode_id와 sucursal 파라미터)
 router.get('/', async (req, res) => {
     try {
+        console.log(`[Vdetalles] GET /api/vdetalles 요청 받음 - query:`, req.query, `body:`, req.body);
         const vcodeId = parseInt(req.query.vcode_id || req.body.vcode_id, 10);
         const sucursal = parseInt(req.query.sucursal || req.body.sucursal, 10);
+        
+        console.log(`[Vdetalles] 파라미터 파싱 - vcodeId: ${vcodeId}, sucursal: ${sucursal}`);
         
         if (Number.isNaN(vcodeId)) {
             return res.status(400).json({ error: 'Invalid vcode_id parameter' });
@@ -15,6 +18,17 @@ router.get('/', async (req, res) => {
         
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
         const sequelize = Vdetalle.sequelize;
+        
+        // vcodes 정보 조회
+        const vcodesQuery = `
+            SELECT tpago, tefectivo, tcredito, tbanco, treservado, tfavor, d_num_caja, d_num_terminal
+            FROM vcodes 
+            WHERE vcode_id = :vcodeId
+        `;
+        const vcodesResult = await sequelize.query(vcodesQuery, {
+            replacements: { vcodeId },
+            type: sequelize.QueryTypes.SELECT
+        });
         
         // cliente 정보 조회
         const clienteQuery = `
@@ -60,12 +74,25 @@ router.get('/', async (req, res) => {
             type: sequelize.QueryTypes.SELECT
         });
         
+        // online_ventas 정보 조회
+        const onlineVentasQuery = `
+            SELECT num_pedido, ov.utime_registrado, ov.utime_pagado 
+            FROM online_ventas ov 
+            WHERE ov.ref_id_vcode = :vcodeId
+        `;
+        const onlineVentasResult = await sequelize.query(onlineVentasQuery, {
+            replacements: { vcodeId },
+            type: sequelize.QueryTypes.SELECT
+        });
+        
         // 결과 반환
         res.json({
+            vcodes: vcodesResult.length > 0 ? vcodesResult[0] : null,
             cliente: clienteResult.length > 0 ? clienteResult[0] : null,
             detalles: detallesResult,
             vtags: vtagsResult,
-            cheque: chequeResult.length > 0 ? chequeResult : null
+            cheque: chequeResult.length > 0 ? chequeResult : null,
+            online_ventas: onlineVentasResult.length > 0 ? onlineVentasResult : null
         });
     } catch (err) {
         console.error('Error fetching venta details:', err);
