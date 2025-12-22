@@ -218,7 +218,7 @@ router.post('/', async (req, res) => {
         // 단일 생성/업데이트 요청도 utime 비교 + primary key 우선 순서 적용
         const rawData = req.body.new_data || req.body;
         req.body.data = Array.isArray(rawData) ? rawData : [rawData];
-
+        image.png   
         const result = await handleUtimeComparisonArrayData(req, res, Fventas, compositePrimaryKey, 'Fventas');
 
         // 첫 번째 결과를 기반으로 응답 구성

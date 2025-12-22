@@ -256,11 +256,73 @@ function startMonitoring(getWebSocketServer) {
     checkWebSocketConnections(getWebSocketServer);
 }
 
-// 데이터베이스 오류 알림 전송 (Telegram 알림 비활성화 - 오류마다 보낼 필요 없음)
+// 데이터베이스 오류 알림 전송 (INSERT/UPDATE 오류 발생 시 Telegram 알림)
 async function sendDatabaseErrorAlert(err, database, table, operation = 'unknown') {
-    // 오류 메시지마다 Telegram 알림을 보내지 않음
-    // 연결 풀 사용률이 70% 이상일 때만 알림 전송
-    return;
+    if (!MONITORING_CONFIG.telegram.enabled || !MONITORING_CONFIG.telegram.botToken || !MONITORING_CONFIG.telegram.chatId) {
+        return;
+    }
+    
+    try {
+        // 에러 정보 추출
+        const errorMsg = err.original ? err.original.message : err.message;
+        const errorCode = err.original ? err.original.code : err.code;
+        const errorName = err.constructor.name;
+        const errorType = errorName.replace('Error', '');
+        
+        // 에러 분류
+        let errorCategory = '알 수 없는 오류';
+        let errorDetails = '';
+        
+        // 연결 오류
+        if (errorName.includes('ConnectionError') || errorName.includes('ConnectionRefusedError')) {
+            errorCategory = '🔌 데이터베이스 연결 오류';
+            errorDetails = '데이터베이스 서버에 연결할 수 없습니다.';
+        }
+        // 외래키 제약 조건 위반
+        else if (errorName.includes('ForeignKeyConstraintError') || errorMsg.includes('foreign key constraint')) {
+            errorCategory = '🔗 외래키 제약 조건 위반';
+            errorDetails = '참조하는 레코드가 존재하지 않습니다.';
+        }
+        // Unique 제약 조건 위반
+        else if (errorName.includes('UniqueConstraintError') || errorMsg.includes('duplicate key') || errorMsg.includes('unique constraint')) {
+            errorCategory = '🔑 중복 키 오류';
+            errorDetails = '이미 존재하는 고유 키 값입니다.';
+        }
+        // NOT NULL 제약 조건 위반
+        else if (errorName.includes('ValidationError') || errorMsg.includes('not null') || errorMsg.includes('null value')) {
+            errorCategory = '⚠️ 필수 필드 누락';
+            errorDetails = '필수 필드가 누락되었습니다.';
+        }
+        // 데이터 타입/길이 오류
+        else if (errorMsg.includes('value too long') || errorMsg.includes('character varying')) {
+            errorCategory = '📏 데이터 길이 오류';
+            errorDetails = '데이터 길이가 허용 범위를 초과했습니다.';
+        }
+        // 기타 데이터베이스 오류
+        else {
+            errorCategory = '❌ 데이터베이스 오류';
+            errorDetails = errorMsg.substring(0, 200); // 처음 200자만 표시
+        }
+        
+        // Telegram 메시지 구성
+        const message = `🚨 <b>POST 실패 - 데이터베이스 오류</b>\n\n` +
+                       `📊 데이터베이스: <code>${database || '알 수 없음'}</code>\n` +
+                       `📋 테이블: <code>${table || '알 수 없음'}</code>\n` +
+                       `⚙️ 작업: <code>${operation}</code>\n` +
+                       `❌ 오류 타입: <code>${errorType}</code>\n` +
+                       (errorCode ? `🔢 오류 코드: <code>${errorCode}</code>\n` : '') +
+                       `\n${errorCategory}\n\n` +
+                       `💬 오류 메시지:\n<code>${errorMsg.substring(0, 300)}</code>\n\n` +
+                       `⏰ 시간: ${getArgentinaTime()}`;
+        
+        // Telegram 메시지 전송 (비동기, 실패해도 무시)
+        await sendTelegramMessage(message).catch(() => {
+            // 알림 전송 실패는 조용히 무시
+        });
+    } catch (alertErr) {
+        // 알림 생성/전송 중 오류는 무시 (데이터베이스 오류 처리에 영향 없음)
+        console.error(`[Monitoring] ⚠️ 데이터베이스 오류 알림 전송 실패: ${alertErr.message}`);
+    }
 }
 
 // PostgreSQL 총 접속자 수 조회

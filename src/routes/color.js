@@ -20,6 +20,9 @@ router.get('/', async (req, res) => {
         // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
         const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
         
+        // 검색어 파라미터 확인
+        const filteringWord = req.body?.filtering_word || req.query?.filtering_word || req.body?.filteringWord || req.query?.filteringWord || req.body?.search || req.query?.search;
+        
         let whereCondition = {};
         if (maxUtime) {
             // max_utime 값이 실제로는 id_color 값임
@@ -44,6 +47,20 @@ router.get('/', async (req, res) => {
             whereCondition[Op.and] = [
                 ...(whereCondition[Op.and] || []),
                 Sequelize.literal(`utime::text > '${utimeStr.replace(/'/g, "''")}'`)
+            ];
+        }
+        
+        // FilteringWord 검색 조건 추가 (idcolor 또는 descripcioncolor에서 검색)
+        if (filteringWord && filteringWord.trim()) {
+            const searchTerm = `%${filteringWord.trim()}%`;
+            whereCondition[Op.and] = [
+                ...(whereCondition[Op.and] || []),
+                {
+                    [Op.or]: [
+                        { idcolor: { [Op.iLike]: searchTerm } },
+                        { descripcioncolor: { [Op.iLike]: searchTerm } }
+                    ]
+                }
             ];
         }
         
