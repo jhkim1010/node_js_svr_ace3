@@ -28,7 +28,7 @@ function defineOnlineVentasModel(sequelize) {
     sucursal: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        defaultValue: 1,
+        defaultValue: 2,
     },
     borrado: {
         type: DataTypes.BOOLEAN,
@@ -42,11 +42,28 @@ function defineOnlineVentasModel(sequelize) {
     },
     cuenta_nombre: { type: DataTypes.STRING(40), allowNull: true },
     utime_completado: { type: DataTypes.DATE, allowNull: true },
+    b_sincronizado_node_svr: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+    },
 }, {
     tableName: 'online_ventas',
     schema: 'public',
     timestamps: false,
-    });
+    indexes: [
+        { 
+            unique: true, 
+            name: 'online_venta_num_pedido.uniq', 
+            fields: ['num_pedido'] 
+        },
+        { 
+            unique: true, 
+            name: 'online_ventas_unique', 
+            fields: ['online_venta_id', 'sucursal'] 
+        }
+    ],
+});
 }
 
 module.exports = { defineOnlineVentasModel };
