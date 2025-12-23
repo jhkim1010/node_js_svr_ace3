@@ -721,58 +721,69 @@ async function handlePutCodigo(req, res, id) {
             console.log(`\n--- 최종 결과: ${count}개 행 업데이트됨 ---`);
             console.log('═══════════════════════════════════════════════════════════\n');
             
+            // 트랜잭션 커밋 완료 후 변수 저장 (logs 기록용)
+            const transactionCommitted = true;
+            const updatedDataForLogs = updated;
+            
             // WebSocket 알림 전송
             await notifyDbChange(req, Codigos, 'update', updated);
             res.json(updated);
             
-            // logs 테이블에 기록 (트랜잭션 커밋 후 별도로 처리)
+            // logs 테이블에 기록 (트랜잭션 커밋 후 별도로 처리, 비동기로 실행하여 응답 지연 방지)
             // 에러가 발생해도 메인 응답에는 영향 없음
-            try {
-                const Logs = getModelForRequest(req, 'Logs');
-                const now = new Date();
-                const fecha = now.toISOString().split('T')[0]; // YYYY-MM-DD
-                const hora = now.toTimeString().split(' ')[0]; // HH:MM:SS
-                
-                // 날짜와 시간을 한국어 형식으로 변환
-                const year = now.getFullYear();
-                const month = now.getMonth() + 1;
-                const day = now.getDate();
-                const hours = now.getHours();
-                const minutes = now.getMinutes();
-                const fechaStr = `${year}년 ${month}월 ${day}일`;
-                const horaStr = `${hours}시 ${minutes}분`;
-                
-                // 이벤트 메시지 구성
-                const mac = cleanedData.mac || updated.mac || 'N/A';
-                const platform = cleanedData.platform || 'N/A';
-                const codigo = updated.codigo || 'N/A';
-                const descripcion = updated.descripcion || 'N/A';
-                const precios = [];
-                if (updated.pre1 !== null && updated.pre1 !== undefined) precios.push(`pre1=${updated.pre1}`);
-                if (updated.pre2 !== null && updated.pre2 !== undefined) precios.push(`pre2=${updated.pre2}`);
-                if (updated.pre3 !== null && updated.pre3 !== undefined) precios.push(`pre3=${updated.pre3}`);
-                if (updated.pre4 !== null && updated.pre4 !== undefined) precios.push(`pre4=${updated.pre4}`);
-                if (updated.pre5 !== null && updated.pre5 !== undefined) precios.push(`pre5=${updated.pre5}`);
-                
-                const preciosStr = precios.length > 0 ? precios.join(', ') : 'N/A';
-                const evento = `MAC: ${mac}, Platform: ${platform}에서 제품 코드: ${codigo}, 설명: ${descripcion}, 가격: ${preciosStr}를 ${fechaStr} ${horaStr}에 편집`;
-                
-                // logs 테이블에 삽입 (트랜잭션 없이)
-                await Logs.create({
-                    fecha: fecha,
-                    hora: hora,
-                    evento: evento,
-                    progname: 'codigos_update',
-                    sucursal: req.dbConfig?.sucursal || 1
-                });
-            } catch (logErr) {
-                // logs 기록 실패는 무시하지 않고 로그만 출력
-                console.error('Failed to write log entry:', logErr);
-            }
+            setImmediate(async () => {
+                try {
+                    const Logs = getModelForRequest(req, 'Logs');
+                    const now = new Date();
+                    const fecha = now.toISOString().split('T')[0]; // YYYY-MM-DD
+                    const hora = now.toTimeString().split(' ')[0]; // HH:MM:SS
+                    
+                    // 날짜와 시간을 한국어 형식으로 변환
+                    const year = now.getFullYear();
+                    const month = now.getMonth() + 1;
+                    const day = now.getDate();
+                    const hours = now.getHours();
+                    const minutes = now.getMinutes();
+                    const fechaStr = `${year}년 ${month}월 ${day}일`;
+                    const horaStr = `${hours}시 ${minutes}분`;
+                    
+                    // 이벤트 메시지 구성
+                    const mac = cleanedData.mac || updatedDataForLogs.mac || 'N/A';
+                    const platform = cleanedData.platform || 'N/A';
+                    const codigo = updatedDataForLogs.codigo || 'N/A';
+                    const descripcion = updatedDataForLogs.descripcion || 'N/A';
+                    const precios = [];
+                    if (updatedDataForLogs.pre1 !== null && updatedDataForLogs.pre1 !== undefined) precios.push(`pre1=${updatedDataForLogs.pre1}`);
+                    if (updatedDataForLogs.pre2 !== null && updatedDataForLogs.pre2 !== undefined) precios.push(`pre2=${updatedDataForLogs.pre2}`);
+                    if (updatedDataForLogs.pre3 !== null && updatedDataForLogs.pre3 !== undefined) precios.push(`pre3=${updatedDataForLogs.pre3}`);
+                    if (updatedDataForLogs.pre4 !== null && updatedDataForLogs.pre4 !== undefined) precios.push(`pre4=${updatedDataForLogs.pre4}`);
+                    if (updatedDataForLogs.pre5 !== null && updatedDataForLogs.pre5 !== undefined) precios.push(`pre5=${updatedDataForLogs.pre5}`);
+                    
+                    const preciosStr = precios.length > 0 ? precios.join(', ') : 'N/A';
+                    const evento = `MAC: ${mac}, Platform: ${platform}에서 제품 코드: ${codigo}, 설명: ${descripcion}, 가격: ${preciosStr}를 ${fechaStr} ${horaStr}에 편집`;
+                    
+                    // logs 테이블에 삽입 (트랜잭션 없이)
+                    await Logs.create({
+                        fecha: fecha,
+                        hora: hora,
+                        evento: evento,
+                        progname: 'codigos_update',
+                        sucursal: req.dbConfig?.sucursal || 1
+                    });
+                } catch (logErr) {
+                    // logs 기록 실패는 무시하지 않고 로그만 출력
+                    console.error('Failed to write log entry:', logErr);
+                }
+            });
         } catch (err) {
             // 트랜잭션이 아직 커밋되지 않았을 때만 롤백
-            if (!transaction.finished) {
-                await transaction.rollback();
+            try {
+                if (transaction && !transaction.finished) {
+                    await transaction.rollback();
+                }
+            } catch (rollbackErr) {
+                // 롤백 실패는 무시 (이미 커밋되었을 수 있음)
+                console.error('Transaction rollback failed (may already be committed):', rollbackErr.message);
             }
             throw err;
         }
