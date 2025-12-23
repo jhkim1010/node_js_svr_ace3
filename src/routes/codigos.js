@@ -498,12 +498,51 @@ async function handlePutCodigo(req, res, id) {
             // utime을 now()로 설정
             dataToUpdate.utime = Sequelize.literal(`now()`);
             
+            // 실행될 SQL 스크립트 구성 및 출력
+            console.log('\n═══════════════════════════════════════════════════════════');
+            console.log('=== Codigo Update 요청 ===');
+            console.log(`codigo_id: ${id}`);
+            console.log('\n--- 실행될 SQL 스크립트 ---');
+            
+            // SQL SET 절 구성
+            const setClauses = [];
+            for (const [key, value] of Object.entries(dataToUpdate)) {
+                if (value === null || value === undefined) {
+                    setClauses.push(`${key} = NULL`);
+                } else if (key === 'utime' && value && typeof value === 'object' && value.val === 'now()') {
+                    // Sequelize.literal('now()')인 경우
+                    setClauses.push(`${key} = now()`);
+                } else if (typeof value === 'string') {
+                    // SQL injection 방지를 위해 작은따옴표 이스케이프
+                    const escapedValue = value.replace(/'/g, "''");
+                    setClauses.push(`${key} = '${escapedValue}'`);
+                } else if (typeof value === 'boolean') {
+                    setClauses.push(`${key} = ${value}`);
+                } else {
+                    setClauses.push(`${key} = ${value}`);
+                }
+            }
+            
+            const sqlScript = `UPDATE codigos SET ${setClauses.join(', ')} WHERE codigo_id = ${id}`;
+            console.log(sqlScript);
+            console.log('\n--- 업데이트 전 데이터 ---');
+            const beforeUpdate = existing.toJSON ? existing.toJSON() : existing;
+            console.log(JSON.stringify(beforeUpdate, null, 2));
+            
             const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
             if (count === 0) {
                 await transaction.rollback();
+                console.log('\n--- 결과: 업데이트된 행 없음 (롤백) ---');
+                console.log('═══════════════════════════════════════════════════════════\n');
                 return res.status(404).json({ error: 'Not found' });
             }
+            
             const updated = await Codigos.findOne({ where: { id_codigo: id }, transaction });
+            console.log('\n--- 업데이트 후 데이터 ---');
+            const afterUpdate = updated.toJSON ? updated.toJSON() : updated;
+            console.log(JSON.stringify(afterUpdate, null, 2));
+            console.log(`\n--- 결과: ${count}개 행 업데이트됨 ---`);
+            console.log('═══════════════════════════════════════════════════════════\n');
             
             // logs 테이블에 기록
             try {
