@@ -430,7 +430,19 @@ async function handlePutCodigo(req, res, id) {
             cleanedData.id_woocommerce_producto = null;
         }
         
-        const dataToUpdate = filterModelFields(Codigos, cleanedData);
+        let dataToUpdate = filterModelFields(Codigos, cleanedData);
+        
+        // filterModelFields 이후에 추가해야 하는 필드들 (모델에 정의되지 않았을 수 있음)
+        // mac과 platform 값 처리
+        if (cleanedData.mac) {
+            dataToUpdate.mac = cleanedData.mac;
+        }
+        if (cleanedData.platform) {
+            // platform 값을 valor1에 저장
+            dataToUpdate.valor1 = cleanedData.platform;
+        }
+        
+        console.log(`[handlePutCodigo] filterModelFields 후 dataToUpdate:`, JSON.stringify(dataToUpdate, null, 2));
         
         // 트랜잭션 사용하여 원자성 보장
         const sequelize = Codigos.sequelize;
@@ -660,6 +672,13 @@ async function handlePutCodigo(req, res, id) {
             console.log(`\n업데이트할 필드: ${Object.keys(dataToUpdate).join(', ')}`);
             
             console.log('\n--- UPDATE 실행 중... ---');
+            console.log(`[handlePutCodigo] UPDATE에 전달되는 dataToUpdate:`, JSON.stringify(dataToUpdate, (key, value) => {
+                // Sequelize.literal 객체를 문자열로 변환
+                if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Literal') {
+                    return '[Sequelize.literal]';
+                }
+                return value;
+            }, 2));
             const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
             console.log(`UPDATE 결과: ${count}개 행 영향받음`);
             
@@ -670,10 +689,35 @@ async function handlePutCodigo(req, res, id) {
                 return res.status(404).json({ error: 'Not found' });
             }
             
-            const updated = await Codigos.findOne({ where: { id_codigo: id }, transaction });
-            console.log('\n--- 업데이트 후 데이터 ---');
+            console.log(`\n--- 트랜잭션 커밋 전... ---`);
+            await transaction.commit();
+            console.log(`--- 트랜잭션 커밋 완료 ---`);
+            
+            // 트랜잭션 커밋 후 다시 조회 (최신 데이터 확인)
+            const updated = await Codigos.findOne({ where: { id_codigo: id } });
+            console.log('\n--- 업데이트 후 데이터 (커밋 후 재조회) ---');
             const afterUpdate = updated.toJSON ? updated.toJSON() : updated;
             console.log(JSON.stringify(afterUpdate, null, 2));
+            
+            // 변경된 필드 확인
+            const changedFields = [];
+            const beforeJson = existing.toJSON ? existing.toJSON() : existing;
+            for (const key in dataToUpdate) {
+                if (key !== 'utime') { // utime은 항상 변경되므로 제외
+                    const beforeVal = beforeJson[key];
+                    const afterVal = afterUpdate[key];
+                    if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                        changedFields.push(`${key}: ${JSON.stringify(beforeVal)} → ${JSON.stringify(afterVal)}`);
+                    }
+                }
+            }
+            console.log(`\n--- 변경된 필드 ---`);
+            if (changedFields.length > 0) {
+                changedFields.forEach(field => console.log(`  ${field}`));
+            } else {
+                console.log(`  변경된 필드 없음`);
+            }
+            
             console.log(`\n--- 최종 결과: ${count}개 행 업데이트됨 ---`);
             console.log('═══════════════════════════════════════════════════════════\n');
             
