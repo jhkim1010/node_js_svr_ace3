@@ -162,42 +162,45 @@ async function notifyDbChange(req, Model, operation, data) {
             'read': 'READ'
         }[normalizedOperation] || (operation ? operation.toUpperCase() : 'UNKNOWN');
         
-        // codigos, todocodigos 테이블에 대한 상세 메시지 출력 (API를 통한 알림)
-        // tableName이 'id'로 잘못 추출된 경우 Model에서 다시 확인
-        const isCodigosTable = tableName === 'codigos' || 
-                               (Model && Model.tableName && Model.tableName.toLowerCase() === 'codigos');
-        const isTodocodigosTable = tableName === 'todocodigos' || 
-                                   (Model && Model.tableName && Model.tableName.toLowerCase() === 'todocodigos');
-        
-        if (isCodigosTable || isTodocodigosTable) {
-            // tableName이 'id'인 경우 Model에서 올바른 테이블명으로 교체
-            if (tableName === 'id' || tableName === 'unknown') {
-                if (Model && Model.tableName) {
-                    tableName = Model.tableName.toLowerCase();
-                }
-            }
-            const firstItem = plainData[0] || {};
-            const codigo = firstItem.codigo || firstItem.tcodigo || 'N/A';
-            const idCodigo = firstItem.id_codigo || firstItem.id_todocodigo || 'N/A';
-            const descripcion = firstItem.descripcion || firstItem.tdesc || 'N/A';
-            const pre1 = firstItem.pre1 !== undefined ? firstItem.pre1 : (firstItem.tpre1 !== undefined ? firstItem.tpre1 : 'N/A');
+        // 연결된 클라이언트가 있는 경우에만 로그 출력
+        if (connectedClientCount > 0) {
+            // codigos, todocodigos 테이블에 대한 상세 메시지 출력 (API를 통한 알림)
+            // tableName이 'id'로 잘못 추출된 경우 Model에서 다시 확인
+            const isCodigosTable = tableName === 'codigos' || 
+                                   (Model && Model.tableName && Model.tableName.toLowerCase() === 'codigos');
+            const isTodocodigosTable = tableName === 'todocodigos' || 
+                                       (Model && Model.tableName && Model.tableName.toLowerCase() === 'todocodigos');
             
-            console.log(`\n📡 [${tableName === 'codigos' ? 'Codigos' : 'Todocodigos'} API 알림]`);
-            console.log(`   📋 테이블: ${tableName}`);
-            console.log(`   🔧 작업: ${operationLabel}`);
-            console.log(`   🏷️  코드: ${codigo}`);
-            console.log(`   🆔 ID: ${idCodigo}`);
-            console.log(`   📝 설명: ${descripcion}`);
-            console.log(`   💰 가격1: ${pre1}`);
-            console.log(`   🗄️  데이터베이스: ${dbKey}`);
-            console.log(`   📍 경로: ${req.path || req.originalUrl || req.url}`);
-            console.log(`   👤 클라이언트 ID: ${clientId || 'none'}`);
-            console.log(`   👥 연결된 클라이언트: ${connectedClientCount}개`);
-            console.log(`   ⏰ 시간: ${new Date().toISOString()}`);
-            console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
-        } else {
-            // 다른 테이블은 기존 로그 유지
-        console.log(`[WebSocket] DB Change Notification - Table: ${tableName}, Operation: ${operationLabel}, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
+            if (isCodigosTable || isTodocodigosTable) {
+                // tableName이 'id'인 경우 Model에서 올바른 테이블명으로 교체
+                if (tableName === 'id' || tableName === 'unknown') {
+                    if (Model && Model.tableName) {
+                        tableName = Model.tableName.toLowerCase();
+                    }
+                }
+                const firstItem = plainData[0] || {};
+                const codigo = firstItem.codigo || firstItem.tcodigo || 'N/A';
+                const idCodigo = firstItem.id_codigo || firstItem.id_todocodigo || 'N/A';
+                const descripcion = firstItem.descripcion || firstItem.tdesc || 'N/A';
+                const pre1 = firstItem.pre1 !== undefined ? firstItem.pre1 : (firstItem.tpre1 !== undefined ? firstItem.tpre1 : 'N/A');
+                
+                console.log(`\n📡 [${tableName === 'codigos' ? 'Codigos' : 'Todocodigos'} API 알림]`);
+                console.log(`   📋 테이블: ${tableName}`);
+                console.log(`   🔧 작업: ${operationLabel}`);
+                console.log(`   🏷️  코드: ${codigo}`);
+                console.log(`   🆔 ID: ${idCodigo}`);
+                console.log(`   📝 설명: ${descripcion}`);
+                console.log(`   💰 가격1: ${pre1}`);
+                console.log(`   🗄️  데이터베이스: ${dbKey}`);
+                console.log(`   📍 경로: ${req.path || req.originalUrl || req.url}`);
+                console.log(`   👤 클라이언트 ID: ${clientId || 'none'}`);
+                console.log(`   👥 연결된 클라이언트: ${connectedClientCount}개`);
+                console.log(`   ⏰ 시간: ${new Date().toISOString()}`);
+                console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
+            } else {
+                // 다른 테이블은 기존 로그 유지
+                console.log(`[WebSocket] DB Change Notification - Table: ${tableName}, Operation: ${operationLabel}, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
+            }
         }
         
         // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
@@ -268,26 +271,29 @@ async function notifyBatchSync(req, Model, result) {
             // 동일한 데이터베이스에 연결된 다른 클라이언트 개수 조회
             const connectedClientCount = getConnectedClientCount(dbKey, clientId || null);
             
-            // codigos, todocodigos 테이블에 대한 상세 메시지 출력 (API를 통한 BATCH_SYNC 알림)
-            if (tableName === 'codigos' || tableName === 'todocodigos') {
-                const totalItems = successData.length;
-                const firstItem = successData[0] || {};
-                const codigo = firstItem.codigo || firstItem.tcodigo || 'N/A';
-                
-                console.log(`\n📡 [${tableName === 'codigos' ? 'Codigos' : 'Todocodigos'} API BATCH_SYNC 알림]`);
-                console.log(`   📋 테이블: ${tableName}`);
-                console.log(`   🔧 작업: BATCH_SYNC`);
-                console.log(`   📦 총 항목 수: ${totalItems}개`);
-                console.log(`   🏷️  첫 번째 코드: ${codigo}`);
-                console.log(`   🗄️  데이터베이스: ${dbKey}`);
-                console.log(`   📍 경로: ${req.path || req.originalUrl || req.url}`);
-                console.log(`   👤 클라이언트 ID: ${clientId || 'none'}`);
-                console.log(`   👥 연결된 클라이언트: ${connectedClientCount}개`);
-                console.log(`   ⏰ 시간: ${new Date().toISOString()}`);
-                console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
-            } else {
-                // 다른 테이블은 기존 로그 유지
-            console.log(`[WebSocket] BATCH_SYNC Notification - Table: ${tableName}, Operation: BATCH_SYNC, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
+            // 연결된 클라이언트가 있는 경우에만 로그 출력
+            if (connectedClientCount > 0) {
+                // codigos, todocodigos 테이블에 대한 상세 메시지 출력 (API를 통한 BATCH_SYNC 알림)
+                if (tableName === 'codigos' || tableName === 'todocodigos') {
+                    const totalItems = successData.length;
+                    const firstItem = successData[0] || {};
+                    const codigo = firstItem.codigo || firstItem.tcodigo || 'N/A';
+                    
+                    console.log(`\n📡 [${tableName === 'codigos' ? 'Codigos' : 'Todocodigos'} API BATCH_SYNC 알림]`);
+                    console.log(`   📋 테이블: ${tableName}`);
+                    console.log(`   🔧 작업: BATCH_SYNC`);
+                    console.log(`   📦 총 항목 수: ${totalItems}개`);
+                    console.log(`   🏷️  첫 번째 코드: ${codigo}`);
+                    console.log(`   🗄️  데이터베이스: ${dbKey}`);
+                    console.log(`   📍 경로: ${req.path || req.originalUrl || req.url}`);
+                    console.log(`   👤 클라이언트 ID: ${clientId || 'none'}`);
+                    console.log(`   👥 연결된 클라이언트: ${connectedClientCount}개`);
+                    console.log(`   ⏰ 시간: ${new Date().toISOString()}`);
+                    console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
+                } else {
+                    // 다른 테이블은 기존 로그 유지
+                    console.log(`[WebSocket] BATCH_SYNC Notification - Table: ${tableName}, Operation: BATCH_SYNC, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
+                }
             }
             
             // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트

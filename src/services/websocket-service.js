@@ -560,35 +560,43 @@ async function setupDbListener(host, port, database, user, password, ssl = false
                 };
                 const normalizedOperation = operationMap[operation] || operation.toUpperCase();
                 
-                // codigos 테이블에 대한 상세 메시지 출력
-                if (tableName === 'codigos') {
-                    try {
-                        const payload = msg.payload ? JSON.parse(msg.payload) : null;
-                        const codigo = payload?.codigo || 'N/A';
-                        const idCodigo = payload?.id_codigo || 'N/A';
-                        const descripcion = payload?.descripcion || 'N/A';
-                        const pre1 = payload?.pre1 !== undefined ? payload.pre1 : 'N/A';
-                        
-                        console.log(`\n🔔 [Codigos 트리거 발생]`);
-                        console.log(`   📋 테이블: ${tableName}`);
-                        console.log(`   🔧 작업: ${normalizedOperation}`);
-                        console.log(`   🏷️  코드: ${codigo}`);
-                        console.log(`   🆔 ID: ${idCodigo}`);
-                        console.log(`   📝 설명: ${descripcion}`);
-                        console.log(`   💰 가격1: ${pre1}`);
-                        console.log(`   🗄️  데이터베이스: ${database}`);
-                        console.log(`   📡 채널: ${msg.channel}`);
-                        console.log(`   ⏰ 시간: ${new Date().toISOString()}`);
-                        console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
-                    } catch (parseErr) {
-                        console.log(`[WebSocket] DB Trigger Notification - Channel: ${msg.channel}, Table: ${tableName}, Operation: ${normalizedOperation}, dbKey: ${key}`);
-                        console.log(`[WebSocket] ⚠️ Payload 파싱 실패: ${parseErr.message}`);
+                // 동일한 데이터베이스에 연결된 클라이언트들에게만 브로드캐스트
+                // 브로드캐스트 전에 클라이언트 수 확인
+                const clientGroup = dbClientGroups.get(key);
+                const connectedCount = clientGroup ? clientGroup.size : 0;
+                
+                // 연결된 클라이언트가 있는 경우에만 로그 출력
+                if (connectedCount > 0) {
+                    // codigos 테이블에 대한 상세 메시지 출력
+                    if (tableName === 'codigos') {
+                        try {
+                            const payload = msg.payload ? JSON.parse(msg.payload) : null;
+                            const codigo = payload?.codigo || 'N/A';
+                            const idCodigo = payload?.id_codigo || 'N/A';
+                            const descripcion = payload?.descripcion || 'N/A';
+                            const pre1 = payload?.pre1 !== undefined ? payload.pre1 : 'N/A';
+                            
+                            console.log(`\n🔔 [Codigos 트리거 발생]`);
+                            console.log(`   📋 테이블: ${tableName}`);
+                            console.log(`   🔧 작업: ${normalizedOperation}`);
+                            console.log(`   🏷️  코드: ${codigo}`);
+                            console.log(`   🆔 ID: ${idCodigo}`);
+                            console.log(`   📝 설명: ${descripcion}`);
+                            console.log(`   💰 가격1: ${pre1}`);
+                            console.log(`   🗄️  데이터베이스: ${database}`);
+                            console.log(`   📡 채널: ${msg.channel}`);
+                            console.log(`   👥 연결된 클라이언트: ${connectedCount}개`);
+                            console.log(`   ⏰ 시간: ${new Date().toISOString()}`);
+                            console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
+                        } catch (parseErr) {
+                            console.log(`[WebSocket] DB Trigger Notification - Channel: ${msg.channel}, Table: ${tableName}, Operation: ${normalizedOperation}, dbKey: ${key}, Connected clients: ${connectedCount}`);
+                            console.log(`[WebSocket] ⚠️ Payload 파싱 실패: ${parseErr.message}`);
+                        }
+                    } else {
+                        console.log(`[WebSocket] DB Trigger Notification - Channel: ${msg.channel}, Table: ${tableName}, Operation: ${normalizedOperation}, dbKey: ${key}, Connected clients: ${connectedCount}`);
                     }
-                } else {
-                    console.log(`[WebSocket] DB Trigger Notification - Channel: ${msg.channel}, Table: ${tableName}, Operation: ${normalizedOperation}, dbKey: ${key}`);
                 }
                 
-                // 동일한 데이터베이스에 연결된 클라이언트들에게만 브로드캐스트
                 broadcastToDbClients(key, null, {
                     channel: msg.channel,
                     table: tableName,
@@ -795,24 +803,26 @@ function broadcastToDbClients(dbKey, excludeClientId, data) {
         }
     });
     
-    // codigos, todocodigos 테이블에 대한 상세 브로드캐스트 메시지 출력
-    if (tableName === 'codigos' || tableName === 'todocodigos') {
-        // 트리거를 통한 알림인지 API를 통한 알림인지 구분
-        const isTriggerNotification = data.channel && data.channel.startsWith('db_change_');
-        const sourceType = isTriggerNotification ? '트리거' : 'API';
-        
-        console.log(`\n📤 [${tableName === 'codigos' ? 'Codigos' : 'Todocodigos'} 웹소켓 브로드캐스트 완료]`);
-        console.log(`   📋 테이블: ${tableName}`);
-        console.log(`   🔧 작업: ${data.operation || 'UNKNOWN'}`);
-        console.log(`   📡 소스: ${sourceType}를 통한 알림`);
-        console.log(`   🗄️  데이터베이스: ${dbKey}`);
-        console.log(`   👥 연결된 클라이언트: ${clientGroup.size}개`);
-        console.log(`   ✅ 전송된 클라이언트: ${sentCount}개`);
-        if (filteredCount > 0) {
-            console.log(`   ⏭️  필터링된 클라이언트: ${filteredCount}개`);
-        }
-        console.log(`   ⏰ 시간: ${new Date().toISOString()}\n`);
-    } else if (filteredCount > 0 || (isIngresosTable && dataSucursal !== null)) {
+    // 전송된 클라이언트가 있는 경우에만 로그 출력
+    if (sentCount > 0) {
+        // codigos, todocodigos 테이블에 대한 상세 브로드캐스트 메시지 출력
+        if (tableName === 'codigos' || tableName === 'todocodigos') {
+            // 트리거를 통한 알림인지 API를 통한 알림인지 구분
+            const isTriggerNotification = data.channel && data.channel.startsWith('db_change_');
+            const sourceType = isTriggerNotification ? '트리거' : 'API';
+            
+            console.log(`\n📤 [${tableName === 'codigos' ? 'Codigos' : 'Todocodigos'} 웹소켓 브로드캐스트 완료]`);
+            console.log(`   📋 테이블: ${tableName}`);
+            console.log(`   🔧 작업: ${data.operation || 'UNKNOWN'}`);
+            console.log(`   📡 소스: ${sourceType}를 통한 알림`);
+            console.log(`   🗄️  데이터베이스: ${dbKey}`);
+            console.log(`   👥 연결된 클라이언트: ${clientGroup.size}개`);
+            console.log(`   ✅ 전송된 클라이언트: ${sentCount}개`);
+            if (filteredCount > 0) {
+                console.log(`   ⏭️  필터링된 클라이언트: ${filteredCount}개`);
+            }
+            console.log(`   ⏰ 시간: ${new Date().toISOString()}\n`);
+        } else if (filteredCount > 0 || (isIngresosTable && dataSucursal !== null)) {
         // 다른 테이블은 필터링이 발생한 경우만 로그 출력
         console.log(`[WebSocket] 브로드캐스트: table=${tableName || 'unknown'}, dbKey=${dbKey}, sucursal=${dataSucursal !== null ? dataSucursal : 'all'}, 전송=${sentCount}, 필터링=${filteredCount}`);
     }
