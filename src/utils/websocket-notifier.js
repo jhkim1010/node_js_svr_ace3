@@ -31,6 +31,7 @@ function getTableNameFromPath(path) {
     
     // /api/codigos -> codigos
     // /api/codigos/id/100243 -> codigos (id 다음 부분은 무시)
+    // /codigos/id/100243 -> codigos
     let cleanPath = path.toString();
     
     // 쿼리 문자열 제거
@@ -52,19 +53,30 @@ function getTableNameFromPath(path) {
     
     if (parts.length === 0) return 'unknown';
     
-    // /api/codigos/id/100243 같은 패턴 처리
-    // id, :id, 또는 숫자로 시작하는 부분은 무시하고 그 앞의 부분을 테이블명으로 사용
+    // 첫 번째 부분이 테이블명 (기본값)
     let route = parts[0];
     
-    // parts[1]이 'id' 또는 ':id'이고 parts[2]가 숫자인 경우, parts[0]을 테이블명으로 사용
-    if (parts.length >= 3 && (parts[1] === 'id' || parts[1] === ':id') && /^\d+$/.test(parts[2])) {
+    // /api/codigos/id/100243 같은 패턴 처리
+    // parts[0] = 'codigos', parts[1] = 'id', parts[2] = '100243'
+    // parts[1]이 'id'이고 parts[2]가 숫자인 경우, parts[0]을 테이블명으로 사용
+    if (parts.length >= 3 && parts[1] === 'id' && /^\d+$/.test(parts[2])) {
+        route = parts[0]; // 이미 parts[0]이지만 명시적으로 설정
+    }
+    // /api/codigos/:id 같은 패턴 (parts[1]이 ':id'로 시작하는 경우)
+    else if (parts.length >= 2 && parts[1].startsWith(':')) {
         route = parts[0];
     }
     // parts[1]이 숫자인 경우 (예: /api/codigos/100243), parts[0]을 테이블명으로 사용
     else if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
         route = parts[0];
     }
+    // parts[0]이 'id'인 경우 (잘못된 경로), 다음 부분을 확인
+    else if (parts[0] === 'id' && parts.length > 1) {
+        // 이 경우는 라우터 설정 문제일 수 있음
+        route = parts[1] || 'unknown';
+    }
     
+    // routeToTableMap에서 찾거나, 없으면 route 그대로 반환
     return routeToTableMap[route] || route;
 }
 
@@ -74,7 +86,46 @@ async function notifyDbChange(req, Model, operation, data) {
         // 항상 WebSocket 알림 전송 (변동을 일으킨 연결을 제외하고 동일한 데이터베이스에 연결된 다른 연결에 전송)
         
         const clientId = getClientIdFromRequest(req);
-        const tableName = getTableNameFromPath(req.path || req.originalUrl || req.url);
+        const requestPath = req.path || req.originalUrl || req.url;
+        
+        // 테이블명 추출 (우선순위: Model > 경로 파싱)
+        let tableName = null;
+        
+        // 1. Model에서 테이블명 추출 (가장 정확함)
+        if (Model && Model.tableName) {
+            const modelTableName = Model.tableName.toLowerCase();
+            // routeToTableMap에서 찾거나, 없으면 modelTableName 직접 사용
+            tableName = routeToTableMap[modelTableName] || modelTableName;
+            // 디버깅: Model 정보 출력 (문제 발생 시에만)
+            if (tableName === 'id' || tableName === 'unknown') {
+                console.log(`[WebSocket] 🔍 Model 정보 - Model.name: ${Model.name}, Model.tableName: ${Model.tableName}, modelTableName: ${modelTableName}`);
+                console.log(`[WebSocket] 🔍 routeToTableMap 키들: ${Object.keys(routeToTableMap).join(', ')}`);
+                console.log(`[WebSocket] 🔍 routeToTableMap[${modelTableName}]: ${routeToTableMap[modelTableName] || '없음'}`);
+            }
+        } else {
+            console.warn(`[WebSocket] ⚠️ Model이 없거나 tableName이 없음 - Model: ${Model ? Model.name || '있음' : '없음'}`);
+        }
+        
+        // 2. Model에서 추출 실패 시 경로에서 추출
+        if (!tableName || tableName === 'unknown' || tableName === 'id') {
+            const pathTableName = getTableNameFromPath(requestPath);
+            if (pathTableName && pathTableName !== 'id' && pathTableName !== 'unknown') {
+                tableName = pathTableName;
+            }
+        }
+        
+        // 3. 여전히 실패한 경우 경고 및 최후의 수단
+        if (tableName === 'id' || tableName === 'unknown' || !tableName) {
+            console.warn(`[WebSocket] ⚠️ 테이블명 추출 실패 - 경로: ${requestPath}, 추출된 테이블명: ${tableName}`);
+            console.warn(`[WebSocket] ⚠️ Model 정보 - Model: ${Model?.name || 'N/A'}, tableName: ${Model?.tableName || 'N/A'}`);
+            // 최후의 수단: Model.tableName 직접 사용 (소문자 변환)
+            if (Model && Model.tableName) {
+                tableName = Model.tableName.toLowerCase();
+                console.warn(`[WebSocket] ✅ Model.tableName 직접 사용: ${tableName}`);
+            } else {
+                tableName = 'unknown';
+            }
+        }
         
         // 요청의 데이터베이스 정보 가져오기
         if (!req.dbConfig) {
@@ -112,7 +163,19 @@ async function notifyDbChange(req, Model, operation, data) {
         }[normalizedOperation] || (operation ? operation.toUpperCase() : 'UNKNOWN');
         
         // codigos, todocodigos 테이블에 대한 상세 메시지 출력 (API를 통한 알림)
-        if (tableName === 'codigos' || tableName === 'todocodigos') {
+        // tableName이 'id'로 잘못 추출된 경우 Model에서 다시 확인
+        const isCodigosTable = tableName === 'codigos' || 
+                               (Model && Model.tableName && Model.tableName.toLowerCase() === 'codigos');
+        const isTodocodigosTable = tableName === 'todocodigos' || 
+                                   (Model && Model.tableName && Model.tableName.toLowerCase() === 'todocodigos');
+        
+        if (isCodigosTable || isTodocodigosTable) {
+            // tableName이 'id'인 경우 Model에서 올바른 테이블명으로 교체
+            if (tableName === 'id' || tableName === 'unknown') {
+                if (Model && Model.tableName) {
+                    tableName = Model.tableName.toLowerCase();
+                }
+            }
             const firstItem = plainData[0] || {};
             const codigo = firstItem.codigo || firstItem.tcodigo || 'N/A';
             const idCodigo = firstItem.id_codigo || firstItem.id_todocodigo || 'N/A';
@@ -134,7 +197,7 @@ async function notifyDbChange(req, Model, operation, data) {
             console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
         } else {
             // 다른 테이블은 기존 로그 유지
-            console.log(`[WebSocket] DB Change Notification - Table: ${tableName}, Operation: ${operationLabel}, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
+        console.log(`[WebSocket] DB Change Notification - Table: ${tableName}, Operation: ${operationLabel}, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
         }
         
         // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
@@ -158,7 +221,19 @@ async function notifyBatchSync(req, Model, result) {
         // 항상 WebSocket 알림 전송 (변동을 일으킨 연결을 제외하고 동일한 데이터베이스에 연결된 다른 연결에 전송)
         
         const clientId = getClientIdFromRequest(req);
-        const tableName = getTableNameFromPath(req.path || req.originalUrl || req.url);
+        const requestPath = req.path || req.originalUrl || req.url;
+        let tableName = getTableNameFromPath(requestPath);
+        
+        // 디버깅: 경로 파싱 확인 및 Model에서 테이블명 추출 시도
+        if (tableName === 'id' || tableName === 'unknown') {
+            console.warn(`[WebSocket] ⚠️ BATCH_SYNC 테이블명 추출 실패 - 경로: ${requestPath}, 추출된 테이블명: ${tableName}`);
+            // Model에서 테이블명 추출 시도
+            if (Model && Model.tableName) {
+                const modelTableName = Model.tableName.toLowerCase();
+                tableName = routeToTableMap[modelTableName] || modelTableName;
+                console.warn(`[WebSocket] ⚠️ Model에서 테이블명 추출: ${tableName}`);
+            }
+        }
         
         // 요청의 데이터베이스 정보 가져오기
         if (!req.dbConfig) {
@@ -206,7 +281,7 @@ async function notifyBatchSync(req, Model, result) {
                 console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
             } else {
                 // 다른 테이블은 기존 로그 유지
-                console.log(`[WebSocket] BATCH_SYNC Notification - Table: ${tableName}, Operation: BATCH_SYNC, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
+            console.log(`[WebSocket] BATCH_SYNC Notification - Table: ${tableName}, Operation: BATCH_SYNC, dbKey: ${dbKey}, clientId: ${clientId || 'none'}, Connected clients: ${connectedClientCount}`);
             }
             
             // 동일한 데이터베이스에 연결된 다른 클라이언트들에게만 브로드캐스트
