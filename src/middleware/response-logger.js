@@ -3,11 +3,16 @@ function responseLogger(req, res, next) {
     
     // 응답이 완료될 때 실행
     res.on('finish', () => {
-        const statusCode = res.statusCode;
-        const isSuccess = statusCode >= 200 && statusCode < 300;
-        
         // 라우터 정보 추출 (테이블 이름)
         const path = req.originalUrl || req.path || req.url;
+        
+        // resumen_del_dia 요청은 로그 출력하지 않음
+        if (path && (path.includes('/resumen_del_dia') || path.includes('resumen_del_dia'))) {
+            return;
+        }
+        
+        const statusCode = res.statusCode;
+        const isSuccess = statusCode >= 200 && statusCode < 300;
         
         // path가 http:// 또는 https://로 시작하는지 확인
         if (path && (path.toLowerCase().startsWith('http://') || path.toLowerCase().startsWith('https://'))) {
