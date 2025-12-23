@@ -609,7 +609,92 @@ async function handlePutTodocodigo(req, res, id) {
                 console.log(`  변경된 필드 없음`);
             }
             
-            console.log(`\n--- 최종 결과: ${count}개 행 업데이트됨 ---`);
+            // 변경된 필드 요약
+            const changedFieldsSummary = [];
+            for (const key in dataToUpdate) {
+                if (key !== 'utime') {
+                    const beforeVal = beforeUpdate[key];
+                    const afterVal = afterUpdate[key];
+                    if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                        changedFieldsSummary.push(key);
+                    }
+                }
+            }
+            
+            console.log(`\n--- Todocodigo 업데이트 요약 ---`);
+            console.log(`변경된 컬럼: ${changedFieldsSummary.length > 0 ? changedFieldsSummary.join(', ') : '없음'}`);
+            console.log(`변경된 컬럼 개수: ${changedFieldsSummary.length}`);
+            console.log(`업데이트된 행: ${count}개`);
+            
+            // 해당 todocodigo에 소속된 codigos들을 동일한 정보로 업데이트
+            console.log('\n--- 소속된 Codigos 업데이트 시작 ---');
+            let affectedCodigosCount = 0;
+            try {
+                const Codigos = getModelForRequest(req, 'Codigos');
+                
+                // 업데이트 전 codigos 개수 확인
+                const codigosCountBeforeQuery = `
+                    SELECT COUNT(*) as count
+                    FROM codigos c
+                    WHERE c.ref_id_todocodigo = :todocodigoId
+                `;
+                const [codigosCountBefore] = await sequelize.query(codigosCountBeforeQuery, {
+                    replacements: { todocodigoId: id },
+                    type: Sequelize.QueryTypes.SELECT
+                });
+                
+                const codigosUpdateQuery = `
+                    UPDATE codigos AS c
+                    SET pre1 = t.tpre1, 
+                        pre2 = t.tpre2, 
+                        pre3 = t.tpre3, 
+                        pre4 = t.tpre4, 
+                        pre5 = t.tpre5, 
+                        c.borrado = t.borrado, 
+                        c.b_mostrar_vcontrol = t.b_mostrar_vcontrol,
+                        c.utime = now()
+                    FROM todocodigos AS t 
+                    WHERE t.id_todocodigo = c.ref_id_todocodigo 
+                      AND t.id_todocodigo = :todocodigoId
+                `;
+                
+                console.log('--- 실행될 SQL 스크립트 (Codigos 업데이트) ---');
+                const sqlScriptForCodigos = codigosUpdateQuery.replace(':todocodigoId', id);
+                console.log(sqlScriptForCodigos);
+                
+                console.log(`\n--- UPDATE 실행 중... ---`);
+                await sequelize.query(codigosUpdateQuery, {
+                    replacements: { todocodigoId: id },
+                    type: Sequelize.QueryTypes.UPDATE
+                });
+                
+                console.log(`--- UPDATE 완료 ---`);
+                
+                // 업데이트 후 codigos 개수 확인 (변경 없어야 함)
+                const [codigosCountAfter] = await sequelize.query(codigosCountBeforeQuery, {
+                    replacements: { todocodigoId: id },
+                    type: Sequelize.QueryTypes.SELECT
+                });
+                
+                affectedCodigosCount = parseInt(codigosCountAfter.count, 10);
+                
+                console.log(`\n--- Codigos 업데이트 결과 ---`);
+                console.log(`영향받은 codigos 개수: ${affectedCodigosCount}개`);
+                
+            } catch (codigosUpdateErr) {
+                console.error('\n--- Codigos 업데이트 실패 ---');
+                console.error('에러:', codigosUpdateErr.message);
+                // codigos 업데이트 실패는 todocodigo 업데이트에는 영향 없음
+            }
+            
+            // 최종 요약 출력
+            console.log(`\n═══════════════════════════════════════════════════════════`);
+            console.log(`=== Todocodigo Update 최종 요약 ===`);
+            console.log(`Todocodigo ID: ${id}`);
+            console.log(`변경된 컬럼: ${changedFieldsSummary.length > 0 ? changedFieldsSummary.join(', ') : '없음'} (${changedFieldsSummary.length}개)`);
+            console.log(`영향받은 Codigos 개수: ${affectedCodigosCount}개`);
+            console.log(`═══════════════════════════════════════════════════════════\n`);
+            
             console.log('═══════════════════════════════════════════════════════════\n');
             
             // WebSocket 알림 전송
