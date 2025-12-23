@@ -31,9 +31,6 @@ router.get('/', async (req, res) => {
         // 검색어 파라미터 확인
         const filteringWord = query.filtering_word || query.filteringWord || body.filtering_word || body.filteringWord || query.search || body.search;
         
-        // 페이지네이션 파라미터 확인 (id_fventa 기준)
-        const lastIdFventa = query.last_id_fventa || body.last_id_fventa;
-        
         // WHERE 조건 구성
         let whereConditions = [];
         
@@ -110,15 +107,6 @@ router.get('/', async (req, res) => {
             });
         }
         
-        // 페이지네이션: id_fventa가 제공되면 해당 ID보다 큰 것만 조회
-        if (lastIdFventa) {
-            const idFventa = parseInt(lastIdFventa, 10);
-            if (isNaN(idFventa)) {
-                return res.status(400).json({ error: 'Invalid last_id_fventa format' });
-            }
-            whereConditions.push({ id_fventa: { [Op.gt]: idFventa } });
-        }
-        
         // 총 데이터 개수 조회
         const totalCount = await Fventas.count({ 
             where: {
@@ -133,21 +121,12 @@ router.get('/', async (req, res) => {
                 [Op.and]: whereConditions
             },
             limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
-            order: [['id_fventa', 'DESC']] // id_fventa 내림차순 정렬
+            order: [['fecha', 'DESC'], ['tipofactura', 'DESC'], ['numfactura', 'DESC']] // 날짜, tipofactura, numfactura 내림차순 정렬
         });
         
         // 다음 배치가 있는지 확인
         const hasMore = records.length > limit;
         const data = hasMore ? records.slice(0, limit) : records;
-        
-        // 다음 요청을 위한 last_id_fventa 계산 (마지막 레코드의 id_fventa)
-        let nextLastIdFventa = null;
-        if (data.length > 0) {
-            const lastRecord = data[data.length - 1];
-            if (lastRecord.id_fventa !== null && lastRecord.id_fventa !== undefined) {
-                nextLastIdFventa = String(lastRecord.id_fventa);
-            }
-        }
         
         // 페이지네이션 정보와 함께 응답
         const responseData = {
@@ -155,8 +134,7 @@ router.get('/', async (req, res) => {
             pagination: {
                 count: data.length,
                 total: totalCount,
-                hasMore: hasMore,
-                nextLastIdFventa: nextLastIdFventa // id_fventa 기반 페이징을 위한 nextLastIdFventa
+                hasMore: hasMore
             }
         };
         

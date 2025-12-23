@@ -4,9 +4,18 @@ function defineFventasModel(sequelize) {
     return sequelize.define('Fventas', {
         id_fventa: {
             type: DataTypes.INTEGER,
-            primaryKey: true,
             allowNull: true,
             defaultValue: Sequelize.literal("nextval('fventa_seq'::regclass)"),
+        },
+        numfactura: { 
+            type: DataTypes.STRING(20), 
+            allowNull: false,
+            primaryKey: true,
+        },
+        tipofactura: { 
+            type: DataTypes.STRING(3), 
+            allowNull: false,
+            primaryKey: true,
         },
         hora: { type: DataTypes.STRING(20), allowNull: true },
         dni: { type: DataTypes.STRING(20), allowNull: true },
@@ -16,14 +25,6 @@ function defineFventasModel(sequelize) {
         xbanco: { type: DataTypes.DOUBLE, allowNull: true },
         xcheque: { type: DataTypes.DOUBLE, allowNull: true },
         numcheque: { type: DataTypes.STRING(20), allowNull: true },
-        numfactura: { 
-            type: DataTypes.STRING(20), 
-            allowNull: false
-        },
-        tipofactura: { 
-            type: DataTypes.STRING(3), 
-            allowNull: false
-        },
         sucursal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 2 },
         utime: { type: DataTypes.DATE, allowNull: true },
         fecha: { type: DataTypes.DATEONLY, allowNull: true },
