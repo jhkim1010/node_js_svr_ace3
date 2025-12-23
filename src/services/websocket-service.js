@@ -795,11 +795,16 @@ function broadcastToDbClients(dbKey, excludeClientId, data) {
         }
     });
     
-    // codigos 테이블에 대한 상세 브로드캐스트 메시지 출력
-    if (tableName === 'codigos') {
-        console.log(`\n📤 [Codigos 웹소켓 브로드캐스트 완료]`);
+    // codigos, todocodigos 테이블에 대한 상세 브로드캐스트 메시지 출력
+    if (tableName === 'codigos' || tableName === 'todocodigos') {
+        // 트리거를 통한 알림인지 API를 통한 알림인지 구분
+        const isTriggerNotification = data.channel && data.channel.startsWith('db_change_');
+        const sourceType = isTriggerNotification ? '트리거' : 'API';
+        
+        console.log(`\n📤 [${tableName === 'codigos' ? 'Codigos' : 'Todocodigos'} 웹소켓 브로드캐스트 완료]`);
         console.log(`   📋 테이블: ${tableName}`);
         console.log(`   🔧 작업: ${data.operation || 'UNKNOWN'}`);
+        console.log(`   📡 소스: ${sourceType}를 통한 알림`);
         console.log(`   🗄️  데이터베이스: ${dbKey}`);
         console.log(`   👥 연결된 클라이언트: ${clientGroup.size}개`);
         console.log(`   ✅ 전송된 클라이언트: ${sentCount}개`);
