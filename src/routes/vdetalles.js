@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
         
         // vcodes 정보 조회
         const vcodesQuery = `
-            SELECT tpago, tefectivo, tcredito, tbanco, treservado, tfavor, d_num_caja, d_num_terminal
+            SELECT tpago, tefectivo, tcredito, tbanco, treservado, tfavor, d_num_caja, d_num_terminal, vendedor
             FROM vcodes 
             WHERE vcode_id = :vcodeId
         `;
