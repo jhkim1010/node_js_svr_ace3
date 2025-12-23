@@ -224,14 +224,20 @@ async function notifyBatchSync(req, Model, result) {
         const requestPath = req.path || req.originalUrl || req.url;
         let tableName = getTableNameFromPath(requestPath);
         
-        // 디버깅: 경로 파싱 확인 및 Model에서 테이블명 추출 시도
+        // 경로 파싱 실패 시 Model에서 테이블명 추출 (POST 요청의 경우 경로가 /일 수 있음)
         if (tableName === 'id' || tableName === 'unknown') {
-            console.warn(`[WebSocket] ⚠️ BATCH_SYNC 테이블명 추출 실패 - 경로: ${requestPath}, 추출된 테이블명: ${tableName}`);
             // Model에서 테이블명 추출 시도
             if (Model && Model.tableName) {
                 const modelTableName = Model.tableName.toLowerCase();
                 tableName = routeToTableMap[modelTableName] || modelTableName;
-                console.warn(`[WebSocket] ⚠️ Model에서 테이블명 추출: ${tableName}`);
+                // Model에서 성공적으로 추출한 경우 경고 없이 로그만 출력
+                if (tableName !== 'id' && tableName !== 'unknown') {
+                    // 조용히 처리 (경고 메시지 제거)
+                } else {
+                    console.warn(`[WebSocket] ⚠️ BATCH_SYNC 테이블명 추출 실패 - 경로: ${requestPath}, Model: ${Model.tableName}`);
+                }
+            } else {
+                console.warn(`[WebSocket] ⚠️ BATCH_SYNC 테이블명 추출 실패 - 경로: ${requestPath}, 추출된 테이블명: ${tableName}, Model 없음`);
             }
         }
         
