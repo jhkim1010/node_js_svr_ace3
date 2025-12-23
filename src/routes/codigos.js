@@ -721,7 +721,12 @@ async function handlePutCodigo(req, res, id) {
             console.log(`\n--- 최종 결과: ${count}개 행 업데이트됨 ---`);
             console.log('═══════════════════════════════════════════════════════════\n');
             
-            // logs 테이블에 기록
+            // WebSocket 알림 전송
+            await notifyDbChange(req, Codigos, 'update', updated);
+            res.json(updated);
+            
+            // logs 테이블에 기록 (트랜잭션 커밋 후 별도로 처리)
+            // 에러가 발생해도 메인 응답에는 영향 없음
             try {
                 const Logs = getModelForRequest(req, 'Logs');
                 const now = new Date();
@@ -752,25 +757,23 @@ async function handlePutCodigo(req, res, id) {
                 const preciosStr = precios.length > 0 ? precios.join(', ') : 'N/A';
                 const evento = `MAC: ${mac}, Platform: ${platform}에서 제품 코드: ${codigo}, 설명: ${descripcion}, 가격: ${preciosStr}를 ${fechaStr} ${horaStr}에 편집`;
                 
-                // logs 테이블에 삽입
+                // logs 테이블에 삽입 (트랜잭션 없이)
                 await Logs.create({
                     fecha: fecha,
                     hora: hora,
                     evento: evento,
                     progname: 'codigos_update',
                     sucursal: req.dbConfig?.sucursal || 1
-                }, { transaction });
+                });
             } catch (logErr) {
                 // logs 기록 실패는 무시하지 않고 로그만 출력
                 console.error('Failed to write log entry:', logErr);
             }
-            
-            await transaction.commit();
-            // WebSocket 알림 전송
-            await notifyDbChange(req, Codigos, 'update', updated);
-            res.json(updated);
         } catch (err) {
-            await transaction.rollback();
+            // 트랜잭션이 아직 커밋되지 않았을 때만 롤백
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
             throw err;
         }
     } catch (err) {
