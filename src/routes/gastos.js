@@ -63,11 +63,11 @@ router.get('/', async (req, res) => {
                 });
             }
             
-            // SQL injection 방지를 위해 sequelize.escape 사용
-            const escapedFechaInicio = sequelize.escape(fechaInicio);
+            // SQL injection 방지를 위해 작은따옴표 이스케이프
+            const escapedFechaInicio = fechaInicio.replace(/'/g, "''");
             // fecha >= fechaInicio 조건
             whereConditions.push(
-                Sequelize.literal(`DATE(fecha) >= DATE(${escapedFechaInicio})`)
+                Sequelize.literal(`DATE(fecha) >= '${escapedFechaInicio}'`)
             );
             
             if (fechaFin) {
@@ -77,11 +77,11 @@ router.get('/', async (req, res) => {
                         received: fechaFin
                     });
                 }
-                // SQL injection 방지를 위해 sequelize.escape 사용
-                const escapedFechaFin = sequelize.escape(fechaFin);
+                // SQL injection 방지를 위해 작은따옴표 이스케이프
+                const escapedFechaFin = fechaFin.replace(/'/g, "''");
                 // fecha <= fechaFin 조건
                 whereConditions.push(
-                    Sequelize.literal(`DATE(fecha) <= DATE(${escapedFechaFin})`)
+                    Sequelize.literal(`DATE(fecha) <= '${escapedFechaFin}'`)
                 );
             }
         }
