@@ -823,8 +823,9 @@ function broadcastToDbClients(dbKey, excludeClientId, data) {
             }
             console.log(`   ⏰ 시간: ${new Date().toISOString()}\n`);
         } else if (filteredCount > 0 || (isIngresosTable && dataSucursal !== null)) {
-        // 다른 테이블은 필터링이 발생한 경우만 로그 출력
-        console.log(`[WebSocket] 브로드캐스트: table=${tableName || 'unknown'}, dbKey=${dbKey}, sucursal=${dataSucursal !== null ? dataSucursal : 'all'}, 전송=${sentCount}, 필터링=${filteredCount}`);
+            // 다른 테이블은 필터링이 발생한 경우만 로그 출력
+            console.log(`[WebSocket] 브로드캐스트: table=${tableName || 'unknown'}, dbKey=${dbKey}, sucursal=${dataSucursal !== null ? dataSucursal : 'all'}, 전송=${sentCount}, 필터링=${filteredCount}`);
+        }
     }
 }
 
