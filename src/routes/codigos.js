@@ -511,8 +511,8 @@ async function handlePutCodigo(req, res, id) {
                 dataToUpdate.mac = cleanedData.mac;
             }
             if (cleanedData.platform) {
-                // platform 값을 info1에 저장 (info1 필드가 있다고 가정)
-                dataToUpdate.info1 = cleanedData.platform;
+                // platform 값을 valor1에 저장
+                dataToUpdate.valor1 = cleanedData.platform;
             }
             
             // 실행될 SQL 스크립트 구성 및 출력
@@ -529,8 +529,8 @@ async function handlePutCodigo(req, res, id) {
                 dataToUpdate.mac = cleanedData.mac;
             }
             if (cleanedData.platform) {
-                // platform 값을 info1에 저장 (info1 필드가 있다고 가정)
-                dataToUpdate.info1 = cleanedData.platform;
+                // platform 값을 valor1에 저장
+                dataToUpdate.valor1 = cleanedData.platform;
             }
             
             // utime을 now()로 설정
@@ -538,29 +538,113 @@ async function handlePutCodigo(req, res, id) {
             
             console.log('\n--- 실행될 SQL 스크립트 ---');
             
-            // SQL SET 절 구성
+            // SQL SET 절 구성 (사용자 요청 형식)
             const setClauses = [];
-            for (const [key, value] of Object.entries(dataToUpdate)) {
-                if (value === null || value === undefined) {
-                    setClauses.push(`${key} = NULL`);
-                } else if (key === 'utime') {
-                    // utime은 항상 now()로 설정됨
-                    setClauses.push(`${key} = now()`);
-                } else if (typeof value === 'string') {
-                    // SQL injection 방지를 위해 작은따옴표 이스케이프
-                    const escapedValue = value.replace(/'/g, "''");
-                    setClauses.push(`${key} = '${escapedValue}'`);
-                } else if (typeof value === 'boolean') {
-                    setClauses.push(`${key} = ${value}`);
-                } else if (typeof value === 'number') {
-                    setClauses.push(`${key} = ${value}`);
-                } else {
-                    // 객체인 경우 (Sequelize.literal 등)
-                    setClauses.push(`${key} = [OBJECT]`);
+            
+            // 필드 순서 정의 (사용자 요청 순서)
+            const fieldOrder = ['codigo', 'descripcion', 'pre1', 'pre2', 'pre3', 'borrado', 'pre4', 'pre5', 
+                               'mac', 'b_mostrar_vcontrol', 'valor1', 'utime'];
+            
+            // 우선순위 필드 먼저 처리
+            for (const key of fieldOrder) {
+                if (dataToUpdate.hasOwnProperty(key)) {
+                    const value = dataToUpdate[key];
+                    if (key === 'utime') {
+                        setClauses.push(`${key} = now()`);
+                    } else if (value === null || value === undefined) {
+                        setClauses.push(`${key} = NULL`);
+                    } else if (typeof value === 'string') {
+                        // SQL injection 방지를 위해 작은따옴표 이스케이프
+                        const escapedValue = value.replace(/'/g, "''");
+                        setClauses.push(`${key} = '${escapedValue}'`);
+                    } else if (typeof value === 'boolean') {
+                        setClauses.push(`${key} = ${value}`);
+                    } else if (typeof value === 'number') {
+                        setClauses.push(`${key} = ${value}`);
+                    }
                 }
             }
             
-            const sqlScript = `UPDATE codigos SET ${setClauses.join(', ')} WHERE codigo_id = ${id}`;
+            // 나머지 필드 처리 (fieldOrder에 없는 필드들)
+            for (const [key, value] of Object.entries(dataToUpdate)) {
+                if (!fieldOrder.includes(key)) {
+                    if (value === null || value === undefined) {
+                        setClauses.push(`${key} = NULL`);
+                    } else if (typeof value === 'string') {
+                        const escapedValue = value.replace(/'/g, "''");
+                        setClauses.push(`${key} = '${escapedValue}'`);
+                    } else if (typeof value === 'boolean') {
+                        setClauses.push(`${key} = ${value}`);
+                    } else if (typeof value === 'number') {
+                        setClauses.push(`${key} = ${value}`);
+                    }
+                }
+            }
+            
+            // SQL 쿼리 구성 (사용자 요청 형식: 여러 줄로 표시, 적절한 위치에서 줄바꿈)
+            let sqlScript = `UPDATE codigos SET ${setClauses.join(', ')} WHERE id_codigo = ${id}`;
+            
+            // 가독성을 위해 적절한 위치에서 줄바꿈 (약 80자마다)
+            // 하지만 필드 단위로 나누는 것이 더 나을 수 있음
+            // 사용자 예시를 보면 첫 줄에 codigo, descripcion, pre1, pre2, pre3이 있고
+            // 두 번째 줄에 borrado, pre4, pre5, mac이 있고
+            // 세 번째 줄에 b_mostrar_vcontrol, valor1, utime이 있습니다.
+            
+            // 필드를 그룹으로 나누어 표시
+            const groups = [
+                ['codigo', 'descripcion', 'pre1', 'pre2', 'pre3'],
+                ['borrado', 'pre4', 'pre5', 'mac'],
+                ['b_mostrar_vcontrol', 'valor1', 'utime']
+            ];
+            
+            const groupedClauses = [];
+            for (const group of groups) {
+                const groupClauses = [];
+                for (const key of group) {
+                    if (dataToUpdate.hasOwnProperty(key)) {
+                        const value = dataToUpdate[key];
+                        if (key === 'utime') {
+                            groupClauses.push(`${key} = now()`);
+                        } else if (value === null || value === undefined) {
+                            groupClauses.push(`${key} = NULL`);
+                        } else if (typeof value === 'string') {
+                            const escapedValue = value.replace(/'/g, "''");
+                            groupClauses.push(`${key} = '${escapedValue}'`);
+                        } else if (typeof value === 'boolean') {
+                            groupClauses.push(`${key} = ${value}`);
+                        } else if (typeof value === 'number') {
+                            groupClauses.push(`${key} = ${value}`);
+                        }
+                    }
+                }
+                if (groupClauses.length > 0) {
+                    groupedClauses.push(groupClauses.join(', '));
+                }
+            }
+            
+            // 나머지 필드 추가
+            const remainingClauses = [];
+            for (const [key, value] of Object.entries(dataToUpdate)) {
+                const inAnyGroup = groups.some(group => group.includes(key));
+                if (!inAnyGroup) {
+                    if (value === null || value === undefined) {
+                        remainingClauses.push(`${key} = NULL`);
+                    } else if (typeof value === 'string') {
+                        const escapedValue = value.replace(/'/g, "''");
+                        remainingClauses.push(`${key} = '${escapedValue}'`);
+                    } else if (typeof value === 'boolean') {
+                        remainingClauses.push(`${key} = ${value}`);
+                    } else if (typeof value === 'number') {
+                        remainingClauses.push(`${key} = ${value}`);
+                    }
+                }
+            }
+            
+            if (remainingClauses.length > 0) {
+                groupedClauses.push(remainingClauses.join(', '));
+            }
+            
+            sqlScript = `UPDATE codigos SET ${groupedClauses.join(', \n')} WHERE id_codigo = ${id}`;
             console.log(sqlScript);
             console.log(`\n업데이트할 필드: ${Object.keys(dataToUpdate).join(', ')}`);
             
