@@ -27,9 +27,44 @@ function getClientIdFromRequest(req) {
 
 // 라우트 경로에서 테이블명 추출
 function getTableNameFromPath(path) {
+    if (!path) return 'unknown';
+    
     // /api/codigos -> codigos
-    const parts = path.split('/').filter(p => p);
-    const route = parts[parts.length - 1] || parts[0];
+    // /api/codigos/id/100243 -> codigos (id 다음 부분은 무시)
+    let cleanPath = path.toString();
+    
+    // 쿼리 문자열 제거
+    if (cleanPath.includes('?')) {
+        cleanPath = cleanPath.split('?')[0];
+    }
+    
+    // /api 접두사 제거
+    if (cleanPath.startsWith('/api/')) {
+        cleanPath = cleanPath.substring(5); // '/api/'.length
+    } else if (cleanPath.startsWith('/api')) {
+        cleanPath = cleanPath.substring(4); // '/api'.length
+    }
+    
+    // 앞뒤 슬래시 제거
+    cleanPath = cleanPath.replace(/^\/+|\/+$/g, '');
+    
+    const parts = cleanPath.split('/').filter(p => p && p.trim());
+    
+    if (parts.length === 0) return 'unknown';
+    
+    // /api/codigos/id/100243 같은 패턴 처리
+    // id, :id, 또는 숫자로 시작하는 부분은 무시하고 그 앞의 부분을 테이블명으로 사용
+    let route = parts[0];
+    
+    // parts[1]이 'id' 또는 ':id'이고 parts[2]가 숫자인 경우, parts[0]을 테이블명으로 사용
+    if (parts.length >= 3 && (parts[1] === 'id' || parts[1] === ':id') && /^\d+$/.test(parts[2])) {
+        route = parts[0];
+    }
+    // parts[1]이 숫자인 경우 (예: /api/codigos/100243), parts[0]을 테이블명으로 사용
+    else if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+        route = parts[0];
+    }
+    
     return routeToTableMap[route] || route;
 }
 
