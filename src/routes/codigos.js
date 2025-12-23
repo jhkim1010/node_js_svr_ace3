@@ -367,11 +367,14 @@ router.put('/:id', async (req, res) => {
 
 // PUT 요청 처리 공통 함수
 async function handlePutCodigo(req, res, id) {
+    console.log(`\n[handlePutCodigo] 함수 호출됨 - codigo_id: ${id}`);
     try {
         const Codigos = getModelForRequest(req, 'Codigos');
+        console.log(`[handlePutCodigo] Codigos 모델 로드 완료`);
         
         // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
+            console.log(`[handlePutCodigo] 배열 데이터 처리 경로로 이동 - 배열 길이: ${req.body.data.length}`);
             req.body.operation = req.body.operation || 'UPDATE';
             // utime 비교 핸들러 사용 (codigos 전용)
             // 50개를 넘으면 배치로 나눠서 처리
@@ -379,6 +382,8 @@ async function handlePutCodigo(req, res, id) {
             await notifyBatchSync(req, Codigos, result);
             return res.status(200).json(result);
         }
+        
+        console.log(`[handlePutCodigo] 단일 항목 처리 경로로 이동`);
         
         // 단일 항목 처리 (utime 비교 포함)
         const cleanedData = removeSyncField(req.body);
@@ -427,9 +432,12 @@ async function handlePutCodigo(req, res, id) {
                 return res.status(404).json({ error: 'Not found' });
             }
             
-            // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트 (문자열 직접 비교, timezone 변환 없음)
+            // utime 비교: 클라이언트가 utime을 명시적으로 보낸 경우에만 비교
+            // 클라이언트가 utime을 보내지 않으면 항상 업데이트 실행
             let clientUtimeStr = null;
-            if (dataToUpdate.utime) {
+            const clientSentUtime = cleanedData.utime !== undefined && cleanedData.utime !== null;
+            
+            if (clientSentUtime && dataToUpdate.utime) {
                 if (dataToUpdate.utime instanceof Date) {
                     // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
                     const year = dataToUpdate.utime.getFullYear();
@@ -452,39 +460,69 @@ async function handlePutCodigo(req, res, id) {
                 }
             }
             
-            // 서버의 utime을 데이터베이스에서 문자열로 직접 가져오기 (timezone 변환 방지)
-            let serverUtimeStr = null;
-            const serverUtimeRaw = await Codigos.findOne({ 
-                where: { id_codigo: id }, 
-                transaction,
-                attributes: [[Sequelize.literal(`utime::text`), 'utime']],
-                raw: true
-            });
-            if (serverUtimeRaw && serverUtimeRaw.utime) {
-                serverUtimeStr = String(serverUtimeRaw.utime).trim();
-            }
+            let shouldUpdate = true; // 기본값: 항상 업데이트
             
-            let shouldUpdate = false;
-            if (!clientUtimeStr && !serverUtimeStr) {
-                shouldUpdate = true;
-            } else if (clientUtimeStr && !serverUtimeStr) {
-                shouldUpdate = true;
-            } else if (clientUtimeStr && serverUtimeStr) {
-                // 문자열 직접 비교 (timezone 변환 없음)
-                shouldUpdate = clientUtimeStr > serverUtimeStr;
-            } else {
-                shouldUpdate = false;
-            }
-            
-            if (!shouldUpdate) {
-                await transaction.rollback();
-                return res.status(200).json({
-                    message: 'Skipped: server utime is newer or equal',
-                    serverUtime: serverUtimeStr,
-                    clientUtime: clientUtimeStr,
-                    data: existing
+            // 클라이언트가 utime을 명시적으로 보낸 경우에만 비교
+            if (clientSentUtime && clientUtimeStr) {
+                // 서버의 utime을 데이터베이스에서 문자열로 직접 가져오기 (timezone 변환 방지)
+                let serverUtimeStr = null;
+                const serverUtimeRaw = await Codigos.findOne({ 
+                    where: { id_codigo: id }, 
+                    transaction,
+                    attributes: [[Sequelize.literal(`utime::text`), 'utime']],
+                    raw: true
                 });
+                if (serverUtimeRaw && serverUtimeRaw.utime) {
+                    serverUtimeStr = String(serverUtimeRaw.utime).trim();
+                }
+                
+                // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트
+                if (clientUtimeStr && serverUtimeStr) {
+                    shouldUpdate = clientUtimeStr > serverUtimeStr;
+                } else if (clientUtimeStr && !serverUtimeStr) {
+                    shouldUpdate = true;
+                } else if (!clientUtimeStr && serverUtimeStr) {
+                    shouldUpdate = false;
+                }
+                
+                if (!shouldUpdate) {
+                    await transaction.rollback();
+                    console.log('\n═══════════════════════════════════════════════════════════');
+                    console.log('=== Codigo Update 요청 (스킵됨) ===');
+                    console.log(`codigo_id: ${id}`);
+                    console.log(`이유: 서버 utime이 더 최신이거나 같음`);
+                    console.log(`서버 utime: ${serverUtimeStr || 'N/A'}`);
+                    console.log(`클라이언트 utime: ${clientUtimeStr || 'N/A'}`);
+                    console.log('═══════════════════════════════════════════════════════════\n');
+                    return res.status(200).json({
+                        message: 'Skipped: server utime is newer or equal',
+                        serverUtime: serverUtimeStr,
+                        clientUtime: clientUtimeStr,
+                        data: existing
+                    });
+                }
             }
+            
+            // dataToUpdate에서 utime 제거 (나중에 now()로 설정할 예정)
+            delete dataToUpdate.utime;
+            
+            // mac과 platform 값 처리
+            if (cleanedData.mac) {
+                dataToUpdate.mac = cleanedData.mac;
+            }
+            if (cleanedData.platform) {
+                // platform 값을 info1에 저장 (info1 필드가 있다고 가정)
+                dataToUpdate.info1 = cleanedData.platform;
+            }
+            
+            // 실행될 SQL 스크립트 구성 및 출력
+            console.log('\n═══════════════════════════════════════════════════════════');
+            console.log('=== Codigo Update 요청 ===');
+            console.log(`codigo_id: ${id}`);
+            console.log(`요청 데이터:`, JSON.stringify(cleanedData, null, 2));
+            console.log('\n--- 업데이트 전 데이터 ---');
+            const beforeUpdate = existing.toJSON ? existing.toJSON() : existing;
+            console.log(JSON.stringify(beforeUpdate, null, 2));
             
             // mac과 platform 값 처리
             if (cleanedData.mac) {
@@ -498,10 +536,6 @@ async function handlePutCodigo(req, res, id) {
             // utime을 now()로 설정
             dataToUpdate.utime = Sequelize.literal(`now()`);
             
-            // 실행될 SQL 스크립트 구성 및 출력
-            console.log('\n═══════════════════════════════════════════════════════════');
-            console.log('=== Codigo Update 요청 ===');
-            console.log(`codigo_id: ${id}`);
             console.log('\n--- 실행될 SQL 스크립트 ---');
             
             // SQL SET 절 구성
@@ -509,8 +543,8 @@ async function handlePutCodigo(req, res, id) {
             for (const [key, value] of Object.entries(dataToUpdate)) {
                 if (value === null || value === undefined) {
                     setClauses.push(`${key} = NULL`);
-                } else if (key === 'utime' && value && typeof value === 'object' && value.val === 'now()') {
-                    // Sequelize.literal('now()')인 경우
+                } else if (key === 'utime') {
+                    // utime은 항상 now()로 설정됨
                     setClauses.push(`${key} = now()`);
                 } else if (typeof value === 'string') {
                     // SQL injection 방지를 위해 작은따옴표 이스케이프
@@ -518,18 +552,22 @@ async function handlePutCodigo(req, res, id) {
                     setClauses.push(`${key} = '${escapedValue}'`);
                 } else if (typeof value === 'boolean') {
                     setClauses.push(`${key} = ${value}`);
-                } else {
+                } else if (typeof value === 'number') {
                     setClauses.push(`${key} = ${value}`);
+                } else {
+                    // 객체인 경우 (Sequelize.literal 등)
+                    setClauses.push(`${key} = [OBJECT]`);
                 }
             }
             
             const sqlScript = `UPDATE codigos SET ${setClauses.join(', ')} WHERE codigo_id = ${id}`;
             console.log(sqlScript);
-            console.log('\n--- 업데이트 전 데이터 ---');
-            const beforeUpdate = existing.toJSON ? existing.toJSON() : existing;
-            console.log(JSON.stringify(beforeUpdate, null, 2));
+            console.log(`\n업데이트할 필드: ${Object.keys(dataToUpdate).join(', ')}`);
             
+            console.log('\n--- UPDATE 실행 중... ---');
             const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
+            console.log(`UPDATE 결과: ${count}개 행 영향받음`);
+            
             if (count === 0) {
                 await transaction.rollback();
                 console.log('\n--- 결과: 업데이트된 행 없음 (롤백) ---');
@@ -541,7 +579,7 @@ async function handlePutCodigo(req, res, id) {
             console.log('\n--- 업데이트 후 데이터 ---');
             const afterUpdate = updated.toJSON ? updated.toJSON() : updated;
             console.log(JSON.stringify(afterUpdate, null, 2));
-            console.log(`\n--- 결과: ${count}개 행 업데이트됨 ---`);
+            console.log(`\n--- 최종 결과: ${count}개 행 업데이트됨 ---`);
             console.log('═══════════════════════════════════════════════════════════\n');
             
             // logs 테이블에 기록
