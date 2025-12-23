@@ -486,9 +486,17 @@ async function handlePutCodigo(req, res, id) {
                 });
             }
             
-            // utime을 아르헨티나 시간대(GMT-3) 기준으로 현재 시간으로 설정
-            // 클라이언트에서 보낸 utime은 무시하고 항상 서버의 아르헨티나 시간으로 업데이트
-            dataToUpdate.utime = Sequelize.literal(`timezone('America/Argentina/Buenos_Aires', now())`);
+            // mac과 platform 값 처리
+            if (cleanedData.mac) {
+                dataToUpdate.mac = cleanedData.mac;
+            }
+            if (cleanedData.platform) {
+                // platform 값을 info1에 저장 (info1 필드가 있다고 가정)
+                dataToUpdate.info1 = cleanedData.platform;
+            }
+            
+            // utime을 now()로 설정
+            dataToUpdate.utime = Sequelize.literal(`now()`);
             
             const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
             if (count === 0) {
@@ -496,6 +504,51 @@ async function handlePutCodigo(req, res, id) {
                 return res.status(404).json({ error: 'Not found' });
             }
             const updated = await Codigos.findOne({ where: { id_codigo: id }, transaction });
+            
+            // logs 테이블에 기록
+            try {
+                const Logs = getModelForRequest(req, 'Logs');
+                const now = new Date();
+                const fecha = now.toISOString().split('T')[0]; // YYYY-MM-DD
+                const hora = now.toTimeString().split(' ')[0]; // HH:MM:SS
+                
+                // 날짜와 시간을 한국어 형식으로 변환
+                const year = now.getFullYear();
+                const month = now.getMonth() + 1;
+                const day = now.getDate();
+                const hours = now.getHours();
+                const minutes = now.getMinutes();
+                const fechaStr = `${year}년 ${month}월 ${day}일`;
+                const horaStr = `${hours}시 ${minutes}분`;
+                
+                // 이벤트 메시지 구성
+                const mac = cleanedData.mac || updated.mac || 'N/A';
+                const platform = cleanedData.platform || 'N/A';
+                const codigo = updated.codigo || 'N/A';
+                const descripcion = updated.descripcion || 'N/A';
+                const precios = [];
+                if (updated.pre1 !== null && updated.pre1 !== undefined) precios.push(`pre1=${updated.pre1}`);
+                if (updated.pre2 !== null && updated.pre2 !== undefined) precios.push(`pre2=${updated.pre2}`);
+                if (updated.pre3 !== null && updated.pre3 !== undefined) precios.push(`pre3=${updated.pre3}`);
+                if (updated.pre4 !== null && updated.pre4 !== undefined) precios.push(`pre4=${updated.pre4}`);
+                if (updated.pre5 !== null && updated.pre5 !== undefined) precios.push(`pre5=${updated.pre5}`);
+                
+                const preciosStr = precios.length > 0 ? precios.join(', ') : 'N/A';
+                const evento = `MAC: ${mac}, Platform: ${platform}에서 제품 코드: ${codigo}, 설명: ${descripcion}, 가격: ${preciosStr}를 ${fechaStr} ${horaStr}에 편집`;
+                
+                // logs 테이블에 삽입
+                await Logs.create({
+                    fecha: fecha,
+                    hora: hora,
+                    evento: evento,
+                    progname: 'codigos_update',
+                    sucursal: req.dbConfig?.sucursal || 1
+                }, { transaction });
+            } catch (logErr) {
+                // logs 기록 실패는 무시하지 않고 로그만 출력
+                console.error('Failed to write log entry:', logErr);
+            }
+            
             await transaction.commit();
             // WebSocket 알림 전송
             await notifyDbChange(req, Codigos, 'update', updated);
