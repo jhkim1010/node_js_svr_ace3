@@ -670,8 +670,7 @@ async function handlePutCodigo(req, res, id) {
                         sucursal: req.dbConfig?.sucursal || 1
                     });
                 } catch (logErr) {
-                    // logs 기록 실패는 무시하지 않고 로그만 출력
-                    console.error('Failed to write log entry:', logErr);
+                    // logs 기록 실패는 무시 (에러 로그 출력 안 함)
                 }
             });
         } catch (err) {
