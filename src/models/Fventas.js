@@ -4,6 +4,7 @@ function defineFventasModel(sequelize) {
     return sequelize.define('Fventas', {
         id_fventa: {
             type: DataTypes.INTEGER,
+            primaryKey: true,
             allowNull: true,
             defaultValue: Sequelize.literal("nextval('fventa_seq'::regclass)"),
         },
