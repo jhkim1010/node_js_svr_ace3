@@ -605,9 +605,6 @@ async function handlePutCodigo(req, res, id) {
                 }
             }
             
-            // 간소화된 로그 출력 (1줄)
-            console.log(`[Codigo Update] id=${id} | ${changedFieldsList.join(', ')} | SQL: ${sqlScript.replace(/\n/g, ' ')}`);
-            
             const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
             
             if (count === 0) {

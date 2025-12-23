@@ -16,19 +16,23 @@ router.get('/', async (req, res) => {
         const sequelize = Gastos.sequelize;
         const { Op } = Sequelize;
         
+        // req.query와 req.body가 undefined일 수 있으므로 안전하게 처리
+        const query = req.query || {};
+        const body = req.body || {};
+        
         // 날짜 파라미터 확인 (query 또는 body)
-        const fecha = req.query.fecha || req.body.fecha;
-        const fechaInicio = req.query.fecha_inicio || req.query.start_date || req.body.fecha_inicio || req.body.start_date;
-        const fechaFin = req.query.fecha_fin || req.query.end_date || req.body.fecha_fin || req.body.end_date;
+        const fecha = query.fecha || body.fecha;
+        const fechaInicio = query.fecha_inicio || query.start_date || body.fecha_inicio || body.start_date;
+        const fechaFin = query.fecha_fin || query.end_date || body.fecha_fin || body.end_date;
         
         // sucursal 파라미터 확인
-        const sucursal = req.query.sucursal || req.body.sucursal;
+        const sucursal = query.sucursal || body.sucursal;
         
         // 검색어 파라미터 확인
-        const filteringWord = req.query.filtering_word || req.query.filteringWord || req.body.filtering_word || req.body.filteringWord || req.query.search || req.body.search;
+        const filteringWord = query.filtering_word || query.filteringWord || body.filtering_word || body.filteringWord || query.search || body.search;
         
         // 페이지네이션 파라미터 확인 (id_ga 기준)
-        const lastIdGa = req.query.last_id_ga || req.body.last_id_ga;
+        const lastIdGa = query.last_id_ga || body.last_id_ga;
         
         // WHERE 조건 구성
         let whereConditions = [];
@@ -59,11 +63,11 @@ router.get('/', async (req, res) => {
                 });
             }
             
-            // SQL injection 방지를 위해 작은따옴표 이스케이프
-            const escapedFechaInicio = fechaInicio.replace(/'/g, "''");
+            // SQL injection 방지를 위해 sequelize.escape 사용
+            const escapedFechaInicio = sequelize.escape(fechaInicio);
             // fecha >= fechaInicio 조건
             whereConditions.push(
-                Sequelize.literal(`DATE(fecha) >= '${escapedFechaInicio}'`)
+                Sequelize.literal(`DATE(fecha) >= DATE(${escapedFechaInicio})`)
             );
             
             if (fechaFin) {
@@ -73,11 +77,11 @@ router.get('/', async (req, res) => {
                         received: fechaFin
                     });
                 }
-                // SQL injection 방지를 위해 작은따옴표 이스케이프
-                const escapedFechaFin = fechaFin.replace(/'/g, "''");
+                // SQL injection 방지를 위해 sequelize.escape 사용
+                const escapedFechaFin = sequelize.escape(fechaFin);
                 // fecha <= fechaFin 조건
                 whereConditions.push(
-                    Sequelize.literal(`DATE(fecha) <= '${escapedFechaFin}'`)
+                    Sequelize.literal(`DATE(fecha) <= DATE(${escapedFechaFin})`)
                 );
             }
         }
