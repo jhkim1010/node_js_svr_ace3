@@ -650,9 +650,8 @@ async function handlePutTodocodigo(req, res, id) {
                         pre3 = t.tpre3, 
                         pre4 = t.tpre4, 
                         pre5 = t.tpre5, 
-                        c.borrado = t.borrado, 
-                        c.b_mostrar_vcontrol = t.b_mostrar_vcontrol,
-                        c.utime = now()
+                        borrado = t.borrado, 
+                        b_mostrar_vcontrol = t.b_mostrar_vcontrol
                     FROM todocodigos AS t 
                     WHERE t.id_todocodigo = c.ref_id_todocodigo 
                       AND t.id_todocodigo = :todocodigoId
