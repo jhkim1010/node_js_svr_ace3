@@ -36,15 +36,18 @@ function defineFventasModel(sequelize) {
         b_impreso_x_comandera: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
         terminal: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 1 },
         ref_id_vcode: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
+        b_sincronizado_node_svr: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
     }, {
         tableName: 'fventas',
         schema: 'public',
         timestamps: false,
+        // 복합 기본 키: (numfactura, tipofactura, sucursal, borrado)
+        // Sequelize는 복합 기본 키를 인덱스로만 정의할 수 있음
         indexes: [
             { 
                 unique: true, 
-                name: 'FISCAL.PR', 
-                fields: ['tipofactura', 'numfactura'] 
+                name: 'fventa2.pr', 
+                fields: ['numfactura', 'tipofactura', 'sucursal', 'borrado'] 
             }
         ],
     });
