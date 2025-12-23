@@ -367,10 +367,8 @@ router.put('/:id', async (req, res) => {
 
 // PUT 요청 처리 공통 함수
 async function handlePutCodigo(req, res, id) {
-    console.log(`\n[handlePutCodigo] 함수 호출됨 - codigo_id: ${id}`);
     try {
         const Codigos = getModelForRequest(req, 'Codigos');
-        console.log(`[handlePutCodigo] Codigos 모델 로드 완료`);
         
         // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
@@ -383,7 +381,6 @@ async function handlePutCodigo(req, res, id) {
             return res.status(200).json(result);
         }
         
-        console.log(`[handlePutCodigo] 단일 항목 처리 경로로 이동`);
         
         // 단일 항목 처리 (utime 비교 포함)
         const cleanedData = removeSyncField(req.body);
@@ -442,7 +439,6 @@ async function handlePutCodigo(req, res, id) {
             dataToUpdate.valor1 = cleanedData.platform;
         }
         
-        console.log(`[handlePutCodigo] filterModelFields 후 dataToUpdate:`, JSON.stringify(dataToUpdate, null, 2));
         
         // 트랜잭션 사용하여 원자성 보장
         const sequelize = Codigos.sequelize;
@@ -510,13 +506,7 @@ async function handlePutCodigo(req, res, id) {
                 
                 if (!shouldUpdate) {
                     await transaction.rollback();
-                    console.log('\n═══════════════════════════════════════════════════════════');
-                    console.log('=== Codigo Update 요청 (스킵됨) ===');
-                    console.log(`codigo_id: ${id}`);
-                    console.log(`이유: 서버 utime이 더 최신이거나 같음`);
-                    console.log(`서버 utime: ${serverUtimeStr || 'N/A'}`);
-                    console.log(`클라이언트 utime: ${clientUtimeStr || 'N/A'}`);
-                    console.log('═══════════════════════════════════════════════════════════\n');
+                    console.log(`[Codigo Update] id=${id} | 스킵됨 (서버 utime이 더 최신: ${serverUtimeStr || 'N/A'} >= ${clientUtimeStr || 'N/A'})`);
                     return res.status(200).json({
                         message: 'Skipped: server utime is newer or equal',
                         serverUtime: serverUtimeStr,
@@ -538,82 +528,11 @@ async function handlePutCodigo(req, res, id) {
                 dataToUpdate.valor1 = cleanedData.platform;
             }
             
-            // 실행될 SQL 스크립트 구성 및 출력
-            console.log('\n═══════════════════════════════════════════════════════════');
-            console.log('=== Codigo Update 요청 ===');
-            console.log(`codigo_id: ${id}`);
-            console.log(`요청 데이터:`, JSON.stringify(cleanedData, null, 2));
-            console.log('\n--- 업데이트 전 데이터 ---');
-            const beforeUpdate = existing.toJSON ? existing.toJSON() : existing;
-            console.log(JSON.stringify(beforeUpdate, null, 2));
-            
-            // mac과 platform 값 처리
-            if (cleanedData.mac) {
-                dataToUpdate.mac = cleanedData.mac;
-            }
-            if (cleanedData.platform) {
-                // platform 값을 valor1에 저장
-                dataToUpdate.valor1 = cleanedData.platform;
-            }
-            
             // utime을 now()로 설정
             dataToUpdate.utime = Sequelize.literal(`now()`);
             
-            console.log('\n--- 실행될 SQL 스크립트 ---');
-            
-            // SQL SET 절 구성 (사용자 요청 형식)
+            // SQL 스크립트 구성 (간소화된 로그 출력용)
             const setClauses = [];
-            
-            // 필드 순서 정의 (사용자 요청 순서)
-            const fieldOrder = ['codigo', 'descripcion', 'pre1', 'pre2', 'pre3', 'borrado', 'pre4', 'pre5', 
-                               'mac', 'b_mostrar_vcontrol', 'valor1', 'utime'];
-            
-            // 우선순위 필드 먼저 처리
-            for (const key of fieldOrder) {
-                if (dataToUpdate.hasOwnProperty(key)) {
-                    const value = dataToUpdate[key];
-                    if (key === 'utime') {
-                        setClauses.push(`${key} = now()`);
-                    } else if (value === null || value === undefined) {
-                        setClauses.push(`${key} = NULL`);
-                    } else if (typeof value === 'string') {
-                        // SQL injection 방지를 위해 작은따옴표 이스케이프
-                        const escapedValue = value.replace(/'/g, "''");
-                        setClauses.push(`${key} = '${escapedValue}'`);
-                    } else if (typeof value === 'boolean') {
-                        setClauses.push(`${key} = ${value}`);
-                    } else if (typeof value === 'number') {
-                        setClauses.push(`${key} = ${value}`);
-                    }
-                }
-            }
-            
-            // 나머지 필드 처리 (fieldOrder에 없는 필드들)
-            for (const [key, value] of Object.entries(dataToUpdate)) {
-                if (!fieldOrder.includes(key)) {
-                    if (value === null || value === undefined) {
-                        setClauses.push(`${key} = NULL`);
-                    } else if (typeof value === 'string') {
-                        const escapedValue = value.replace(/'/g, "''");
-                        setClauses.push(`${key} = '${escapedValue}'`);
-                    } else if (typeof value === 'boolean') {
-                        setClauses.push(`${key} = ${value}`);
-                    } else if (typeof value === 'number') {
-                        setClauses.push(`${key} = ${value}`);
-                    }
-                }
-            }
-            
-            // SQL 쿼리 구성 (사용자 요청 형식: 여러 줄로 표시, 적절한 위치에서 줄바꿈)
-            let sqlScript = `UPDATE codigos SET ${setClauses.join(', ')} WHERE id_codigo = ${id}`;
-            
-            // 가독성을 위해 적절한 위치에서 줄바꿈 (약 80자마다)
-            // 하지만 필드 단위로 나누는 것이 더 나을 수 있음
-            // 사용자 예시를 보면 첫 줄에 codigo, descripcion, pre1, pre2, pre3이 있고
-            // 두 번째 줄에 borrado, pre4, pre5, mac이 있고
-            // 세 번째 줄에 b_mostrar_vcontrol, valor1, utime이 있습니다.
-            
-            // 필드를 그룹으로 나누어 표시
             const groups = [
                 ['codigo', 'descripcion', 'pre1', 'pre2', 'pre3'],
                 ['borrado', 'pre4', 'pre5', 'mac'],
@@ -667,59 +586,39 @@ async function handlePutCodigo(req, res, id) {
                 groupedClauses.push(remainingClauses.join(', '));
             }
             
-            sqlScript = `UPDATE codigos SET ${groupedClauses.join(', \n')} WHERE id_codigo = ${id}`;
-            console.log(sqlScript);
-            console.log(`\n업데이트할 필드: ${Object.keys(dataToUpdate).join(', ')}`);
+            const sqlScript = `UPDATE codigos SET ${groupedClauses.join(', \n')} WHERE id_codigo = ${id}`;
             
-            console.log('\n--- UPDATE 실행 중... ---');
-            console.log(`[handlePutCodigo] UPDATE에 전달되는 dataToUpdate:`, JSON.stringify(dataToUpdate, (key, value) => {
-                // Sequelize.literal 객체를 문자열로 변환
-                if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Literal') {
-                    return '[Sequelize.literal]';
-                }
-                return value;
-            }, 2));
-            const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
-            console.log(`UPDATE 결과: ${count}개 행 영향받음`);
-            
-            if (count === 0) {
-                await transaction.rollback();
-                console.log('\n--- 결과: 업데이트된 행 없음 (롤백) ---');
-                console.log('═══════════════════════════════════════════════════════════\n');
-                return res.status(404).json({ error: 'Not found' });
-            }
-            
-            console.log(`\n--- 트랜잭션 커밋 전... ---`);
-            await transaction.commit();
-            console.log(`--- 트랜잭션 커밋 완료 ---`);
-            
-            // 트랜잭션 커밋 후 다시 조회 (최신 데이터 확인)
-            const updated = await Codigos.findOne({ where: { id_codigo: id } });
-            console.log('\n--- 업데이트 후 데이터 (커밋 후 재조회) ---');
-            const afterUpdate = updated.toJSON ? updated.toJSON() : updated;
-            console.log(JSON.stringify(afterUpdate, null, 2));
-            
-            // 변경된 필드 확인
-            const changedFields = [];
+            // 변경된 필드 목록 생성 (간소화된 로그용)
+            const changedFieldsList = [];
             const beforeJson = existing.toJSON ? existing.toJSON() : existing;
             for (const key in dataToUpdate) {
-                if (key !== 'utime') { // utime은 항상 변경되므로 제외
+                if (key !== 'utime') {
                     const beforeVal = beforeJson[key];
-                    const afterVal = afterUpdate[key];
+                    const afterVal = dataToUpdate[key];
+                    // Sequelize.literal은 비교에서 제외
+                    if (afterVal && typeof afterVal === 'object' && afterVal.constructor && afterVal.constructor.name === 'Literal') {
+                        continue;
+                    }
                     if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                        changedFields.push(`${key}: ${JSON.stringify(beforeVal)} → ${JSON.stringify(afterVal)}`);
+                        changedFieldsList.push(`${key}=${JSON.stringify(afterVal)}`);
                     }
                 }
             }
-            console.log(`\n--- 변경된 필드 ---`);
-            if (changedFields.length > 0) {
-                changedFields.forEach(field => console.log(`  ${field}`));
-            } else {
-                console.log(`  변경된 필드 없음`);
+            
+            // 간소화된 로그 출력 (1줄)
+            console.log(`[Codigo Update] id=${id} | ${changedFieldsList.join(', ')} | SQL: ${sqlScript.replace(/\n/g, ' ')}`);
+            
+            const [count] = await Codigos.update(dataToUpdate, { where: { id_codigo: id }, transaction });
+            
+            if (count === 0) {
+                await transaction.rollback();
+                return res.status(404).json({ error: 'Not found' });
             }
             
-            console.log(`\n--- 최종 결과: ${count}개 행 업데이트됨 ---`);
-            console.log('═══════════════════════════════════════════════════════════\n');
+            await transaction.commit();
+            
+            // 트랜잭션 커밋 후 다시 조회 (최신 데이터 확인)
+            const updated = await Codigos.findOne({ where: { id_codigo: id } });
             
             // 트랜잭션 커밋 완료 후 변수 저장 (logs 기록용)
             const transactionCommitted = true;

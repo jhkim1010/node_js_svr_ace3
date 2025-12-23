@@ -369,42 +369,85 @@ router.post('/', async (req, res) => {
     }
 });
 
+// PUT /todocodigos/id/:id 라우트 추가 (Flutter 앱 호환성)
+router.put('/id/:id', async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+    
+    return handlePutTodocodigo(req, res, id);
+});
+
 router.put('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+    
+    return handlePutTodocodigo(req, res, id);
+});
+
+// PUT 요청 처리 공통 함수
+async function handlePutTodocodigo(req, res, id) {
     try {
         const Todocodigos = getModelForRequest(req, 'Todocodigos');
         
         // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
-            // utime 비교 핸들러 사용 (todocodigos 전용)
-            // 50개를 넘으면 배치로 나눠서 처리
             const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Todocodigos, 'id_todocodigo', 'Todocodigos');
             await notifyBatchSync(req, Todocodigos, result);
             return res.status(200).json(result);
         }
         
-        // 단일 항목 처리 (utime 비교 포함)
+        // 단일 항목 처리
         const cleanedData = removeSyncField(req.body);
-        const dataToUpdate = filterModelFields(Todocodigos, cleanedData);
+        
+        // 문자열/숫자 boolean 값을 boolean으로 변환
+        if (cleanedData.borrado !== undefined && cleanedData.borrado !== null) {
+            if (cleanedData.borrado === 'true' || cleanedData.borrado === true || cleanedData.borrado === 1 || cleanedData.borrado === '1') {
+                cleanedData.borrado = true;
+            } else if (cleanedData.borrado === 'false' || cleanedData.borrado === false || cleanedData.borrado === 0 || cleanedData.borrado === '0') {
+                cleanedData.borrado = false;
+            }
+        }
+        
+        if (cleanedData.b_mostrar_vcontrol !== undefined && cleanedData.b_mostrar_vcontrol !== null) {
+            if (cleanedData.b_mostrar_vcontrol === 'true' || cleanedData.b_mostrar_vcontrol === true || cleanedData.b_mostrar_vcontrol === 1 || cleanedData.b_mostrar_vcontrol === '1') {
+                cleanedData.b_mostrar_vcontrol = true;
+            } else if (cleanedData.b_mostrar_vcontrol === 'false' || cleanedData.b_mostrar_vcontrol === false || cleanedData.b_mostrar_vcontrol === 0 || cleanedData.b_mostrar_vcontrol === '0') {
+                cleanedData.b_mostrar_vcontrol = false;
+            }
+        }
+        
+        let dataToUpdate = filterModelFields(Todocodigos, cleanedData);
+        
+        // filterModelFields 이후에 추가해야 하는 필드들
+        if (cleanedData.mac) {
+            dataToUpdate.mac = cleanedData.mac;
+        }
+        if (cleanedData.platform) {
+            // platform 값을 tinfo1에 저장
+            dataToUpdate.tinfo1 = cleanedData.platform;
+        }
         
         // 트랜잭션 사용하여 원자성 보장
         const sequelize = Todocodigos.sequelize;
         const transaction = await sequelize.transaction();
         try {
-            // 기존 레코드 조회
-            const existing = await Todocodigos.findByPk(id, { transaction });
+            // 기존 레코드 조회 (id_todocodigo로 조회)
+            const existing = await Todocodigos.findOne({ where: { id_todocodigo: id }, transaction });
             if (!existing) {
                 await transaction.rollback();
                 return res.status(404).json({ error: 'Not found' });
             }
             
-            // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트 (문자열 직접 비교, timezone 변환 없음)
+            // utime 비교: 클라이언트가 utime을 명시적으로 보낸 경우에만 비교
             let clientUtimeStr = null;
-            if (dataToUpdate.utime) {
+            const clientSentUtime = cleanedData.utime !== undefined && cleanedData.utime !== null;
+            
+            let shouldUpdate = true; // 기본값: 항상 업데이트
+            
+            // 클라이언트가 utime을 명시적으로 보낸 경우에만 비교
+            if (clientSentUtime && dataToUpdate.utime) {
                 if (dataToUpdate.utime instanceof Date) {
-                    // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
                     const year = dataToUpdate.utime.getFullYear();
                     const month = String(dataToUpdate.utime.getMonth() + 1).padStart(2, '0');
                     const day = String(dataToUpdate.utime.getDate()).padStart(2, '0');
@@ -414,90 +457,198 @@ router.put('/:id', async (req, res) => {
                     const ms = String(dataToUpdate.utime.getMilliseconds()).padStart(3, '0');
                     clientUtimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
                 } else {
-                    // 문자열인 경우 ISO 8601 형식의 'T'를 공백으로 변환하여 통일된 형식으로 비교
-                    // "2025-11-27T19:20:52.615" -> "2025-11-27 19:20:52.615"
                     let utimeStr = String(dataToUpdate.utime);
-                    // 'T'를 공백으로 변환 (ISO 8601 형식 처리)
-                    utimeStr = utimeStr.replace(/T/, ' ');
-                    // 시간대 정보 제거 (Z, +09:00 등)
-                    utimeStr = utimeStr.replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '');
+                    utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '');
                     clientUtimeStr = utimeStr.trim();
                 }
-            }
-            
-            // 서버의 utime을 데이터베이스에서 문자열로 직접 가져오기 (timezone 변환 방지)
-            let serverUtimeStr = null;
-            const serverUtimeRaw = await Todocodigos.findOne({ 
-                where: { id_todocodigo: id }, 
-                transaction,
-                attributes: [[Sequelize.literal(`utime::text`), 'utime']],
-                raw: true
-            });
-            if (serverUtimeRaw && serverUtimeRaw.utime) {
-                serverUtimeStr = String(serverUtimeRaw.utime).trim();
-            }
-            
-            let shouldUpdate = false;
-            if (!clientUtimeStr && !serverUtimeStr) {
-                shouldUpdate = true;
-            } else if (clientUtimeStr && !serverUtimeStr) {
-                shouldUpdate = true;
-            } else if (clientUtimeStr && serverUtimeStr) {
-                // 문자열 직접 비교 (timezone 변환 없음)
-                shouldUpdate = clientUtimeStr > serverUtimeStr;
-            } else {
-                shouldUpdate = false;
-            }
-            
-            if (!shouldUpdate) {
-                await transaction.rollback();
-                return res.status(200).json({
-                    message: 'Skipped: server utime is newer or equal',
-                    serverUtime: serverUtimeStr,
-                    clientUtime: clientUtimeStr,
-                    data: existing
-                });
-            }
-            
-            // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
-            if (dataToUpdate.utime) {
-                let utimeStr = null;
-                if (dataToUpdate.utime instanceof Date) {
-                    // Date 객체인 경우 원본 문자열 형식으로 변환 (timezone 변환 없이)
-                    const year = dataToUpdate.utime.getFullYear();
-                    const month = String(dataToUpdate.utime.getMonth() + 1).padStart(2, '0');
-                    const day = String(dataToUpdate.utime.getDate()).padStart(2, '0');
-                    const hours = String(dataToUpdate.utime.getHours()).padStart(2, '0');
-                    const minutes = String(dataToUpdate.utime.getMinutes()).padStart(2, '0');
-                    const seconds = String(dataToUpdate.utime.getSeconds()).padStart(2, '0');
-                    const ms = String(dataToUpdate.utime.getMilliseconds()).padStart(3, '0');
-                    utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-                } else {
-                    // 문자열인 경우 그대로 사용 (timezone 변환 없음)
-                    utimeStr = String(dataToUpdate.utime);
+                
+                if (clientUtimeStr) {
+                    let serverUtimeStr = null;
+                    const serverUtimeRaw = await Todocodigos.findOne({ 
+                        where: { id_todocodigo: id }, 
+                        transaction,
+                        attributes: [[Sequelize.literal(`utime::text`), 'utime']],
+                        raw: true
+                    });
+                    if (serverUtimeRaw && serverUtimeRaw.utime) {
+                        serverUtimeStr = String(serverUtimeRaw.utime).trim();
+                    }
+                    
+                    if (clientUtimeStr && serverUtimeStr) {
+                        shouldUpdate = clientUtimeStr > serverUtimeStr;
+                    } else if (clientUtimeStr && !serverUtimeStr) {
+                        shouldUpdate = true;
+                    } else if (!clientUtimeStr && serverUtimeStr) {
+                        shouldUpdate = false;
+                    }
+                    
+                    if (!shouldUpdate) {
+                        await transaction.rollback();
+                        console.log(`[Todocodigo Update] id=${id} | 스킵됨 (서버 utime이 더 최신: ${serverUtimeStr || 'N/A'} >= ${clientUtimeStr || 'N/A'})`);
+                        return res.status(200).json({
+                            message: 'Skipped: server utime is newer or equal',
+                            serverUtime: serverUtimeStr,
+                            clientUtime: clientUtimeStr,
+                            data: existing
+                        });
+                    }
                 }
-                // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
-                dataToUpdate.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
             }
+            
+            // dataToUpdate에서 utime 제거 (나중에 now()로 설정할 예정)
+            delete dataToUpdate.utime;
+            
+            // utime을 now()로 설정
+            dataToUpdate.utime = Sequelize.literal(`now()`);
+            
+            // SQL 스크립트 구성 (간소화된 로그 출력용)
+            const setClauses = [];
+            const groups = [
+                ['tcodigo', 'tdesc', 'tpre1', 'tpre2', 'tpre3'],
+                ['borrado', 'tpre4', 'tpre5', 'mac'],
+                ['b_mostrar_vcontrol', 'tinfo1', 'utime']
+            ];
+            
+            const groupedClauses = [];
+            for (const group of groups) {
+                const groupClauses = [];
+                for (const key of group) {
+                    if (dataToUpdate.hasOwnProperty(key)) {
+                        const value = dataToUpdate[key];
+                        if (key === 'utime') {
+                            groupClauses.push(`${key} = now()`);
+                        } else if (value === null || value === undefined) {
+                            groupClauses.push(`${key} = NULL`);
+                        } else if (typeof value === 'string') {
+                            const escapedValue = value.replace(/'/g, "''");
+                            groupClauses.push(`${key} = '${escapedValue}'`);
+                        } else if (typeof value === 'boolean') {
+                            groupClauses.push(`${key} = ${value}`);
+                        } else if (typeof value === 'number') {
+                            groupClauses.push(`${key} = ${value}`);
+                        }
+                    }
+                }
+                if (groupClauses.length > 0) {
+                    groupedClauses.push(groupClauses.join(', '));
+                }
+            }
+            
+            // 나머지 필드 추가
+            const remainingClauses = [];
+            for (const [key, value] of Object.entries(dataToUpdate)) {
+                const inAnyGroup = groups.some(group => group.includes(key));
+                if (!inAnyGroup) {
+                    if (value === null || value === undefined) {
+                        remainingClauses.push(`${key} = NULL`);
+                    } else if (typeof value === 'string') {
+                        const escapedValue = value.replace(/'/g, "''");
+                        remainingClauses.push(`${key} = '${escapedValue}'`);
+                    } else if (typeof value === 'boolean') {
+                        remainingClauses.push(`${key} = ${value}`);
+                    } else if (typeof value === 'number') {
+                        remainingClauses.push(`${key} = ${value}`);
+                    }
+                }
+            }
+            
+            if (remainingClauses.length > 0) {
+                groupedClauses.push(remainingClauses.join(', '));
+            }
+            
+            const sqlScript = `UPDATE todocodigos SET ${groupedClauses.join(', \n')} WHERE id_todocodigo = ${id}`;
+            
+            // 변경된 필드 목록 생성 (간소화된 로그용)
+            const changedFieldsList = [];
+            const beforeJson = existing.toJSON ? existing.toJSON() : existing;
+            for (const key in dataToUpdate) {
+                if (key !== 'utime') {
+                    const beforeVal = beforeJson[key];
+                    const afterVal = dataToUpdate[key];
+                    if (afterVal && typeof afterVal === 'object' && afterVal.constructor && afterVal.constructor.name === 'Literal') {
+                        continue;
+                    }
+                    if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                        changedFieldsList.push(`${key}=${JSON.stringify(afterVal)}`);
+                    }
+                }
+            }
+            
+            // 간소화된 로그 출력 (1줄)
+            console.log(`[Todocodigo Update] id=${id} | ${changedFieldsList.join(', ')} | SQL: ${sqlScript.replace(/\n/g, ' ')}`);
             
             const [count] = await Todocodigos.update(dataToUpdate, { where: { id_todocodigo: id }, transaction });
+            
             if (count === 0) {
                 await transaction.rollback();
                 return res.status(404).json({ error: 'Not found' });
             }
-            const updated = await Todocodigos.findByPk(id, { transaction });
+            
             await transaction.commit();
+            
+            // 트랜잭션 커밋 후 다시 조회 (최신 데이터 확인)
+            const updated = await Todocodigos.findOne({ where: { id_todocodigo: id } });
+            
+            // WebSocket 알림 전송
             await notifyDbChange(req, Todocodigos, 'update', updated);
             res.json(updated);
+            
+            // logs 테이블에 기록 (트랜잭션 커밋 후 별도로 처리, 비동기로 실행하여 응답 지연 방지)
+            setImmediate(async () => {
+                try {
+                    const Logs = getModelForRequest(req, 'Logs');
+                    const now = new Date();
+                    const fecha = now.toISOString().split('T')[0];
+                    const hora = now.toTimeString().split(' ')[0];
+                    
+                    const year = now.getFullYear();
+                    const month = now.getMonth() + 1;
+                    const day = now.getDate();
+                    const hours = now.getHours();
+                    const minutes = now.getMinutes();
+                    const fechaStr = `${year}년 ${month}월 ${day}일`;
+                    const horaStr = `${hours}시 ${minutes}분`;
+                    
+                    const mac = cleanedData.mac || updated.mac || 'N/A';
+                    const platform = cleanedData.platform || 'N/A';
+                    const tcodigo = updated.tcodigo || 'N/A';
+                    const tdesc = updated.tdesc || 'N/A';
+                    const precios = [];
+                    if (updated.tpre1 !== null && updated.tpre1 !== undefined) precios.push(`tpre1=${updated.tpre1}`);
+                    if (updated.tpre2 !== null && updated.tpre2 !== undefined) precios.push(`tpre2=${updated.tpre2}`);
+                    if (updated.tpre3 !== null && updated.tpre3 !== undefined) precios.push(`tpre3=${updated.tpre3}`);
+                    if (updated.tpre4 !== null && updated.tpre4 !== undefined) precios.push(`tpre4=${updated.tpre4}`);
+                    if (updated.tpre5 !== null && updated.tpre5 !== undefined) precios.push(`tpre5=${updated.tpre5}`);
+                    
+                    const preciosStr = precios.length > 0 ? precios.join(', ') : 'N/A';
+                    const evento = `MAC: ${mac}, Platform: ${platform}에서 제품 코드: ${tcodigo}, 설명: ${tdesc}, 가격: ${preciosStr}를 ${fechaStr} ${horaStr}에 편집`;
+                    
+                    await Logs.create({
+                        fecha: fecha,
+                        hora: hora,
+                        evento: evento,
+                        progname: 'todocodigos_update',
+                        sucursal: req.dbConfig?.sucursal || 1
+                    });
+                } catch (logErr) {
+                    console.error('Failed to write log entry:', logErr);
+                }
+            });
         } catch (err) {
-            await transaction.rollback();
+            try {
+                if (transaction && !transaction.finished) {
+                    await transaction.rollback();
+                }
+            } catch (rollbackErr) {
+                console.error('Transaction rollback failed (may already be committed):', rollbackErr.message);
+            }
             throw err;
         }
     } catch (err) {
         console.error(err);
         res.status(400).json({ error: 'Failed to update todocodigo', details: err.message });
     }
-});
+}
 
 router.delete('/:id', async (req, res) => {
     const id = parseInt(req.params.id, 10);
