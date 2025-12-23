@@ -558,36 +558,59 @@ async function handlePutTodocodigo(req, res, id) {
             
             const sqlScript = `UPDATE todocodigos SET ${groupedClauses.join(', \n')} WHERE id_todocodigo = ${id}`;
             
-            // 변경된 필드 목록 생성 (간소화된 로그용)
-            const changedFieldsList = [];
-            const beforeJson = existing.toJSON ? existing.toJSON() : existing;
-            for (const key in dataToUpdate) {
-                if (key !== 'utime') {
-                    const beforeVal = beforeJson[key];
-                    const afterVal = dataToUpdate[key];
-                    if (afterVal && typeof afterVal === 'object' && afterVal.constructor && afterVal.constructor.name === 'Literal') {
-                        continue;
-                    }
-                    if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                        changedFieldsList.push(`${key}=${JSON.stringify(afterVal)}`);
-                    }
-                }
-            }
+            // 상세 로그 출력
+            console.log('\n═══════════════════════════════════════════════════════════');
+            console.log('=== Todocodigo Update 요청 ===');
+            console.log(`id_todocodigo: ${id}`);
+            console.log(`요청 데이터:`, JSON.stringify(cleanedData, null, 2));
+            console.log('\n--- 업데이트 전 데이터 ---');
+            const beforeUpdate = existing.toJSON ? existing.toJSON() : existing;
+            console.log(JSON.stringify(beforeUpdate, null, 2));
+            console.log('\n--- 실행될 SQL 스크립트 ---');
+            console.log(sqlScript);
+            console.log(`\n업데이트할 필드: ${Object.keys(dataToUpdate).join(', ')}`);
             
-            // 간소화된 로그 출력 (1줄)
-            console.log(`[Todocodigo Update] id=${id} | ${changedFieldsList.join(', ')} | SQL: ${sqlScript.replace(/\n/g, ' ')}`);
-            
+            console.log('\n--- UPDATE 실행 중... ---');
             const [count] = await Todocodigos.update(dataToUpdate, { where: { id_todocodigo: id }, transaction });
+            console.log(`UPDATE 결과: ${count}개 행 영향받음`);
             
             if (count === 0) {
                 await transaction.rollback();
+                console.log('\n--- 결과: 업데이트된 행 없음 (롤백) ---');
+                console.log('═══════════════════════════════════════════════════════════\n');
                 return res.status(404).json({ error: 'Not found' });
             }
             
+            console.log(`\n--- 트랜잭션 커밋 전... ---`);
             await transaction.commit();
+            console.log(`--- 트랜잭션 커밋 완료 ---`);
             
             // 트랜잭션 커밋 후 다시 조회 (최신 데이터 확인)
             const updated = await Todocodigos.findOne({ where: { id_todocodigo: id } });
+            console.log('\n--- 업데이트 후 데이터 (커밋 후 재조회) ---');
+            const afterUpdate = updated.toJSON ? updated.toJSON() : updated;
+            console.log(JSON.stringify(afterUpdate, null, 2));
+            
+            // 변경된 필드 확인
+            const changedFields = [];
+            for (const key in dataToUpdate) {
+                if (key !== 'utime') { // utime은 항상 변경되므로 제외
+                    const beforeVal = beforeUpdate[key];
+                    const afterVal = afterUpdate[key];
+                    if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                        changedFields.push(`${key}: ${JSON.stringify(beforeVal)} → ${JSON.stringify(afterVal)}`);
+                    }
+                }
+            }
+            console.log(`\n--- 변경된 필드 ---`);
+            if (changedFields.length > 0) {
+                changedFields.forEach(field => console.log(`  ${field}`));
+            } else {
+                console.log(`  변경된 필드 없음`);
+            }
+            
+            console.log(`\n--- 최종 결과: ${count}개 행 업데이트됨 ---`);
+            console.log('═══════════════════════════════════════════════════════════\n');
             
             // WebSocket 알림 전송
             await notifyDbChange(req, Todocodigos, 'update', updated);
