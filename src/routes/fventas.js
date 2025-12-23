@@ -16,19 +16,23 @@ router.get('/', async (req, res) => {
         const sequelize = Fventas.sequelize;
         const { Op } = Sequelize;
         
+        // req.query와 req.body가 undefined일 수 있으므로 안전하게 처리
+        const query = req.query || {};
+        const body = req.body || {};
+        
         // 날짜 파라미터 확인 (query 또는 body)
-        const fecha = req.query.fecha || req.body.fecha;
-        const fechaInicio = req.query.fecha_inicio || req.query.start_date || req.body.fecha_inicio || req.body.start_date;
-        const fechaFin = req.query.fecha_fin || req.query.end_date || req.body.fecha_fin || req.body.end_date;
+        const fecha = query.fecha || body.fecha;
+        const fechaInicio = query.fecha_inicio || query.start_date || body.fecha_inicio || body.start_date;
+        const fechaFin = query.fecha_fin || query.end_date || body.fecha_fin || body.end_date;
         
         // sucursal 파라미터 확인
-        const sucursal = req.query.sucursal || req.body.sucursal;
+        const sucursal = query.sucursal || body.sucursal;
         
         // 검색어 파라미터 확인
-        const filteringWord = req.query.filtering_word || req.query.filteringWord || req.body.filtering_word || req.body.filteringWord || req.query.search || req.body.search;
+        const filteringWord = query.filtering_word || query.filteringWord || body.filtering_word || body.filteringWord || query.search || body.search;
         
         // 페이지네이션 파라미터 확인 (id_fventa 기준)
-        const lastIdFventa = req.query.last_id_fventa || req.body.last_id_fventa;
+        const lastIdFventa = query.last_id_fventa || body.last_id_fventa;
         
         // WHERE 조건 구성
         let whereConditions = [];
