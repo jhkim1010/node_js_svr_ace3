@@ -393,19 +393,30 @@ async function handlePutCodigo(req, res, id) {
             delete cleanedData.tcodigo;
         }
         
-        // 문자열 boolean 값을 boolean으로 변환 (Flutter 앱 호환성)
-        if (cleanedData.borrado !== undefined) {
-            if (cleanedData.borrado === 'true' || cleanedData.borrado === true) {
+        // 문자열/숫자 boolean 값을 boolean으로 변환 (Flutter 앱 호환성)
+        // borrado 변환
+        if (cleanedData.borrado !== undefined && cleanedData.borrado !== null) {
+            if (cleanedData.borrado === 'true' || cleanedData.borrado === true || cleanedData.borrado === 1 || cleanedData.borrado === '1') {
                 cleanedData.borrado = true;
-            } else if (cleanedData.borrado === 'false' || cleanedData.borrado === false) {
+            } else if (cleanedData.borrado === 'false' || cleanedData.borrado === false || cleanedData.borrado === 0 || cleanedData.borrado === '0') {
                 cleanedData.borrado = false;
             }
         }
         
-        if (cleanedData.b_sincronizar_x_web !== undefined) {
-            if (cleanedData.b_sincronizar_x_web === 'true' || cleanedData.b_sincronizar_x_web === true) {
+        // b_mostrar_vcontrol 변환
+        if (cleanedData.b_mostrar_vcontrol !== undefined && cleanedData.b_mostrar_vcontrol !== null) {
+            if (cleanedData.b_mostrar_vcontrol === 'true' || cleanedData.b_mostrar_vcontrol === true || cleanedData.b_mostrar_vcontrol === 1 || cleanedData.b_mostrar_vcontrol === '1') {
+                cleanedData.b_mostrar_vcontrol = true;
+            } else if (cleanedData.b_mostrar_vcontrol === 'false' || cleanedData.b_mostrar_vcontrol === false || cleanedData.b_mostrar_vcontrol === 0 || cleanedData.b_mostrar_vcontrol === '0') {
+                cleanedData.b_mostrar_vcontrol = false;
+            }
+        }
+        
+        // b_sincronizar_x_web 변환
+        if (cleanedData.b_sincronizar_x_web !== undefined && cleanedData.b_sincronizar_x_web !== null) {
+            if (cleanedData.b_sincronizar_x_web === 'true' || cleanedData.b_sincronizar_x_web === true || cleanedData.b_sincronizar_x_web === 1 || cleanedData.b_sincronizar_x_web === '1') {
                 cleanedData.b_sincronizar_x_web = true;
-            } else if (cleanedData.b_sincronizar_x_web === 'false' || cleanedData.b_sincronizar_x_web === false) {
+            } else if (cleanedData.b_sincronizar_x_web === 'false' || cleanedData.b_sincronizar_x_web === false || cleanedData.b_sincronizar_x_web === 0 || cleanedData.b_sincronizar_x_web === '0') {
                 cleanedData.b_sincronizar_x_web = false;
             }
         }
