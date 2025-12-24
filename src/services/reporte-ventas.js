@@ -57,6 +57,10 @@ async function getVentasReport(req) {
     
     // unit 파라미터 파싱 (기본값: 'vcode')
     const unit = req.query.unit || 'vcode';
+    
+    // descontado 파라미터 파싱 (체크박스 상태)
+    const descontado = req.query.descontado || req.body.descontado;
+    const isDescontado = descontado === 'true' || descontado === true || descontado === '1' || descontado === 1;
 
     // 날짜가 없으면 에러 반환
     if (!fechaInicio || !fechaFin) {
@@ -105,7 +109,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado = false
-                        AND b_cancelado IS FALSE
+                        AND b_cancelado IS FALSE${isDescontado ? '\n                        AND b_descontado IS TRUE' : ''}
                     GROUP BY fecha, sucursal
                     ORDER BY fecha DESC
                 `;
@@ -127,7 +131,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
-                        AND b_cancelado IS FALSE
+                        AND b_cancelado IS FALSE${isDescontado ? '\n                        AND b_descontado IS TRUE' : ''}
                     GROUP BY DATE_TRUNC('month', fecha), sucursal
                     ORDER BY DATE_TRUNC('month', fecha) DESC
                 `;
@@ -149,7 +153,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
-                        AND b_cancelado IS FALSE
+                        AND b_cancelado IS FALSE${isDescontado ? '\n                        AND b_descontado IS TRUE' : ''}
                     GROUP BY DATE_TRUNC('year', fecha), sucursal
                     ORDER BY DATE_TRUNC('year', fecha) DESC
                 `;
@@ -270,7 +274,7 @@ async function getVentasReport(req) {
                                 vcode_id as id
                             FROM public.vcodes
                             WHERE fecha = :fechaInicio 
-                                AND borrado IS FALSE
+                                AND borrado IS FALSE${isDescontado ? '\n                                AND b_descontado IS TRUE' : ''}
                             ORDER BY vcode_id ASC
                         `;
                     } else {
@@ -304,7 +308,7 @@ async function getVentasReport(req) {
                             FROM public.vcodes
                             WHERE fecha >= :fechaInicio 
                                 AND fecha <= :fechaFin 
-                                AND borrado IS FALSE
+                                AND borrado IS FALSE${isDescontado ? '\n                                AND b_descontado IS TRUE' : ''}
                             ORDER BY vcode_id ASC
                         `;
                     }
@@ -343,6 +347,7 @@ async function getVentasReport(req) {
             start_date: fechaInicio,
             end_date: fechaFin,
             unit: unit,
+            descontado: isDescontado,
             period_days: period.days,
             period_months: period.months,
             period_years: period.years,
