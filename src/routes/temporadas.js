@@ -10,6 +10,9 @@ const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-ha
 const router = Router();
 
 // tipos와 temporadas 요청을 한 줄로 출력하기 위한 공유 상태
+// tipos.js와 동일한 Map을 공유하기 위해 전역으로 이동 필요
+// 대신 각 파일에서 독립적으로 처리하되, 짧은 시간 내에 두 요청이 오는지 확인
+
 // 대기 시간 (ms) - 이 시간 내에 두 요청이 모두 오면 한 줄로 출력
 const WAIT_TIME = 200;
 
@@ -66,24 +69,24 @@ function logCombinedTiposTemporadas(dbName, tiposCount, temporadasCount) {
 
 router.get('/', async (req, res) => {
     try {
-        const Tipos = getModelForRequest(req, 'Tipos');
+        const Temporadas = getModelForRequest(req, 'Temporadas');
         
         // all 파라미터 확인 (모든 데이터 반환)
         const all = req.query.all === 'true' || req.body.all === 'true';
         
         if (all) {
             // 모든 데이터 반환 (borrado=false인 것만)
-            const records = await Tipos.findAll({ 
+            const records = await Temporadas.findAll({ 
                 where: { borrado: false },
-                order: [['id_tipo', 'ASC']] 
+                order: [['id_temporada', 'ASC']] 
             });
             
             // 응답 로거에서 사용할 데이터 개수 저장
             req._responseDataCount = records.length;
             
-            // tipos 데이터 개수 로깅 (temporadas와 함께 한 줄로 출력하기 위해)
+            // temporadas 데이터 개수 로깅 (tipos와 함께 한 줄로 출력하기 위해)
             const dbName = req.dbConfig ? `[${req.dbConfig.database}]` : '';
-            logCombinedTiposTemporadas(dbName, records.length, null);
+            logCombinedTiposTemporadas(dbName, null, records.length);
             
             res.json({
                 data: records,
@@ -111,42 +114,44 @@ router.get('/', async (req, res) => {
             ];
         }
         
-        // FilteringWord 검색 조건 추가 (tpcodigo 또는 tpdesc에서 검색)
+        // FilteringWord 검색 조건 추가 (temporada_nombre에서 검색)
         if (filteringWord && filteringWord.trim()) {
             const searchTerm = `%${filteringWord.trim()}%`;
             whereCondition[Op.and] = [
                 ...(whereCondition[Op.and] || []),
                 {
                     [Op.or]: [
-                        { tpcodigo: { [Op.iLike]: searchTerm } },
-                        { tpdesc: { [Op.iLike]: searchTerm } }
+                        { temporada_nombre: { [Op.iLike]: searchTerm } }
                     ]
                 }
             ];
         }
         
+        // borrado 필터 추가
+        whereCondition.borrado = false;
+        
         // 총 데이터 개수 조회
-        const totalCount = await Tipos.count({ where: whereCondition });
+        const totalCount = await Temporadas.count({ where: whereCondition });
         
         // 100개 단위로 제한
         const limit = 100;
-        const records = await Tipos.findAll({ 
+        const records = await Temporadas.findAll({ 
             where: whereCondition,
             limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
-            order: [['id_tipo', 'ASC']] 
+            order: [['id_temporada', 'ASC']] 
         });
         
         // 다음 배치가 있는지 확인
         const hasMore = records.length > limit;
         const data = hasMore ? records.slice(0, limit) : records;
         
-        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id_tipo)
+        // 다음 요청을 위한 max_utime 계산 (마지막 레코드의 id_temporada)
         let nextMaxUtime = null;
         if (data.length > 0) {
             const lastRecord = data[data.length - 1];
-            if (lastRecord.id_tipo !== null && lastRecord.id_tipo !== undefined) {
-                // id_tipo 값을 문자열로 변환하여 반환
-                nextMaxUtime = String(lastRecord.id_tipo);
+            if (lastRecord.id_temporada !== null && lastRecord.id_temporada !== undefined) {
+                // id_temporada 값을 문자열로 변환하여 반환
+                nextMaxUtime = String(lastRecord.id_temporada);
             }
         }
         
@@ -164,14 +169,14 @@ router.get('/', async (req, res) => {
         // 응답 로거에서 사용할 데이터 개수 저장
         req._responseDataCount = data.length;
         
-        // tipos 데이터 개수 로깅 (temporadas와 함께 한 줄로 출력하기 위해)
+        // temporadas 데이터 개수 로깅 (tipos와 함께 한 줄로 출력하기 위해)
         const dbName = req.dbConfig ? `[${req.dbConfig.database}]` : '';
-        logCombinedTiposTemporadas(dbName, data.length, null);
+        logCombinedTiposTemporadas(dbName, null, data.length);
         
         res.json(responseData);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to list tipos', details: err.message });
+        res.status(500).json({ error: 'Failed to list temporadas', details: err.message });
     }
 });
 
@@ -179,154 +184,80 @@ router.get('/:id', async (req, res) => {
     const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'Invalid id' });
     try {
-        const Tipos = getModelForRequest(req, 'Tipos');
-        const record = await Tipos.findByPk(id);
+        const Temporadas = getModelForRequest(req, 'Temporadas');
+        const record = await Temporadas.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to fetch tipo', details: err.message });
+        res.status(500).json({ error: 'Failed to fetch temporada', details: err.message });
     }
 });
 
 router.post('/', async (req, res) => {
     try {
-        const Tipos = getModelForRequest(req, 'Tipos');
+        const Temporadas = getModelForRequest(req, 'Temporadas');
+        const cleanedData = removeSyncField(req.body);
+        const dataToCreate = filterModelFields(Temporadas, cleanedData);
         
-        // BATCH_SYNC 작업 처리
-        // tipos는 primary key 충돌 시 utime 비교를 통해 update/skip 결정
-        if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Tipos, 'tpcodigo', 'Tipos');
-            await notifyBatchSync(req, Tipos, result);
-            return res.status(200).json(result);
-        }
-        
-        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
-        // tipos는 utime 비교가 필요하므로 utime 비교 핸들러 사용
-        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            req.body.operation = req.body.operation || 'UPDATE';
-            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Tipos, 'tpcodigo', 'Tipos');
-            await notifyBatchSync(req, Tipos, result);
-            return res.status(200).json(result);
-        }
-        
-        // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우)
-        const rawData = req.body.new_data || req.body;
-        if (Array.isArray(rawData)) {
-            // 배열인 경우 utime 비교 핸들러 사용
-            req.body.data = rawData;
-            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Tipos, 'tpcodigo', 'Tipos');
-            await notifyBatchSync(req, Tipos, result);
-            return res.status(200).json(result);
-        }
-        
-        // 일반 단일 생성 요청 처리 (utime 비교 핸들러 사용)
-        // 단일 항목도 배열로 변환하여 utime 비교 핸들러 사용
-        req.body.data = [rawData];
-        const result = await handleUtimeComparisonArrayData(req, res, Tipos, 'tpcodigo', 'Tipos');
-        const singleResult = result.results && result.results.length > 0 ? result.results[0] : null;
-        if (singleResult) {
-            await notifyDbChange(req, Tipos, singleResult.action === 'created' ? 'create' : singleResult.action === 'updated' ? 'update' : 'skip', singleResult.data);
-            res.status(singleResult.action === 'created' ? 201 : singleResult.action === 'updated' ? 200 : 200).json(singleResult.data);
-            return;
-        }
-        throw new Error('Failed to process tipo');
+        const record = await Temporadas.create(dataToCreate);
+        await notifyDbChange(req, Temporadas, 'create', record);
+        res.status(201).json(record);
     } catch (err) {
-        handleInsertUpdateError(err, req, 'Tipos', 'tpcodigo', 'tipos');
-        const errorResponse = buildDatabaseErrorResponse(err, req, 'create tipo');
-        
-        // Validation 에러인 경우 상세 정보 추가
-        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
-            errorResponse.validationErrors = err.errors.map(e => ({
-                field: e.path,
-                value: e.value,
-                message: e.message,
-                type: e.type,
-                validator: e.validatorKey || e.validatorName
-            }));
-            
-            // 누락된 필수 컬럼 목록 추가
-            const missingColumns = err.errors
-                .filter(e => e.type === 'notNull Violation' || 
-                           e.message?.toLowerCase().includes('cannot be null'))
-                .map(e => e.path);
-            if (missingColumns.length > 0) {
-                errorResponse.missingColumns = missingColumns;
-            }
-        }
-        
-        res.status(400).json(errorResponse);
+        handleInsertUpdateError(err, req, 'Temporadas', 'id_temporada', 'temporadas');
     }
 });
 
 router.put('/:id', async (req, res) => {
-    const id = req.params.id;
-    if (!id) return res.status(400).json({ error: 'Invalid id' });
     try {
-        const Tipos = getModelForRequest(req, 'Tipos');
-        
-        // 배열 형태의 데이터 처리 (req.body.data가 배열인 경우)
-        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            req.body.operation = req.body.operation || 'UPDATE';
-            // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleArrayData, Tipos, 'tpcodigo', 'Tipos');
-            await notifyBatchSync(req, Tipos, result);
-            return res.status(200).json(result);
-        }
-        
-        // 단일 항목 처리 (기존 로직)
+        const Temporadas = getModelForRequest(req, 'Temporadas');
+        const id = req.params.id;
         const cleanedData = removeSyncField(req.body);
-        const dataToUpdate = filterModelFields(Tipos, cleanedData);
+        const dataToUpdate = filterModelFields(Temporadas, cleanedData);
         
-        // 트랜잭션 사용하여 원자성 보장
-        const sequelize = Tipos.sequelize;
-        const transaction = await sequelize.transaction();
-        try {
-            const [count] = await Tipos.update(dataToUpdate, { where: { tpcodigo: id }, transaction });
+        const sequelize = Temporadas.sequelize;
+        await sequelize.transaction(async (transaction) => {
+            const [count] = await Temporadas.update(dataToUpdate, { 
+                where: { id_temporada: id }, 
+                transaction 
+            });
+            
             if (count === 0) {
-                await transaction.rollback();
                 return res.status(404).json({ error: 'Not found' });
             }
-            const updated = await Tipos.findByPk(id, { transaction });
-            await transaction.commit();
-            await notifyDbChange(req, Tipos, 'update', updated);
+            
+            const updated = await Temporadas.findByPk(id, { transaction });
+            await notifyDbChange(req, Temporadas, 'update', updated);
             res.json(updated);
-        } catch (err) {
-            await transaction.rollback();
-            throw err;
-        }
+        });
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update tipo', details: err.message });
+        handleInsertUpdateError(err, req, 'Temporadas', 'id_temporada', 'temporadas');
     }
 });
 
 router.delete('/:id', async (req, res) => {
-    const id = req.params.id;
-    if (!id) return res.status(400).json({ error: 'Invalid id' });
     try {
-        const Tipos = getModelForRequest(req, 'Tipos');
+        const Temporadas = getModelForRequest(req, 'Temporadas');
+        const id = req.params.id;
+        const sequelize = Temporadas.sequelize;
         
-        // 트랜잭션 사용하여 원자성 보장
-        const sequelize = Tipos.sequelize;
-        const transaction = await sequelize.transaction();
-        try {
-            const toDelete = await Tipos.findByPk(id, { transaction });
+        await sequelize.transaction(async (transaction) => {
+            const toDelete = await Temporadas.findByPk(id, { transaction });
             if (!toDelete) {
-                await transaction.rollback();
                 return res.status(404).json({ error: 'Not found' });
             }
-            const count = await Tipos.destroy({ where: { tpcodigo: id }, transaction });
-            await transaction.commit();
-            await notifyDbChange(req, Tipos, 'delete', toDelete);
-            res.status(204).end();
-        } catch (err) {
-            await transaction.rollback();
-            throw err;
-        }
+            
+            const count = await Temporadas.destroy({ 
+                where: { id_temporada: id }, 
+                transaction 
+            });
+            
+            await notifyDbChange(req, Temporadas, 'delete', toDelete);
+            res.json({ message: 'Deleted', count });
+        });
     } catch (err) {
         console.error(err);
-        res.status(400).json({ error: 'Failed to delete tipo', details: err.message });
+        res.status(500).json({ error: 'Failed to delete temporada', details: err.message });
     }
 });
 
