@@ -158,8 +158,9 @@ function initializeWebSocket(server) {
             try {
                 const data = JSON.parse(message.toString());
                 
-                // register-client 메시지 처리
-                if (data.type === 'register-client' || data.action === 'register-client') {
+                // register-client 또는 register 메시지 처리 (register는 register-client의 별칭)
+                if (data.type === 'register-client' || data.action === 'register-client' || 
+                    data.type === 'register' || data.action === 'register') {
                     handleRegisterClient(ws, data);
                 } 
                 // fetch-more 메시지 처리 (페이지네이션)
