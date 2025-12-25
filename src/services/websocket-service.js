@@ -283,10 +283,14 @@ function handleRegisterClient(ws, data) {
     const defaultHost = getDefaultDbHost();
     const defaultPort = getDefaultDbPort();
     
+    // 다양한 필드명 지원 (dbName/dbUser 또는 database/user)
+    const database = data.database || data.dbName || data.db_name;
+    const user = data.user || data.dbUser || data.db_user;
+    
     // dbKey가 없고 데이터베이스 정보가 제공된 경우 dbKey 생성
     // host와 port는 기본값 사용 (클라이언트가 보낸 값 무시)
-    if (!dbKey && data.database && data.user) {
-        dbKey = getConnectionKey(defaultHost, defaultPort, data.database, data.user);
+    if (!dbKey && database && user) {
+        dbKey = getConnectionKey(defaultHost, defaultPort, database, user);
     }
     
     if (dbKey) {
