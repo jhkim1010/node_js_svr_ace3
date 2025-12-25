@@ -2,6 +2,31 @@ const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
 
 /**
+ * 추가 필터 조건을 생성하는 함수
+ * @param {boolean} isDescontado - descontado 필터 여부
+ * @param {boolean} isReservado - reservado 필터 여부
+ * @param {boolean} isCredito - credito 필터 여부
+ * @returns {string} SQL WHERE 조건 문자열
+ */
+function buildAdditionalFilters(isDescontado, isReservado, isCredito) {
+    const conditions = [];
+    
+    if (isDescontado) {
+        conditions.push('AND b_descontado IS TRUE');
+    }
+    
+    if (isReservado) {
+        conditions.push('AND b_reservado IS TRUE');
+    }
+    
+    if (isCredito) {
+        conditions.push('AND (b_endeudando IS TRUE OR b_deudapago IS TRUE)');
+    }
+    
+    return conditions.length > 0 ? '\n                        ' + conditions.join('\n                        ') : '';
+}
+
+/**
  * 날짜 차이를 계산하여 기간을 판단하는 함수
  * @param {string} startDate - 시작 날짜 (YYYY-MM-DD)
  * @param {string} endDate - 종료 날짜 (YYYY-MM-DD)
@@ -61,6 +86,14 @@ async function getVentasReport(req) {
     // descontado 파라미터 파싱 (체크박스 상태)
     const descontado = req.query.descontado || req.body.descontado;
     const isDescontado = descontado === 'true' || descontado === true || descontado === '1' || descontado === 1;
+    
+    // reservado 파라미터 파싱 (체크박스 상태)
+    const reservado = req.query.reservado || req.body.reservado;
+    const isReservado = reservado === 'true' || reservado === true || reservado === '1' || reservado === 1;
+    
+    // credito 파라미터 파싱 (체크박스 상태)
+    const credito = req.query.credito || req.body.credito;
+    const isCredito = credito === 'true' || credito === true || credito === '1' || credito === 1;
 
     // 날짜가 없으면 에러 반환
     if (!fechaInicio || !fechaFin) {
@@ -109,7 +142,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado = false
-                        AND b_cancelado IS FALSE${isDescontado ? '\n                        AND b_descontado IS TRUE' : ''}
+                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
                     GROUP BY fecha, sucursal
                     ORDER BY fecha DESC
                 `;
@@ -131,7 +164,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
-                        AND b_cancelado IS FALSE${isDescontado ? '\n                        AND b_descontado IS TRUE' : ''}
+                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
                     GROUP BY DATE_TRUNC('month', fecha), sucursal
                     ORDER BY DATE_TRUNC('month', fecha) DESC
                 `;
@@ -153,7 +186,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
-                        AND b_cancelado IS FALSE${isDescontado ? '\n                        AND b_descontado IS TRUE' : ''}
+                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
                     GROUP BY DATE_TRUNC('year', fecha), sucursal
                     ORDER BY DATE_TRUNC('year', fecha) DESC
                 `;
@@ -274,7 +307,7 @@ async function getVentasReport(req) {
                                 vcode_id as id
                             FROM public.vcodes
                             WHERE fecha = :fechaInicio 
-                                AND borrado IS FALSE${isDescontado ? '\n                                AND b_descontado IS TRUE' : ''}
+                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
                             ORDER BY vcode_id ASC
                         `;
                     } else {
@@ -308,7 +341,7 @@ async function getVentasReport(req) {
                             FROM public.vcodes
                             WHERE fecha >= :fechaInicio 
                                 AND fecha <= :fechaFin 
-                                AND borrado IS FALSE${isDescontado ? '\n                                AND b_descontado IS TRUE' : ''}
+                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
                             ORDER BY vcode_id ASC
                         `;
                     }
@@ -348,6 +381,8 @@ async function getVentasReport(req) {
             end_date: fechaFin,
             unit: unit,
             descontado: isDescontado,
+            reservado: isReservado,
+            credito: isCredito,
             period_days: period.days,
             period_months: period.months,
             period_years: period.years,
