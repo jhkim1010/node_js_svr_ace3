@@ -224,7 +224,7 @@ router.post('/', async (req, res) => {
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
         // tipos는 utime 비교가 필요하므로 utime 비교 핸들러 사용
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            req.body.operation = req.body.operation || 'UPDATE';
+            req.body.operation = req.body.operation || req.body.trigger_operation || 'UPDATE';
             const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Tipos, 'tpcodigo', 'Tipos');
             await notifyBatchSync(req, Tipos, result);
             return res.status(200).json(result);
