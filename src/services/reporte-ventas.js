@@ -76,23 +76,27 @@ async function getVentasReport(req) {
         port: 'unknown'
     };
 
+    // req.query와 req.body가 undefined일 수 있으므로 안전하게 처리
+    const query = req.query || {};
+    const body = req.body || {};
+    
     // 쿼리 파라미터 파싱 (날짜 범위)
-    const fechaInicio = req.query.fecha_inicio || req.query.start_date || req.query.fecha_desde;
-    const fechaFin = req.query.fecha_fin || req.query.end_date || req.query.fecha_hasta;
+    const fechaInicio = query.fecha_inicio || query.start_date || query.fecha_desde;
+    const fechaFin = query.fecha_fin || query.end_date || query.fecha_hasta;
     
     // unit 파라미터 파싱 (기본값: 'vcode')
-    const unit = req.query.unit || 'vcode';
+    const unit = query.unit || 'vcode';
     
     // descontado 파라미터 파싱 (체크박스 상태)
-    const descontado = req.query.descontado || req.body.descontado;
+    const descontado = query.descontado || body.descontado;
     const isDescontado = descontado === 'true' || descontado === true || descontado === '1' || descontado === 1;
     
     // reservado 파라미터 파싱 (체크박스 상태)
-    const reservado = req.query.reservado || req.body.reservado;
+    const reservado = query.reservado || body.reservado;
     const isReservado = reservado === 'true' || reservado === true || reservado === '1' || reservado === 1;
     
     // credito 파라미터 파싱 (체크박스 상태)
-    const credito = req.query.credito || req.body.credito;
+    const credito = query.credito || body.credito;
     const isCredito = credito === 'true' || credito === true || credito === '1' || credito === 1;
 
     // 날짜가 없으면 에러 반환
