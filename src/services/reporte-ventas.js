@@ -115,7 +115,7 @@ async function getVentasReport(req) {
     
     // unit이 'vcode'가 아닌 경우 (day, month, year) 직접 쿼리 실행
     // unit이 'vcode'이거나 없으면 PostgreSQL 함수 호출 시도
-    let query;
+    let sqlQuery;
     let queryParams;
     let data = [];
     let functionUsed = false;
@@ -236,17 +236,17 @@ async function getVentasReport(req) {
             let results;
             try {
                 // public 스키마에서 시도
-                query = `SELECT * FROM public.${functionName}($1::DATE, $2::DATE)`;
+                sqlQuery = `SELECT * FROM public.${functionName}($1::DATE, $2::DATE)`;
                 queryParams = [fechaInicio, fechaFin];
-                results = await sequelize.query(query, {
+                results = await sequelize.query(sqlQuery, {
                     bind: queryParams,
                     type: Sequelize.QueryTypes.SELECT
                 });
             } catch (schemaErr) {
                 // public 스키마 실패 시 스키마 없이 시도 (search_path 사용)
-                query = `SELECT * FROM ${functionName}($1::DATE, $2::DATE)`;
+                sqlQuery = `SELECT * FROM ${functionName}($1::DATE, $2::DATE)`;
                 queryParams = [fechaInicio, fechaFin];
-                results = await sequelize.query(query, {
+                results = await sequelize.query(sqlQuery, {
                     bind: queryParams,
                     type: Sequelize.QueryTypes.SELECT
                 });
