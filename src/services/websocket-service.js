@@ -215,21 +215,8 @@ function initializeWebSocket(server) {
             const clientId = info ? info.clientId : 'unknown';
             const dbKey = info ? info.dbKey : null;
             
-            // 연결 해제 코드 설명
-            const codeDescriptions = {
-                1000: 'Normal Closure',
-                1001: 'Going Away',
-                1002: 'Protocol Error',
-                1003: 'Unsupported Data',
-                1006: 'Abnormal Closure (no close frame)',
-                1007: 'Invalid Data',
-                1008: 'Policy Violation',
-                1009: 'Message Too Big',
-                1010: 'Extension Error',
-                1011: 'Internal Error'
-            };
-            
-            console.log(`[WebSocket] ❌ 클라이언트 연결 해제: id=${ws.id}, clientId=${clientId}, code=${code} (${codeDescriptions[code] || 'Unknown'}), reason=${reason || 'none'}`);
+            // 간단한 연결 해제 메시지
+            console.log(`[WebSocket] 클라이언트 연결 끊어짐: clientId=${clientId}`);
             
             // 연결 해제 시 데이터베이스 그룹에서 제거
             if (dbKey && dbClientGroups.has(dbKey)) {
@@ -239,7 +226,6 @@ function initializeWebSocket(server) {
                 if (group.size === 0) {
                     dbClientGroups.delete(dbKey);
                 }
-                console.log(`[WebSocket] 클라이언트 그룹에서 제거됨: dbKey=${dbKey}, 남은 클라이언트 수=${group.size}`);
             }
             
             // 클라이언트 정보 제거
