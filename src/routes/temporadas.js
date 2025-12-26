@@ -217,14 +217,59 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const Temporadas = getModelForRequest(req, 'Temporadas');
-        const cleanedData = removeSyncField(req.body);
-        const dataToCreate = filterModelFields(Temporadas, cleanedData);
         
-        const record = await Temporadas.create(dataToCreate);
-        await notifyDbChange(req, Temporadas, 'create', record);
-        res.status(201).json(record);
+        // BATCH_SYNC 작업 처리
+        // temporadas는 primary key 충돌 시 utime 비교를 통해 update/skip 결정
+        if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Temporadas, 'id_temporada', 'Temporadas');
+            await notifyBatchSync(req, Temporadas, result);
+            return res.status(200).json(result);
+        }
+        
+        // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도)
+        // temporadas는 utime 비교가 필요하므로 utime 비교 핸들러 사용
+        if (Array.isArray(req.body.data) && req.body.data.length > 0) {
+            req.body.operation = req.body.operation || req.body.trigger_operation || 'UPDATE';
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Temporadas, 'id_temporada', 'Temporadas');
+            await notifyBatchSync(req, Temporadas, result);
+            return res.status(200).json(result);
+        }
+        
+        // 배열 형태의 데이터 처리 (new_data 또는 req.body가 배열인 경우)
+        const rawData = req.body.new_data || req.body;
+        if (Array.isArray(rawData)) {
+            // 배열인 경우 utime 비교 핸들러 사용
+            req.body.data = rawData;
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Temporadas, 'id_temporada', 'Temporadas');
+            await notifyBatchSync(req, Temporadas, result);
+            return res.status(200).json(result);
+        }
+        
+        // 일반 단일 생성 요청 처리 (utime 비교 핸들러 사용)
+        // 단일 항목도 배열로 변환하여 utime 비교 핸들러 사용
+        req.body.data = [rawData];
+        const result = await handleUtimeComparisonArrayData(req, res, Temporadas, 'id_temporada', 'Temporadas');
+        const singleResult = result.results && result.results.length > 0 ? result.results[0] : null;
+        if (singleResult) {
+            await notifyDbChange(req, Temporadas, singleResult.action === 'created' ? 'create' : singleResult.action === 'updated' ? 'update' : 'skip', singleResult.data);
+            res.status(singleResult.action === 'created' ? 201 : singleResult.action === 'updated' ? 200 : 200).json(singleResult.data);
+            return;
+        }
+        throw new Error('Failed to process temporada');
     } catch (err) {
         handleInsertUpdateError(err, req, 'Temporadas', 'id_temporada', 'temporadas');
+        const errorResponse = buildDatabaseErrorResponse(err, req, 'create temporada');
+        
+        // Validation 에러인 경우 상세 정보 추가
+        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+            errorResponse.validationErrors = err.errors.map(e => ({
+                field: e.path,
+                message: e.message,
+                value: e.value
+            }));
+        }
+        
+        res.status(errorResponse.status || 500).json(errorResponse);
     }
 });
 
