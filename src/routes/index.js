@@ -21,6 +21,7 @@ const reporteRouter = require('./reporte');
 const fventasRouter = require('./fventas');
 const seniasVinculadosRouter = require('./senias_vinculados');
 const temporadasRouter = require('./temporadas');
+const cuentasRouter = require('./cuentas');
 
 const router = Router();
 
@@ -48,6 +49,7 @@ router.use('/reporte', reporteRouter);
 router.use('/fventas', fventasRouter);
 router.use('/senias_vinculados', seniasVinculadosRouter);
 router.use('/temporadas', temporadasRouter);
+router.use('/cuentas', cuentasRouter);
 
 module.exports = router;
 

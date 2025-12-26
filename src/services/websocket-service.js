@@ -57,7 +57,7 @@ function generateClientId() {
 const tables = [
     'vcodes', 'vdetalle', 'ingresos', 'codigos', 'todocodigos', 
     'parametros', 'gasto_info', 'gastos', 'color', 'creditoventas',
-    'clientes', 'tipos', 'vtags', 'online_ventas', 'logs'
+    'clientes', 'tipos', 'vtags', 'online_ventas', 'logs', 'temporadas', 'cuentas'
 ];
 
 // 각 테이블별 INSERT, UPDATE, DELETE 채널 생성
