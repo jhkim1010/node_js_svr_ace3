@@ -66,14 +66,19 @@ function logCombinedTiposTemporadas(dbName, tiposCount, temporadasCount) {
 
 router.get('/', async (req, res) => {
     try {
+        // req가 undefined일 수 있으므로 안전하게 처리
+        if (!req) {
+            return res.status(500).json({ error: 'Invalid request object' });
+        }
+        
         const Tipos = getModelForRequest(req, 'Tipos');
         
         // req.query와 req.body가 undefined일 수 있으므로 안전하게 처리
-        const query = req.query || {};
-        const body = req.body || {};
+        const query = (req && req.query) ? req.query : {};
+        const body = (req && req.body) ? req.body : {};
         
         // all 파라미터 확인 (모든 데이터 반환)
-        const all = query.all === 'true' || body.all === 'true';
+        const all = (query && query.all === 'true') || (body && body.all === 'true');
         
         if (all) {
             // 모든 데이터 반환 (borrado=false인 것만)
