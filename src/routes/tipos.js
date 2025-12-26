@@ -68,8 +68,12 @@ router.get('/', async (req, res) => {
     try {
         const Tipos = getModelForRequest(req, 'Tipos');
         
+        // req.query와 req.body가 undefined일 수 있으므로 안전하게 처리
+        const query = req.query || {};
+        const body = req.body || {};
+        
         // all 파라미터 확인 (모든 데이터 반환)
-        const all = req.query.all === 'true' || req.body.all === 'true';
+        const all = query.all === 'true' || body.all === 'true';
         
         if (all) {
             // 모든 데이터 반환 (borrado=false인 것만)
@@ -93,10 +97,10 @@ router.get('/', async (req, res) => {
         }
         
         // last_get_utime 파라미터 확인 (바디 또는 쿼리 파라미터)
-        const lastGetUtime = req.body?.last_get_utime || req.query?.last_get_utime;
+        const lastGetUtime = body.last_get_utime || query.last_get_utime;
         
         // 검색어 파라미터 확인
-        const filteringWord = req.body?.filtering_word || req.query?.filtering_word || req.body?.filteringWord || req.query?.filteringWord || req.body?.search || req.query?.search;
+        const filteringWord = body.filtering_word || query.filtering_word || body.filteringWord || query.filteringWord || body.search || query.search;
         
         let whereCondition = {};
         
@@ -170,8 +174,19 @@ router.get('/', async (req, res) => {
         
         res.json(responseData);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to list tipos', details: err.message });
+        console.error('[Tipos GET] 오류:', err);
+        console.error('[Tipos GET] 요청 정보:', {
+            method: req.method,
+            path: req.path,
+            query: req.query,
+            body: req.body,
+            hasDbConfig: !!req.dbConfig
+        });
+        res.status(500).json({ 
+            error: 'Failed to list tipos', 
+            details: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     }
 });
 
