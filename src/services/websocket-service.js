@@ -47,6 +47,15 @@ const clientInfo = new Map();
 // 클라이언트별 페이지네이션 큐 관리 (ws.id -> [{ table, operation, data, timestamp }, ...])
 const clientPaginationQueues = new Map();
 
+// 디바운싱 설정 (100ms)
+const DEBOUNCE_DELAY = 100; // milliseconds
+
+// 트리거 알림 디바운스 큐 관리: Map<`${dbKey}:${tableName}`, Array<알림데이터>>
+const triggerDebounceQueues = new Map();
+
+// 트리거 알림 디바운스 타이머 관리: Map<`${dbKey}:${tableName}`, NodeJS.Timeout>
+const triggerDebounceTimers = new Map();
+
 // 고유 ID 생성기
 let clientIdCounter = 0;
 function generateClientId() {
@@ -527,6 +536,81 @@ async function setupDbListener(host, port, database, user, password, ssl = false
         }
     }
 
+    // 트리거 알림 배치 전송 함수
+    function flushTriggerDebounceQueue(dbKey, tableName) {
+        const queueKey = `${dbKey}:${tableName}`;
+        const queue = triggerDebounceQueues.get(queueKey);
+        
+        if (!queue || queue.length === 0) {
+            return;
+        }
+        
+        // 큐에서 모든 알림 데이터 수집
+        const allPayloads = [];
+        let lastChannel = null;
+        let lastOperation = null;
+        const clientGroup = dbClientGroups.get(dbKey);
+        const connectedCount = clientGroup ? clientGroup.size : 0;
+        
+        // 큐의 모든 항목을 하나로 합치기
+        for (const item of queue) {
+            if (item.payload) {
+                try {
+                    const payload = typeof item.payload === 'string' ? JSON.parse(item.payload) : item.payload;
+                    if (Array.isArray(payload)) {
+                        allPayloads.push(...payload);
+                    } else {
+                        allPayloads.push(payload);
+                    }
+                } catch (e) {
+                    // 파싱 실패 시 원본 추가
+                    allPayloads.push(item.payload);
+                }
+            }
+            lastChannel = item.channel;
+            lastOperation = item.operation;
+        }
+        
+        // 큐와 타이머 정리
+        triggerDebounceQueues.delete(queueKey);
+        const timer = triggerDebounceTimers.get(queueKey);
+        if (timer) {
+            clearTimeout(timer);
+            triggerDebounceTimers.delete(queueKey);
+        }
+        
+        // 배치 알림 전송
+        if (allPayloads.length > 0 && connectedCount > 0) {
+            // 배치 알림 로그
+            if (tableName === 'codigos') {
+                const firstPayload = allPayloads[0] || {};
+                const codigo = firstPayload.codigo || 'N/A';
+                console.log(`\n🔔 [Codigos 트리거 배치 알림]`);
+                console.log(`   📋 테이블: ${tableName}`);
+                console.log(`   🔧 작업: BATCH_SYNC`);
+                console.log(`   📦 총 항목 수: ${allPayloads.length}개`);
+                console.log(`   🏷️  첫 번째 코드: ${codigo}`);
+                console.log(`   🗄️  데이터베이스: ${database}`);
+                console.log(`   👥 연결된 클라이언트: ${connectedCount}개`);
+                console.log(`   ⏰ 시간: ${new Date().toISOString()}`);
+                console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
+            } else {
+                console.log(`[WebSocket] DB Trigger Batch Notification - Table: ${tableName}, Items: ${allPayloads.length}개, dbKey: ${dbKey}, Connected clients: ${connectedCount}`);
+            }
+            
+            // 배치 알림 전송 (BATCH_SYNC로 표시)
+            broadcastToDbClients(key, null, {
+                channel: lastChannel,
+                table: tableName,
+                operation: 'BATCH_SYNC',
+                payload: JSON.stringify(allPayloads),
+                database: database,
+                host: host,
+                port: port
+            });
+        }
+    }
+
     // NOTIFY 이벤트 리스너
     client.on('notification', (msg) => {
         if (wss) {
@@ -556,39 +640,13 @@ async function setupDbListener(host, port, database, user, password, ssl = false
                 const clientGroup = dbClientGroups.get(key);
                 const connectedCount = clientGroup ? clientGroup.size : 0;
                 
-                // 연결된 클라이언트가 있는 경우에만 로그 출력
-                if (connectedCount > 0) {
-                    // codigos 테이블에 대한 상세 메시지 출력
-                    if (tableName === 'codigos') {
-                        try {
-                            const payload = msg.payload ? JSON.parse(msg.payload) : null;
-                            const codigo = payload?.codigo || 'N/A';
-                            const idCodigo = payload?.id_codigo || 'N/A';
-                            const descripcion = payload?.descripcion || 'N/A';
-                            const pre1 = payload?.pre1 !== undefined ? payload.pre1 : 'N/A';
-                            
-                            console.log(`\n🔔 [Codigos 트리거 발생]`);
-                            console.log(`   📋 테이블: ${tableName}`);
-                            console.log(`   🔧 작업: ${normalizedOperation}`);
-                            console.log(`   🏷️  코드: ${codigo}`);
-                            console.log(`   🆔 ID: ${idCodigo}`);
-                            console.log(`   📝 설명: ${descripcion}`);
-                            console.log(`   💰 가격1: ${pre1}`);
-                            console.log(`   🗄️  데이터베이스: ${database}`);
-                            console.log(`   📡 채널: ${msg.channel}`);
-                            console.log(`   👥 연결된 클라이언트: ${connectedCount}개`);
-                            console.log(`   ⏰ 시간: ${new Date().toISOString()}`);
-                            console.log(`   🔄 웹소켓 브로드캐스트 시작...\n`);
-                        } catch (parseErr) {
-                            console.log(`[WebSocket] DB Trigger Notification - Channel: ${msg.channel}, Table: ${tableName}, Operation: ${normalizedOperation}, dbKey: ${key}, Connected clients: ${connectedCount}`);
-                            console.log(`[WebSocket] ⚠️ Payload 파싱 실패: ${parseErr.message}`);
-                        }
-                    } else {
-                        console.log(`[WebSocket] DB Trigger Notification - Channel: ${msg.channel}, Table: ${tableName}, Operation: ${normalizedOperation}, dbKey: ${key}, Connected clients: ${connectedCount}`);
-                    }
+                // 디바운스 큐에 추가
+                const queueKey = `${key}:${tableName}`;
+                if (!triggerDebounceQueues.has(queueKey)) {
+                    triggerDebounceQueues.set(queueKey, []);
                 }
                 
-                broadcastToDbClients(key, null, {
+                triggerDebounceQueues.get(queueKey).push({
                     channel: msg.channel,
                     table: tableName,
                     operation: normalizedOperation,
@@ -597,8 +655,22 @@ async function setupDbListener(host, port, database, user, password, ssl = false
                     host: host,
                     port: port
                 });
+                
+                // 기존 타이머가 있으면 취소
+                const existingTimer = triggerDebounceTimers.get(queueKey);
+                if (existingTimer) {
+                    clearTimeout(existingTimer);
+                }
+                
+                // 새로운 타이머 설정
+                const timer = setTimeout(() => {
+                    flushTriggerDebounceQueue(key, tableName);
+                }, DEBOUNCE_DELAY);
+                
+                triggerDebounceTimers.set(queueKey, timer);
+                
             } else {
-                // 채널 형식이 예상과 다를 경우 원본 정보만 전달
+                // 채널 형식이 예상과 다를 경우 원본 정보만 전달 (디바운싱 없이 즉시 전송)
                 console.warn(`[WebSocket] Unexpected channel format: ${msg.channel}`);
                 broadcastToDbClients(key, null, {
                     channel: msg.channel,
