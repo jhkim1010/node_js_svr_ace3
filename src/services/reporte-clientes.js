@@ -1,88 +1,149 @@
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
 
+/**
+ * WHERE 조건을 동적으로 구성하는 함수
+ * @param {string} responsableIns - "Responsable Ins", "Monotributista", "Sin Rubro" 중 하나
+ * @param {string} provincia - 주 이름
+ * @param {string} filteringWord - 검색어
+ * @returns {string} WHERE 조건 문자열
+ */
+function buildWhereConditions(responsableIns, provincia, filteringWord) {
+    const conditions = ['c.borrado IS FALSE'];
+    
+    // Responsable Ins 필터
+    if (responsableIns) {
+        if (responsableIns === 'Responsable Ins') {
+            conditions.push('c.resiva = 0');
+        } else if (responsableIns === 'Monotributista') {
+            conditions.push('c.resiva = 1');
+        } else if (responsableIns === 'Sin Rubro') {
+            conditions.push('(c.resiva != 1 AND c.resiva = 0)');
+        }
+    }
+    
+    // Provincia 필터
+    if (provincia) {
+        // SQL injection 방지를 위해 이스케이프 처리
+        const escapedProvincia = provincia.replace(/'/g, "''");
+        conditions.push(`c.provincia = '${escapedProvincia}'`);
+    }
+    
+    // Filtering Word 검색
+    if (filteringWord) {
+        const escapedWord = filteringWord.replace(/'/g, "''");
+        conditions.push(`(c.nombre LIKE '%${escapedWord}%' OR c.dni LIKE '%${escapedWord}%' OR c.memo LIKE '%${escapedWord}%' OR c.direccion LIKE '%${escapedWord}%' OR c.telefono LIKE '%${escapedWord}%')`);
+    }
+    
+    return conditions.join(' AND ');
+}
+
+/**
+ * HAVING 조건을 구성하는 함수
+ * @param {boolean} deudores - deudores 필터 여부
+ * @returns {string} HAVING 조건 문자열 또는 빈 문자열
+ */
+function buildHavingCondition(deudores) {
+    if (deudores) {
+        return 'HAVING COALESCE(SUM(cr.cretmp), 0) > 0';
+    }
+    return '';
+}
+
 async function getClientesReport(req) {
     const Clientes = getModelForRequest(req, 'Clientes');
     const sequelize = Clientes.sequelize;
 
     // 쿼리 파라미터 파싱
-    const dni = req.query.dni || null;
-    const nombre = req.query.nombre || null;
-    const localidad = req.query.localidad || null;
+    const responsableIns = req.query.responsable_ins || null;
     const provincia = req.query.provincia || null;
-    const borrado = req.query.borrado === 'true' ? true : (req.query.borrado === 'false' ? false : null);
+    const deudores = req.query.deudores === '1' || req.query.deudores === 1 || req.query.deudores === 'true' || req.query.deudores === true;
+    const filteringWord = req.query.filtering_word || null;
 
-    // 필터 조건 구성
-    const whereConditions = {};
-    if (dni) whereConditions.dni = { [Sequelize.Op.like]: `%${dni}%` };
-    if (nombre) whereConditions.nombre = { [Sequelize.Op.like]: `%${nombre}%` };
-    if (localidad) whereConditions.localidad = { [Sequelize.Op.like]: `%${localidad}%` };
-    if (provincia) whereConditions.provincia = { [Sequelize.Op.like]: `%${provincia}%` };
-    if (borrado !== null) whereConditions.borrado = borrado;
+    // WHERE 조건 구성
+    const whereConditions = buildWhereConditions(responsableIns, provincia, filteringWord);
+    
+    // HAVING 조건 구성
+    const havingCondition = buildHavingCondition(deudores);
 
-    // 고객 조회
-    const clientes = await Clientes.findAll({
-        where: whereConditions,
-        order: [['nombre', 'ASC']],
-        limit: req.query.limit ? parseInt(req.query.limit, 10) : 1000,
-        raw: true
-    });
+    // SQL 쿼리 구성
+    const sqlQuery = `
+        SELECT 
+            c.dni, 
+            c.nombre, 
+            c.vendedor, 
+            c.direccion, 
+            c.localidad, 
+            c.provincia, 
+            c.telefono, 
+            COALESCE(SUM(cr.cretmp), 0) AS totaldeuda, 
+            COALESCE(MAX(v.fecha), NULL) AS last_buy_date, 
+            c.memo 
+        FROM clientes c 
+        LEFT JOIN creditoventas cr
+            ON c.dni = cr.dni AND cr.borrado IS FALSE 
+        LEFT JOIN vcodes v 
+            ON c.id = v.ref_id_cliente AND v.borrado IS FALSE 
+        WHERE ${whereConditions}
+        GROUP BY c.dni, c.nombre, c.vendedor, c.direccion, c.localidad, c.provincia, c.telefono, c.memo
+        ${havingCondition}
+        ORDER BY c.nombre ASC
+    `;
 
-    // 집계 정보
-    const totalClientes = await Clientes.count({ where: whereConditions });
-    const activeClientes = await Clientes.count({ where: { ...whereConditions, borrado: false } });
-    const deletedClientes = await Clientes.count({ where: { ...whereConditions, borrado: true } });
+    // 쿼리 실행
+    let clientes = [];
+    try {
+        const results = await sequelize.query(sqlQuery, {
+            type: Sequelize.QueryTypes.SELECT
+        });
+        clientes = Array.isArray(results) ? results : [];
+    } catch (err) {
+        console.error('[Clientes 보고서] 쿼리 실행 실패:');
+        console.error('   Error:', err.message);
+        console.error('   SQL:', sqlQuery);
+        throw err;
+    }
 
-    // 총 부채 통계
-    const deudaStats = await Clientes.findAll({
-        attributes: [
-            [sequelize.fn('SUM', sequelize.col('deuda')), 'total_deuda'],
-            [sequelize.fn('AVG', sequelize.col('deuda')), 'avg_deuda'],
-            [sequelize.fn('COUNT', sequelize.literal('CASE WHEN deuda > 0 THEN 1 END')), 'clientes_con_deuda']
-        ],
-        where: { ...whereConditions, borrado: false },
-        raw: true
-    });
+    // 집계 정보 계산
+    const totalClientes = clientes.length;
+    const clientesConDeuda = clientes.filter(c => parseFloat(c.totaldeuda || 0) > 0).length;
+    const totalDeuda = clientes.reduce((sum, c) => sum + parseFloat(c.totaldeuda || 0), 0);
+    const avgDeuda = totalClientes > 0 ? totalDeuda / totalClientes : 0;
 
     // 지역별 통계
-    const localidadStats = await Clientes.findAll({
-        attributes: [
-            'localidad',
-            [sequelize.fn('COUNT', sequelize.col('*')), 'count']
-        ],
-        where: { ...whereConditions, borrado: false },
-        group: ['localidad'],
-        order: [[sequelize.fn('COUNT', sequelize.col('*')), 'DESC']],
-        limit: 10,
-        raw: true
+    const provinciaStatsMap = {};
+    clientes.forEach(c => {
+        const prov = c.provincia || 'Sin Provincia';
+        provinciaStatsMap[prov] = (provinciaStatsMap[prov] || 0) + 1;
     });
+    const provinciaStats = Object.entries(provinciaStatsMap)
+        .map(([provincia, count]) => ({ provincia, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
 
-    // 지역별 통계
-    const provinciaStats = await Clientes.findAll({
-        attributes: [
-            'provincia',
-            [sequelize.fn('COUNT', sequelize.col('*')), 'count']
-        ],
-        where: { ...whereConditions, borrado: false },
-        group: ['provincia'],
-        order: [[sequelize.fn('COUNT', sequelize.col('*')), 'DESC']],
-        limit: 10,
-        raw: true
+    // Localidad별 통계
+    const localidadStatsMap = {};
+    clientes.forEach(c => {
+        const loc = c.localidad || 'Sin Localidad';
+        localidadStatsMap[loc] = (localidadStatsMap[loc] || 0) + 1;
     });
+    const localidadStats = Object.entries(localidadStatsMap)
+        .map(([localidad, count]) => ({ localidad, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
 
     return {
         filters: {
-            dni: dni || 'all',
-            nombre: nombre || 'all',
-            localidad: localidad || 'all',
+            responsable_ins: responsableIns || 'all',
             provincia: provincia || 'all',
-            borrado: borrado !== null ? borrado : 'all'
+            deudores: deudores,
+            filtering_word: filteringWord || 'all'
         },
         summary: {
             total_clientes: totalClientes,
-            active_clientes: activeClientes,
-            deleted_clientes: deletedClientes,
-            deuda_statistics: deudaStats[0] || {},
+            clientes_con_deuda: clientesConDeuda,
+            total_deuda: totalDeuda,
+            avg_deuda: avgDeuda,
             top_localidades: localidadStats,
             top_provincias: provinciaStats
         },
