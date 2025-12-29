@@ -67,6 +67,36 @@ function buildHavingCondition(deudores) {
     return '';
 }
 
+/**
+ * ORDER BY 절을 구성하는 함수
+ * @param {string} sortColumn - 정렬할 컬럼명
+ * @param {boolean} sortAscending - true면 오름차순(ASC), false면 내림차순(DESC)
+ * @returns {string} ORDER BY 절 문자열
+ */
+function buildOrderByClause(sortColumn, sortAscending) {
+    // 허용된 정렬 컬럼 목록 (SQL injection 방지)
+    const allowedColumns = {
+        'dni': 'c.dni',
+        'nombre': 'c.nombre',
+        'vendedor': 'c.vendedor',
+        'direccion': 'c.direccion',
+        'localidad': 'c.localidad',
+        'provincia': 'c.provincia',
+        'telefono': 'c.telefono',
+        'cntOperation': 'COUNT(v.vcode)',
+        'totalImporte_Compra': 'COALESCE(SUM(v.tpago), 0)',
+        'totaldeuda': 'COALESCE(SUM(cr.cretmp), 0)',
+        'last_buy_date': 'COALESCE(MAX(v.fecha), NULL)',
+        'memo': 'c.memo'
+    };
+
+    // 기본값: totalImporte_Compra 내림차순
+    const column = allowedColumns[sortColumn] || allowedColumns['totalImporte_Compra'];
+    const direction = sortAscending ? 'ASC' : 'DESC';
+
+    return `ORDER BY ${column} ${direction}`;
+}
+
 async function getClientesReport(req) {
     const Clientes = getModelForRequest(req, 'Clientes');
     const sequelize = Clientes.sequelize;
@@ -95,6 +125,12 @@ async function getClientesReport(req) {
         }
     }
 
+    // 정렬 파라미터 파싱 (기본값: totalImporte_Compra 내림차순)
+    const sortColumn = req.query.sort_column || 'totalImporte_Compra';
+    // sort_ascending이 명시되지 않으면 기본값은 false (내림차순)
+    const sortAscending = req.query.sort_ascending !== undefined && 
+        (req.query.sort_ascending === '1' || req.query.sort_ascending === 1 || req.query.sort_ascending === 'true' || req.query.sort_ascending === true);
+
     // 날짜 조건 구성
     const dateCondition = buildDateCondition(fechaInicio, fechaFin);
     
@@ -103,6 +139,9 @@ async function getClientesReport(req) {
     
     // HAVING 조건 구성
     const havingCondition = buildHavingCondition(deudores);
+    
+    // ORDER BY 절 구성
+    const orderByClause = buildOrderByClause(sortColumn, sortAscending);
 
     // 총 개수를 구하는 쿼리
     const countQuery = `
@@ -143,7 +182,7 @@ async function getClientesReport(req) {
         WHERE ${whereConditions}
         GROUP BY c.dni, c.nombre, c.vendedor, c.direccion, c.localidad, c.provincia, c.telefono, c.memo
         ${havingCondition}
-        ORDER BY c.nombre ASC
+        ${orderByClause}
         LIMIT ${limit} OFFSET ${offset}
     `;
 
@@ -210,7 +249,9 @@ async function getClientesReport(req) {
             responsable_ins: responsableIns || 'all',
             provincia: provincia || 'all',
             deudores: deudores,
-            filtering_word: filteringWord || 'all'
+            filtering_word: filteringWord || 'all',
+            sort_column: sortColumn,
+            sort_ascending: sortAscending
         },
         summary: {
             total_clientes: totalCount,
