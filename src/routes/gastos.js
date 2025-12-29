@@ -165,13 +165,13 @@ router.get('/', async (req, res) => {
             ? 'WHERE ' + sqlWhereConditions.join(' AND ')
             : '';
         
-        // Rubro별 집계 쿼리 실행
+        // Rubro별 집계 쿼리 실행 (PostgreSQL에서 대소문자 유지를 위해 따옴표 사용)
         const rubroSummaryQuery = `
             SELECT 
-                COUNT(*) as cntEvento,
-                MAX(gi.desc_gasto) as descripcion_rubro,
-                SUM(g.costo) as total_Gasto,
-                LEFT(g.codigo, 1) as codigo_rubro
+                COUNT(*) as "cntEvento",
+                MAX(gi.desc_gasto) as "descripcion_rubro",
+                SUM(g.costo) as "total_Gasto",
+                LEFT(g.codigo, 1) as "codigo_rubro"
             FROM gastos g
             INNER JOIN gasto_info gi 
                 ON gi.codigo = LEFT(g.codigo, 1)
@@ -186,7 +186,17 @@ router.get('/', async (req, res) => {
                 bind: sqlParams.length > 0 ? sqlParams : undefined,
                 type: Sequelize.QueryTypes.SELECT
             });
-            rubroSummary = Array.isArray(rubroResults) ? rubroResults : [];
+            
+            // 필드명을 정확한 대소문자로 변환 (PostgreSQL이 소문자로 변환하는 경우 대비)
+            rubroSummary = Array.isArray(rubroResults) ? rubroResults.map(item => {
+                // 다양한 가능한 필드명 변형 처리
+                return {
+                    cntEvento: item.cntEvento || item.cntevento || item.cnt_evento || 0,
+                    descripcion_rubro: item.descripcion_rubro || item.descripcionrubro || item.descripcionRubro || '',
+                    total_Gasto: item.total_Gasto || item.total_gasto || item.totalGasto || 0,
+                    codigo_rubro: item.codigo_rubro || item.codigorubro || item.codigoRubro || ''
+                };
+            }) : [];
         } catch (rubroErr) {
             console.error('[Gastos] Rubro summary query error:', rubroErr.message);
             // rubro 집계 오류가 있어도 세부 내역은 반환
