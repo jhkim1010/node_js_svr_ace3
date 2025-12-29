@@ -23,6 +23,27 @@ async function getIngresosReport(req) {
         throw new Error('fecha_inicio and fecha_fin are required');
     }
 
+    // WHERE 조건 구성
+    let whereConditions = [
+        'fecha BETWEEN $1 AND $2',
+        'borrado IS FALSE',
+        'i.b_autoagregado IS FALSE'
+    ];
+    const queryParams = [startDate, endDate];
+    let paramIndex = 3;
+
+    // filteringWord 검색 조건 추가 (대소문자 구분 없음)
+    if (filteringWord && filteringWord.trim()) {
+        const searchTerm = `%${filteringWord.trim()}%`;
+        // SQL injection 방지를 위해 이스케이프 처리
+        const escapedWord = filteringWord.trim().replace(/'/g, "''");
+        whereConditions.push(`(codigo ILIKE $${paramIndex} OR desc3 ILIKE $${paramIndex})`);
+        queryParams.push(searchTerm);
+        paramIndex++;
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+
     // 사용자가 제공한 쿼리 형식 사용
     const query = `
         SELECT 
@@ -33,16 +54,14 @@ async function getIngresosReport(req) {
             MAX(i.ref_id_codigo) as id_codigo,
             sucursal
         FROM ingresos i
-        WHERE fecha BETWEEN $1 AND $2 
-            AND borrado IS FALSE 
-            AND i.b_autoagregado IS FALSE
+        WHERE ${whereClause}
         GROUP BY codigo, sucursal
         ORDER BY codigo ASC, sucursal ASC
     `;
 
     // SQL 쿼리 실행
     const results = await sequelize.query(query, {
-        bind: [startDate, endDate],
+        bind: queryParams,
         type: Sequelize.QueryTypes.SELECT
     });
 
