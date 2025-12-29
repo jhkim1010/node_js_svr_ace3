@@ -118,6 +118,80 @@ router.get('/', async (req, res) => {
             whereConditions.push({ id_ga: { [Op.gt]: idGa } });
         }
         
+        // WHERE 조건을 SQL 문자열로 변환 (rubro별 집계 쿼리용)
+        let sqlWhereConditions = [];
+        const sqlParams = [];
+        let paramIndex = 1;
+        
+        // 날짜 필터링 (SQL)
+        if (fecha) {
+            sqlWhereConditions.push(`DATE(g.fecha) = $${paramIndex}`);
+            sqlParams.push(fecha);
+            paramIndex++;
+        } else if (fechaInicio) {
+            sqlWhereConditions.push(`DATE(g.fecha) >= $${paramIndex}`);
+            sqlParams.push(fechaInicio);
+            paramIndex++;
+            if (fechaFin) {
+                sqlWhereConditions.push(`DATE(g.fecha) <= $${paramIndex}`);
+                sqlParams.push(fechaFin);
+                paramIndex++;
+            }
+        }
+        
+        // 삭제되지 않은 항목만
+        sqlWhereConditions.push('g.borrado IS FALSE');
+        
+        // sucursal 필터링
+        if (sucursal) {
+            const sucursalNum = parseInt(sucursal, 10);
+            if (!isNaN(sucursalNum)) {
+                sqlWhereConditions.push(`g.sucursal = $${paramIndex}`);
+                sqlParams.push(sucursalNum);
+                paramIndex++;
+            }
+        }
+        
+        // filtering_word 검색 조건
+        if (filteringWord && filteringWord.trim()) {
+            const searchTerm = `%${filteringWord.trim()}%`;
+            // 같은 파라미터를 3번 사용 (PostgreSQL에서 지원)
+            sqlWhereConditions.push(`(g.tema ILIKE $${paramIndex} OR g.codigo ILIKE $${paramIndex} OR g.nencargado ILIKE $${paramIndex})`);
+            sqlParams.push(searchTerm);
+            paramIndex++;
+        }
+        
+        const sqlWhereClause = sqlWhereConditions.length > 0 
+            ? 'WHERE ' + sqlWhereConditions.join(' AND ')
+            : '';
+        
+        // Rubro별 집계 쿼리 실행
+        const rubroSummaryQuery = `
+            SELECT 
+                COUNT(*) as cntEvento,
+                MAX(gi.desc_gasto) as descripcion_rubro,
+                SUM(g.costo) as total_Gasto,
+                LEFT(g.codigo, 1) as codigo_rubro
+            FROM gastos g
+            INNER JOIN gasto_info gi 
+                ON gi.codigo = LEFT(g.codigo, 1)
+            ${sqlWhereClause}
+            GROUP BY LEFT(g.codigo, 1)
+            ORDER BY LEFT(g.codigo, 1)
+        `;
+        
+        let rubroSummary = [];
+        try {
+            const rubroResults = await sequelize.query(rubroSummaryQuery, {
+                bind: sqlParams.length > 0 ? sqlParams : undefined,
+                type: Sequelize.QueryTypes.SELECT
+            });
+            rubroSummary = Array.isArray(rubroResults) ? rubroResults : [];
+        } catch (rubroErr) {
+            console.error('[Gastos] Rubro summary query error:', rubroErr.message);
+            // rubro 집계 오류가 있어도 세부 내역은 반환
+        }
+        
         // 총 데이터 개수 조회
         const totalCount = await Gastos.count({ 
             where: {
@@ -150,7 +224,8 @@ router.get('/', async (req, res) => {
         
         // 페이지네이션 정보와 함께 응답
         const responseData = {
-            data: data,
+            summary_by_rubro: rubroSummary, // rubro별 집계 결과
+            data: data, // 세부 내역
             pagination: {
                 count: data.length,
                 total: totalCount,
