@@ -940,18 +940,15 @@ function getConnectedClientCount(dbKey, excludeClientId = null) {
         return 0;
     }
     
-    // 등록된 모든 dbKey 출력 (디버깅)
-    if (dbClientGroups.size > 0) {
-        const allDbKeys = Array.from(dbClientGroups.keys());
-        console.log(`[WebSocket] All registered dbKeys:`, allDbKeys);
-    }
-    
     const clientGroup = dbClientGroups.get(dbKey);
     if (!clientGroup || clientGroup.size === 0) {
-        console.log(`[WebSocket] getConnectedClientCount: No client group found for dbKey(${dbKey}). Please check if it matches the registered dbKey.`);
+        // 클라이언트가 없을 때는 로그를 출력하지 않음
         return 0;
     }
     
+    // 클라이언트가 있을 때만 로그 출력
+    const allDbKeys = Array.from(dbClientGroups.keys());
+    console.log(`[WebSocket] All registered dbKeys:`, allDbKeys);
     console.log(`[WebSocket] getConnectedClientCount: ${clientGroup.size} sockets registered for dbKey(${dbKey})`);
     
     // excludeClientId가 제공된 경우 해당 클라이언트를 제외한 개수 계산
