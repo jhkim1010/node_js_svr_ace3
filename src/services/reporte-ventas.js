@@ -6,9 +6,10 @@ const { Sequelize } = require('sequelize');
  * @param {boolean} isDescontado - descontado 필터 여부
  * @param {boolean} isReservado - reservado 필터 여부
  * @param {boolean} isCredito - credito 필터 여부
+ * @param {string} dni - dni 필터 (선택사항)
  * @returns {string} SQL WHERE 조건 문자열
  */
-function buildAdditionalFilters(isDescontado, isReservado, isCredito) {
+function buildAdditionalFilters(isDescontado, isReservado, isCredito, dni = null) {
     const conditions = [];
     
     if (isDescontado) {
@@ -21,6 +22,12 @@ function buildAdditionalFilters(isDescontado, isReservado, isCredito) {
     
     if (isCredito) {
         conditions.push('AND (b_endeudando IS TRUE OR b_deudapago IS TRUE)');
+    }
+    
+    if (dni) {
+        // SQL injection 방지를 위해 이스케이프 처리
+        const escapedDni = dni.replace(/'/g, "''");
+        conditions.push(`AND dni = '${escapedDni}'`);
     }
     
     return conditions.length > 0 ? '\n                        ' + conditions.join('\n                        ') : '';
@@ -98,6 +105,9 @@ async function getVentasReport(req) {
     // credito 파라미터 파싱 (체크박스 상태)
     const credito = query.credito || body.credito;
     const isCredito = credito === 'true' || credito === true || credito === '1' || credito === 1;
+    
+    // dni 파라미터 파싱 (선택사항)
+    const dni = query.dni || body.dni || null;
 
     // 날짜가 없으면 에러 반환
     if (!fechaInicio || !fechaFin) {
@@ -146,7 +156,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado = false
-                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
+                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni)}
                     GROUP BY fecha, sucursal
                     ORDER BY fecha DESC
                 `;
@@ -168,7 +178,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
-                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
+                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni)}
                     GROUP BY DATE_TRUNC('month', fecha), sucursal
                     ORDER BY DATE_TRUNC('month', fecha) DESC
                 `;
@@ -190,7 +200,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
-                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
+                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni)}
                     GROUP BY DATE_TRUNC('year', fecha), sucursal
                     ORDER BY DATE_TRUNC('year', fecha) DESC
                 `;
@@ -313,7 +323,7 @@ async function getVentasReport(req) {
                                 vcode_id as id
                             FROM public.vcodes
                             WHERE fecha = :fechaInicio 
-                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
+                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni)}
                             ORDER BY vcode_id ASC
                         `;
                     } else {
@@ -347,7 +357,7 @@ async function getVentasReport(req) {
                             FROM public.vcodes
                             WHERE fecha >= :fechaInicio 
                                 AND fecha <= :fechaFin 
-                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito)}
+                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni)}
                             ORDER BY vcode_id ASC
                         `;
                     }

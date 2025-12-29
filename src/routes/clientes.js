@@ -8,6 +8,7 @@ const { handleInsertUpdateError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 const { validateTableAndSchema, logTableAndSchema } = require('../utils/table-schema-validator');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
+const { getVentasReport } = require('../services/reporte-ventas');
 
 const router = Router();
 
@@ -91,6 +92,71 @@ router.get('/', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to list clientes', details: err.message });
+    }
+});
+
+// 클라이언트 상세 정보 및 구매 이력 조회
+router.get('/detail', async (req, res) => {
+    const cuit = req.query.cuit;
+    if (!cuit) {
+        return res.status(400).json({ error: 'cuit parameter is required' });
+    }
+    
+    try {
+        const Clientes = getModelForRequest(req, 'Clientes');
+        
+        // 클라이언트 정보 조회 (dni로 검색)
+        const cliente = await Clientes.findOne({
+            where: { dni: cuit, borrado: false }
+        });
+        
+        if (!cliente) {
+            return res.status(404).json({ error: 'Cliente not found' });
+        }
+        
+        // 구매 이력 조회 (ventas 보고서)
+        // 날짜 범위가 없으면 최근 10년간의 데이터를 조회
+        const today = new Date();
+        const tenYearsAgo = new Date();
+        tenYearsAgo.setFullYear(today.getFullYear() - 10);
+        
+        const fechaInicio = req.query.fecha_inicio || tenYearsAgo.toISOString().split('T')[0];
+        const fechaFin = req.query.fecha_fin || today.toISOString().split('T')[0];
+        
+        // ventas 보고서 요청을 위한 req 객체 준비
+        const ventasReq = {
+            ...req,
+            query: {
+                ...req.query,
+                fecha_inicio: fechaInicio,
+                fecha_fin: fechaFin,
+                dni: cuit // dni 필터 추가
+            }
+        };
+        
+        let ventasData = null;
+        try {
+            ventasData = await getVentasReport(ventasReq);
+        } catch (ventasErr) {
+            console.error('[Cliente Detail] Ventas report error:', ventasErr.message);
+            // ventas 보고서 오류가 있어도 클라이언트 정보는 반환
+            ventasData = {
+                error: 'Failed to fetch ventas report',
+                details: ventasErr.message,
+                data: []
+            };
+        }
+        
+        res.json({
+            cliente: cliente,
+            compra_historial: ventasData
+        });
+    } catch (err) {
+        console.error('[Cliente Detail] Error:', err);
+        res.status(500).json({ 
+            error: 'Failed to fetch cliente detail', 
+            details: err.message 
+        });
     }
 });
 
