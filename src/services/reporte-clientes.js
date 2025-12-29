@@ -79,6 +79,22 @@ async function getClientesReport(req) {
     const deudores = req.query.deudores === '1' || req.query.deudores === 1 || req.query.deudores === 'true' || req.query.deudores === true;
     const filteringWord = req.query.filtering_word || null;
 
+    // 페이지네이션 파라미터 (기본값: limit=200, offset=0)
+    let limit = 200;
+    let offset = 0;
+    if (req.query.limit) {
+        const limitNum = parseInt(req.query.limit, 10);
+        if (!isNaN(limitNum) && limitNum > 0 && limitNum <= 1000) {
+            limit = limitNum;
+        }
+    }
+    if (req.query.offset) {
+        const offsetNum = parseInt(req.query.offset, 10);
+        if (!isNaN(offsetNum) && offsetNum >= 0) {
+            offset = offsetNum;
+        }
+    }
+
     // 날짜 조건 구성
     const dateCondition = buildDateCondition(fechaInicio, fechaFin);
     
@@ -88,7 +104,23 @@ async function getClientesReport(req) {
     // HAVING 조건 구성
     const havingCondition = buildHavingCondition(deudores);
 
-    // SQL 쿼리 구성
+    // 총 개수를 구하는 쿼리
+    const countQuery = `
+        SELECT COUNT(*) as total
+        FROM (
+            SELECT c.dni
+            FROM clientes c 
+            LEFT JOIN creditoventas cr
+                ON c.dni = cr.dni AND cr.borrado IS FALSE 
+            LEFT JOIN vcodes v 
+                ON c.id = v.ref_id_cliente AND v.borrado IS FALSE AND ${dateCondition}
+            WHERE ${whereConditions}
+            GROUP BY c.dni, c.nombre, c.vendedor, c.direccion, c.localidad, c.provincia, c.telefono, c.memo
+            ${havingCondition}
+        ) AS subquery
+    `;
+
+    // 데이터 조회 쿼리
     const sqlQuery = `
         SELECT 
             c.dni, 
@@ -112,11 +144,20 @@ async function getClientesReport(req) {
         GROUP BY c.dni, c.nombre, c.vendedor, c.direccion, c.localidad, c.provincia, c.telefono, c.memo
         ${havingCondition}
         ORDER BY c.nombre ASC
+        LIMIT ${limit} OFFSET ${offset}
     `;
 
     // 쿼리 실행
     let clientes = [];
+    let totalCount = 0;
     try {
+        // 총 개수 조회
+        const countResults = await sequelize.query(countQuery, {
+            type: Sequelize.QueryTypes.SELECT
+        });
+        totalCount = countResults && countResults[0] ? parseInt(countResults[0].total, 10) : 0;
+
+        // 데이터 조회
         const results = await sequelize.query(sqlQuery, {
             type: Sequelize.QueryTypes.SELECT
         });
@@ -124,17 +165,18 @@ async function getClientesReport(req) {
     } catch (err) {
         console.error('[Clientes 보고서] 쿼리 실행 실패:');
         console.error('   Error:', err.message);
-        console.error('   SQL:', sqlQuery);
+        console.error('   Count SQL:', countQuery);
+        console.error('   Data SQL:', sqlQuery);
         throw err;
     }
 
-    // 집계 정보 계산
-    const totalClientes = clientes.length;
+    // 집계 정보 계산 (현재 페이지의 데이터 기준)
+    const pageClientes = clientes.length;
     const clientesConDeuda = clientes.filter(c => parseFloat(c.totaldeuda || 0) > 0).length;
     const totalDeuda = clientes.reduce((sum, c) => sum + parseFloat(c.totaldeuda || 0), 0);
-    const avgDeuda = totalClientes > 0 ? totalDeuda / totalClientes : 0;
+    const avgDeuda = pageClientes > 0 ? totalDeuda / pageClientes : 0;
 
-    // 지역별 통계
+    // 지역별 통계 (현재 페이지 기준)
     const provinciaStatsMap = {};
     clientes.forEach(c => {
         const prov = c.provincia || 'Sin Provincia';
@@ -145,7 +187,7 @@ async function getClientesReport(req) {
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 
-    // Localidad별 통계
+    // Localidad별 통계 (현재 페이지 기준)
     const localidadStatsMap = {};
     clientes.forEach(c => {
         const loc = c.localidad || 'Sin Localidad';
@@ -155,6 +197,11 @@ async function getClientesReport(req) {
         .map(([localidad, count]) => ({ localidad, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
+
+    // 페이지네이션 정보 계산
+    const hasMore = offset + limit < totalCount;
+    const totalPages = Math.ceil(totalCount / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
 
     return {
         filters: {
@@ -166,12 +213,22 @@ async function getClientesReport(req) {
             filtering_word: filteringWord || 'all'
         },
         summary: {
-            total_clientes: totalClientes,
+            total_clientes: totalCount,
+            page_clientes: pageClientes,
             clientes_con_deuda: clientesConDeuda,
             total_deuda: totalDeuda,
             avg_deuda: avgDeuda,
             top_localidades: localidadStats,
             top_provincias: provinciaStats
+        },
+        pagination: {
+            total: totalCount,
+            count: pageClientes,
+            limit: limit,
+            offset: offset,
+            current_page: currentPage,
+            total_pages: totalPages,
+            has_more: hasMore
         },
         data: clientes
     };
