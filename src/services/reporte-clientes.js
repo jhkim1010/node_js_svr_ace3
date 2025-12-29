@@ -49,7 +49,7 @@ function buildWhereConditions(responsableIns, provincia, filteringWord) {
     // Filtering Word 검색 (대소문자 구분 없음)
     if (filteringWord) {
         const escapedWord = filteringWord.replace(/'/g, "''");
-        conditions.push(`(c.nombre ILIKE '%${escapedWord}%' OR c.dni ILIKE '%${escapedWord}%' OR c.memo ILIKE '%${escapedWord}%' OR c.direccion ILIKE '%${escapedWord}%' OR c.telefono ILIKE '%${escapedWord}%')`);
+        conditions.push(`(c.nombre ILIKE '%${escapedWord}%' OR c.dni ILIKE '%${escapedWord}%' OR c.memo ILIKE '%${escapedWord}%' OR c.direccion ILIKE '%${escapedWord}%' OR c.telefono ILIKE '%${escapedWord}%' OR c.localidad ILIKE '%${escapedWord}%')`);
     }
     
     return conditions.join(' AND ');
