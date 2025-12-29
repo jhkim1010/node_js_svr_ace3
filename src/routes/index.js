@@ -39,6 +39,7 @@ router.use('/gastos', gastosRouter);
 router.use('/color', colorRouter);
 router.use('/creditoventas', creditoventasRouter);
 router.use('/clientes', clientesRouter);
+router.use('/cliente', clientesRouter); // 단수형 라우트 추가 (클라이언트 호환성)
 router.use('/tipos', tiposRouter);
 router.use('/vtags', vtagsRouter);
 router.use('/online_ventas', onlineVentasRouter);
