@@ -373,8 +373,8 @@ async function notifyBatchSync(req, Model, result) {
             // 동일한 데이터베이스에 연결된 다른 클라이언트 개수 조회
             const connectedClientCount = getConnectedClientCount(dbKey, clientId || null);
             
-            // 연결된 클라이언트가 있는 경우에만 로그 출력
-            if (connectedClientCount > 0) {
+            // 연결된 클라이언트가 2개 이상일 때만 로그 출력
+            if (connectedClientCount >= 2) {
                 // codigos, todocodigos 테이블에 대한 상세 메시지 출력 (API를 통한 BATCH_SYNC 알림)
                 if (tableName === 'codigos' || tableName === 'todocodigos') {
                     const totalItems = successData.length;
