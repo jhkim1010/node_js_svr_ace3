@@ -28,6 +28,9 @@ router.get('/', async (req, res) => {
         // sucursal 파라미터 확인
         const sucursal = query.sucursal || body.sucursal;
         
+        // rubro 파라미터 확인 (codigo 필터링용)
+        const rubro = query.rubro || body.rubro;
+        
         // 검색어 파라미터 확인
         const filteringWord = query.filtering_word || query.filteringWord || body.filtering_word || body.filteringWord || query.search || body.search;
         
@@ -95,6 +98,16 @@ router.get('/', async (req, res) => {
             if (!isNaN(sucursalNum)) {
                 whereConditions.push({ sucursal: sucursalNum });
             }
+        }
+        
+        // rubro 필터링 추가 (codigo가 특정 문자로 시작하는 경우)
+        if (rubro && rubro.trim()) {
+            const rubroValue = rubro.trim();
+            // SQL injection 방지를 위해 이스케이프 처리
+            const escapedRubro = rubroValue.replace(/'/g, "''");
+            whereConditions.push({
+                codigo: { [Op.like]: `${escapedRubro}%` }
+            });
         }
         
         // filtering_word 검색 조건 추가 (tema, codigo, nencargado에서 검색)
