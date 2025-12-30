@@ -31,7 +31,7 @@ async function getItemsReport(req) {
         LEFT JOIN todocodigos t  
             ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
         LEFT JOIN empresas e1 
-            ON e1.id_empresa = t.ref_id_empresa 
+            ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
         GROUP BY e1.id_empresa
@@ -50,7 +50,7 @@ async function getItemsReport(req) {
         LEFT JOIN todocodigos t  
             ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
         LEFT JOIN tipos t1 
-            ON t1.id_tipo = t.ref_id_tipo  
+            ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
         GROUP BY t1.id_tipo
@@ -71,9 +71,9 @@ async function getItemsReport(req) {
         LEFT JOIN todocodigos t  
             ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
         LEFT JOIN tipos t1 
-            ON t1.id_tipo = t.ref_id_tipo  
+            ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE 
         LEFT JOIN empresas e1 
-            ON e1.id_empresa = t.ref_id_empresa 
+            ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
         GROUP BY codigo1
