@@ -1,6 +1,5 @@
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
-const { getBcolorviewValor1 } = require('../utils/bcolorview-helper');
 
 async function getIngresosReport(req) {
     const Ingresos = getModelForRequest(req, 'Ingresos');
@@ -14,79 +13,136 @@ async function getIngresosReport(req) {
     // 검색어 파라미터 확인
     const filteringWord = req.query.filtering_word || req.query.filteringWord || req.query.search;
 
-    // bcolorview 값 확인 (valor1이 '0' 또는 '1')
-    const bcolorviewValor1 = getBcolorviewValor1(req);
-    const isBcolorviewEnabled = bcolorviewValor1 === '1' || bcolorviewValor1 === 1;
-
     // 날짜 범위 필터 (필수)
     if (!startDate || !endDate) {
         throw new Error('fecha_inicio and fecha_fin are required');
     }
 
-    // WHERE 조건 구성
+    // SQL injection 방지를 위해 이스케이프 처리
+    const escapedStartDate = startDate.replace(/'/g, "''");
+    const escapedEndDate = endDate.replace(/'/g, "''");
+
+    // WHERE 조건 구성 (공통)
     let whereConditions = [
-        'fecha BETWEEN $1 AND $2',
-        'borrado IS FALSE',
-        'i.b_autoagregado IS FALSE'
+        `i.fecha BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'`,
+        'i.borrado IS FALSE'
     ];
-    const queryParams = [startDate, endDate];
-    let paramIndex = 3;
 
     // filteringWord 검색 조건 추가 (대소문자 구분 없음)
     if (filteringWord && filteringWord.trim()) {
-        const searchTerm = `%${filteringWord.trim()}%`;
-        // SQL injection 방지를 위해 이스케이프 처리
         const escapedWord = filteringWord.trim().replace(/'/g, "''");
-        whereConditions.push(`(codigo ILIKE $${paramIndex} OR desc3 ILIKE $${paramIndex})`);
-        queryParams.push(searchTerm);
-        paramIndex++;
+        whereConditions.push(`(i.codigo ILIKE '%${escapedWord}%' OR i.desc3 ILIKE '%${escapedWord}%')`);
     }
 
     const whereClause = whereConditions.join(' AND ');
 
-    // 사용자가 제공한 쿼리 형식 사용
-    const query = `
+    // Company별 집계 쿼리
+    const companyQuery = `
         SELECT 
-            codigo,
-            MAX(desc3) as descripcion,
-            COUNT(*) as tEvent,
-            SUM(i.cant3) as tCant,
-            MAX(i.ref_id_codigo) as id_codigo,
-            sucursal
+            e1.id_empresa as "CompanyCode", 
+            MAX(e1.empdesc) as "CompanyName", 
+            SUM(i.cant3) as "totalCantidad" 
         FROM ingresos i
+        LEFT JOIN codigos c 
+            ON i.ref_id_codigo = c.id_codigo AND i.borrado IS FALSE 
+        LEFT JOIN todocodigos t  
+            ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
+        LEFT JOIN empresas e1 
+            ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE 
         WHERE ${whereClause}
-        GROUP BY codigo, sucursal
-        ORDER BY codigo ASC, sucursal ASC
+        GROUP BY e1.id_empresa
+        ORDER BY e1.id_empresa
     `;
 
-    // SQL 쿼리 실행
-    const results = await sequelize.query(query, {
-        bind: queryParams,
-        type: Sequelize.QueryTypes.SELECT
-    });
+    // Category별 집계 쿼리
+    const categoryQuery = `
+        SELECT 
+            t1.id_tipo as "CategoryCode", 
+            MAX(t1.tpdesc) as "CategoryName", 
+            SUM(i.cant3) as "totalCantidad" 
+        FROM ingresos i 
+        LEFT JOIN codigos c 
+            ON i.ref_id_codigo = c.id_codigo AND i.borrado IS FALSE 
+        LEFT JOIN todocodigos t  
+            ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
+        LEFT JOIN tipos t1 
+            ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE 
+        WHERE ${whereClause}
+        GROUP BY t1.id_tipo
+        ORDER BY t1.id_tipo
+    `;
 
-    // 결과가 배열인지 확인
-    const ingresos = Array.isArray(results) ? results : [];
+    // 제품별 상세 내역 쿼리
+    const productQuery = `
+        SELECT 
+            i.codigo as "codigo", 
+            MAX(i.desc3) as "ProductName", 
+            SUM(i.cant3) as "totalCantidad", 
+            MAX(t1.id_tipo) as "CategoryCode", 
+            MAX(e1.id_empresa) as "CompanyCode" 
+        FROM ingresos i 
+        LEFT JOIN codigos c 
+            ON i.ref_id_codigo = c.id_codigo AND i.borrado IS FALSE 
+        LEFT JOIN todocodigos t  
+            ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
+        LEFT JOIN tipos t1 
+            ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE 
+        LEFT JOIN empresas e1 
+            ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE 
+        WHERE ${whereClause}
+        GROUP BY i.codigo
+        ORDER BY i.codigo
+    `;
+
+    // 세 가지 쿼리 병렬 실행
+    let companySummary = [];
+    let categorySummary = [];
+    let productDetails = [];
+
+    try {
+        const [companyResults, categoryResults, productResults] = await Promise.all([
+            sequelize.query(companyQuery, {
+                type: Sequelize.QueryTypes.SELECT
+            }),
+            sequelize.query(categoryQuery, {
+                type: Sequelize.QueryTypes.SELECT
+            }),
+            sequelize.query(productQuery, {
+                type: Sequelize.QueryTypes.SELECT
+            })
+        ]);
+
+        companySummary = Array.isArray(companyResults) ? companyResults : [];
+        categorySummary = Array.isArray(categoryResults) ? categoryResults : [];
+        productDetails = Array.isArray(productResults) ? productResults : [];
+    } catch (err) {
+        console.error('[Ingresos 보고서] 쿼리 실행 실패:');
+        console.error('   Error:', err.message);
+        throw err;
+    }
 
     // 집계 정보 계산
-    const totalCantidad = ingresos.reduce((sum, item) => sum + (parseFloat(item.tcant) || 0), 0);
-    const totalEventos = ingresos.reduce((sum, item) => sum + (parseInt(item.tevent) || 0), 0);
+    const totalCantidad = productDetails.reduce((sum, item) => sum + (parseFloat(item.totalCantidad || 0)), 0);
 
     return {
         filters: {
-            fecha_inicio: startDate || null,
-            fecha_fin: endDate || null,
-            start_date: startDate || null,
-            end_date: endDate || null,
-            filtering_word: filteringWord || null,
-            bcolorview: bcolorviewValor1 || '0'
+            fecha_inicio: startDate,
+            fecha_fin: endDate,
+            start_date: startDate,
+            end_date: endDate,
+            filtering_word: filteringWord || null
         },
         summary: {
-            total_items: ingresos.length,
-            total_cantidad: totalCantidad,
-            total_eventos: totalEventos
+            total_companies: companySummary.length,
+            total_categories: categorySummary.length,
+            total_products: productDetails.length,
+            total_cantidad: totalCantidad
         },
-        data: ingresos
+        data: {
+            summary_by_company: companySummary,
+            summary_by_category: categorySummary,
+            products: productDetails
+        }
     };
 }
 

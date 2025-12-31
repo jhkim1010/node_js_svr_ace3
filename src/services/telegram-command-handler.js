@@ -417,12 +417,34 @@ function startTelegramPolling() {
         
         console.log(`[Telegram Command] ✅ Bot 초기화 완료 (Long polling 활성화)`);
         
-        // 에러 핸들링
+        // 에러 핸들링 (네트워크 타임아웃 오류는 로그 출력하지 않음)
         bot.on('polling_error', (error) => {
+            // ETIMEDOUT, ECONNREFUSED 등 네트워크 오류는 로그 출력하지 않음
+            if (error.message && (
+                error.message.includes('ETIMEDOUT') ||
+                error.message.includes('ECONNREFUSED') ||
+                error.message.includes('ENOTFOUND') ||
+                error.message.includes('connect timeout')
+            )) {
+                // 네트워크 오류는 조용히 무시 (너무 많은 로그 방지)
+                return;
+            }
+            // 다른 종류의 오류만 로그 출력
             console.error(`[Telegram Command] ❌ Polling 오류: ${error.message}`);
         });
         
         bot.on('error', (error) => {
+            // ETIMEDOUT, ECONNREFUSED 등 네트워크 오류는 로그 출력하지 않음
+            if (error.message && (
+                error.message.includes('ETIMEDOUT') ||
+                error.message.includes('ECONNREFUSED') ||
+                error.message.includes('ENOTFOUND') ||
+                error.message.includes('connect timeout')
+            )) {
+                // 네트워크 오류는 조용히 무시 (너무 많은 로그 방지)
+                return;
+            }
+            // 다른 종류의 오류만 로그 출력
             console.error(`[Telegram Command] ❌ Bot 오류: ${error.message}`);
         });
         
