@@ -111,6 +111,12 @@ async function getItemsReport(req) {
     const filteredCompanySummary = companySummary.length > 1 ? companySummary : [];
     const filteredCategorySummary = categorySummary.length > 1 ? categorySummary : [];
 
+    // 로그 기록: resumen x empresas, x category, 세부 데이터 개수
+    console.log('[Items 보고서] 데이터 개수:');
+    console.log(`   Resumen x Empresas: ${filteredCompanySummary.length}개`);
+    console.log(`   Resumen x Category: ${filteredCategorySummary.length}개`);
+    console.log(`   세부 데이터 (Products): ${productDetails.length}개`);
+
     // 집계 정보 계산
     const totalCantidad = productDetails.reduce((sum, item) => sum + (parseFloat(item.totalCantidad || 0)), 0);
 
