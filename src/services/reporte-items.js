@@ -31,7 +31,7 @@ async function getItemsReport(req) {
         LEFT JOIN todocodigos t  
             ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
         LEFT JOIN empresas e1 
-            ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE 
+            ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
         GROUP BY e1.id_empresa
@@ -50,7 +50,7 @@ async function getItemsReport(req) {
         LEFT JOIN todocodigos t  
             ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
         LEFT JOIN tipos t1 
-            ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE 
+            ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE AND t1.tpdesc != '' 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
         GROUP BY t1.id_tipo
@@ -71,9 +71,9 @@ async function getItemsReport(req) {
         LEFT JOIN todocodigos t  
             ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
         LEFT JOIN tipos t1 
-            ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE 
+            ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE AND t1.tpdesc != '' 
         LEFT JOIN empresas e1 
-            ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE 
+            ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
         GROUP BY codigo1
@@ -107,6 +107,10 @@ async function getItemsReport(req) {
         throw err;
     }
 
+    // 집계 결과가 1개인 경우 제외
+    const filteredCompanySummary = companySummary.length > 1 ? companySummary : [];
+    const filteredCategorySummary = categorySummary.length > 1 ? categorySummary : [];
+
     // 집계 정보 계산
     const totalCantidad = productDetails.reduce((sum, item) => sum + (parseFloat(item.totalCantidad || 0)), 0);
 
@@ -118,14 +122,14 @@ async function getItemsReport(req) {
             end_date: endDate
         },
         summary: {
-            total_companies: companySummary.length,
-            total_categories: categorySummary.length,
+            total_companies: filteredCompanySummary.length,
+            total_categories: filteredCategorySummary.length,
             total_products: productDetails.length,
             total_cantidad: totalCantidad
         },
         data: {
-            summary_by_company: companySummary,
-            summary_by_category: categorySummary,
+            summary_by_company: filteredCompanySummary,
+            summary_by_category: filteredCategorySummary,
             products: productDetails
         }
     };
