@@ -57,6 +57,23 @@ async function getItemsReport(req) {
         ORDER BY t1.id_tipo
     `;
 
+    // Color별 집계 쿼리
+    const colorQuery = `
+        SELECT 
+            cl.id_color as "ColorCode", 
+            MAX(cl.descripcioncolor) as "ColorName", 
+            SUM(v1.cant1) as "totalCantidad" 
+        FROM vdetalle v1 
+        LEFT JOIN codigos c 
+            ON v1.ref_id_codigo = c.id_codigo AND v1.borrado IS FALSE 
+        LEFT JOIN color cl
+            ON c.ref_id_color = cl.id_color AND cl.borrado IS FALSE
+        WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
+            AND v1.borrado IS FALSE
+        GROUP BY cl.id_color
+        ORDER BY cl.id_color
+    `;
+
     // 제품별 상세 내역 쿼리
     const productQuery = `
         SELECT 
@@ -80,17 +97,21 @@ async function getItemsReport(req) {
         ORDER BY codigo1
     `;
 
-    // 세 가지 쿼리 병렬 실행
+    // 네 가지 쿼리 병렬 실행
     let companySummary = [];
     let categorySummary = [];
+    let colorSummary = [];
     let productDetails = [];
 
     try {
-        const [companyResults, categoryResults, productResults] = await Promise.all([
+        const [companyResults, categoryResults, colorResults, productResults] = await Promise.all([
             sequelize.query(companyQuery, {
                 type: Sequelize.QueryTypes.SELECT
             }),
             sequelize.query(categoryQuery, {
+                type: Sequelize.QueryTypes.SELECT
+            }),
+            sequelize.query(colorQuery, {
                 type: Sequelize.QueryTypes.SELECT
             }),
             sequelize.query(productQuery, {
@@ -100,6 +121,7 @@ async function getItemsReport(req) {
 
         companySummary = Array.isArray(companyResults) ? companyResults : [];
         categorySummary = Array.isArray(categoryResults) ? categoryResults : [];
+        colorSummary = Array.isArray(colorResults) ? colorResults : [];
         productDetails = Array.isArray(productResults) ? productResults : [];
     } catch (err) {
         console.error('[Items 보고서] 쿼리 실행 실패:');
@@ -110,11 +132,13 @@ async function getItemsReport(req) {
     // 집계 결과가 1개인 경우 제외
     const filteredCompanySummary = companySummary.length > 1 ? companySummary : [];
     const filteredCategorySummary = categorySummary.length > 1 ? categorySummary : [];
+    const filteredColorSummary = colorSummary.length > 1 ? colorSummary : [];
 
-    // 로그 기록: resumen x empresas, x category, 세부 데이터 개수
+    // 로그 기록: resumen x empresas, x category, x color, 세부 데이터 개수
     console.log('[Items 보고서] 데이터 개수:');
     console.log(`   Resumen x Empresas: ${filteredCompanySummary.length}개`);
     console.log(`   Resumen x Category: ${filteredCategorySummary.length}개`);
+    console.log(`   Resumen x Color: ${filteredColorSummary.length}개`);
     console.log(`   세부 데이터 (Products): ${productDetails.length}개`);
 
     // 집계 정보 계산
@@ -130,12 +154,14 @@ async function getItemsReport(req) {
         summary: {
             total_companies: filteredCompanySummary.length,
             total_categories: filteredCategorySummary.length,
+            total_colors: filteredColorSummary.length,
             total_products: productDetails.length,
             total_cantidad: totalCantidad
         },
         data: {
             summary_by_company: filteredCompanySummary,
             summary_by_category: filteredCategorySummary,
+            summary_by_color: filteredColorSummary,
             products: productDetails
         }
     };
