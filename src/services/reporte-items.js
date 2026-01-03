@@ -1,5 +1,6 @@
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
+const { checkAllReportConditions } = require('../utils/report-condition-checker');
 
 async function getItemsReport(req) {
     const Vdetalle = getModelForRequest(req, 'Vdetalle');
@@ -18,6 +19,16 @@ async function getItemsReport(req) {
     // SQL injection 방지를 위해 이스케이프 처리
     const escapedStartDate = startDate.replace(/'/g, "''");
     const escapedEndDate = endDate.replace(/'/g, "''");
+
+    // 조건 확인 (유틸리티 함수 사용)
+    const conditions = await checkAllReportConditions(sequelize, {
+        logResults: true,
+        logPrefix: 'Items 보고서'
+    });
+
+    const shouldRunCompanyQuery = conditions.company.shouldRun;
+    const shouldRunCategoryQuery = conditions.category.shouldRun;
+    const shouldRunColorQuery = conditions.color.shouldRun;
 
     // Company별 집계 쿼리
     const companyQuery = `
@@ -97,27 +108,50 @@ async function getItemsReport(req) {
         ORDER BY codigo1
     `;
 
-    // 네 가지 쿼리 병렬 실행
+    // 조건에 따라 쿼리 실행
     let companySummary = [];
     let categorySummary = [];
     let colorSummary = [];
     let productDetails = [];
 
     try {
-        const [companyResults, categoryResults, colorResults, productResults] = await Promise.all([
-            sequelize.query(companyQuery, {
-                type: Sequelize.QueryTypes.SELECT
-            }),
-            sequelize.query(categoryQuery, {
-                type: Sequelize.QueryTypes.SELECT
-            }),
-            sequelize.query(colorQuery, {
-                type: Sequelize.QueryTypes.SELECT
-            }),
+        const queryPromises = [
             sequelize.query(productQuery, {
                 type: Sequelize.QueryTypes.SELECT
             })
-        ]);
+        ];
+
+        if (shouldRunCompanyQuery) {
+            queryPromises.push(
+                sequelize.query(companyQuery, {
+                    type: Sequelize.QueryTypes.SELECT
+                })
+            );
+        } else {
+            queryPromises.push(Promise.resolve([]));
+        }
+
+        if (shouldRunCategoryQuery) {
+            queryPromises.push(
+                sequelize.query(categoryQuery, {
+                    type: Sequelize.QueryTypes.SELECT
+                })
+            );
+        } else {
+            queryPromises.push(Promise.resolve([]));
+        }
+
+        if (shouldRunColorQuery) {
+            queryPromises.push(
+                sequelize.query(colorQuery, {
+                    type: Sequelize.QueryTypes.SELECT
+                })
+            );
+        } else {
+            queryPromises.push(Promise.resolve([]));
+        }
+
+        const [productResults, companyResults, categoryResults, colorResults] = await Promise.all(queryPromises);
 
         companySummary = Array.isArray(companyResults) ? companyResults : [];
         categorySummary = Array.isArray(categoryResults) ? categoryResults : [];
