@@ -59,13 +59,13 @@ async function checkCategoryCount(sequelize) {
 
 /**
  * color 테이블의 유효한 색상 개수를 확인
- * (descripcioncolor가 'UNICO'가 아니고, NULL이 아닌 경우)
+ * (descripcioncolor가 'UNICO'가 아니고, NULL이 아니며, idcolor가 빈 문자열이 아닌 경우)
  * @param {Sequelize} sequelize - Sequelize 인스턴스
  * @returns {Promise<{count: number, shouldRun: boolean}>} 개수와 실행 여부
  */
 async function checkColorCount(sequelize) {
     try {
-        const checkColorCountQuery = `SELECT COUNT(*) as count FROM color c WHERE c.descripcioncolor != 'UNICO' AND descripcioncolor IS NOT NULL`;
+        const checkColorCountQuery = `SELECT COUNT(*) as count FROM color c WHERE c.descripcioncolor != 'UNICO' AND descripcioncolor IS NOT NULL AND c.idcolor != ''`;
         const result = await sequelize.query(checkColorCountQuery, {
             type: Sequelize.QueryTypes.SELECT
         });
