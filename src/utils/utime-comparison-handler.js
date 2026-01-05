@@ -131,36 +131,34 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) {
                     const primaryKeyArray = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
                     
-                    // Ingresos의 경우: ingreso.pr는 ingreso_id만으로 unique하므로 먼저 ingreso_id만으로 조회
-                    if (modelName === 'Ingresos' && filteredItem.ingreso_id !== undefined && filteredItem.ingreso_id !== null) {
-                        const ingresoIdWhere = { ingreso_id: filteredItem.ingreso_id };
+                    // preferredUniqueKeys로 찾지 못했거나 사용할 수 없는 경우에만 primary key로 조회
+                    let shouldTryPrimaryKey = true;
+                    
+                    // preferredUniqueKeys가 있으면 그것을 먼저 사용 (Ingresos의 경우 ['ingreso_id', 'sucursal', 'bmovido'])
+                    if (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys) && tableConfig.preferredUniqueKeys.length > 0) {
+                        const preferredKey = tableConfig.preferredUniqueKeys[0]; // 첫 번째 preferredUniqueKey 사용
+                        const preferredKeyArray = Array.isArray(preferredKey) ? preferredKey : [preferredKey];
                         
-                        try {
-                            const existingRecord = await Model.findOne({
-                                where: ingresoIdWhere,
-                                transaction,
-                                attributes: {
-                                    include: [
-                                        [Sequelize.literal(`utime::text`), 'utime_str']
-                                    ]
-                                },
-                                raw: true
-                            });
-                            
-                            if (existingRecord) {
-                                // 기존 레코드의 sucursal과 비교
-                                const existingSucursal = existingRecord.sucursal;
-                                const newSucursal = filteredItem.sucursal;
-                                
-                                // 복합 key로 조회 (기존 레코드의 sucursal 사용)
-                                const compositeKeyWhere = { ingreso_id: filteredItem.ingreso_id, sucursal: existingSucursal };
-                                
+                        // preferredUniqueKey에 필요한 모든 값이 있는지 확인
+                        let canUsePreferredKey = true;
+                        const preferredKeyWhere = preferredKeyArray.reduce((acc, key) => {
+                            const value = filteredItem[key];
+                            if (value === undefined || value === null) {
+                                canUsePreferredKey = false;
+                            } else {
+                                acc[key] = value;
+                            }
+                            return acc;
+                        }, {});
+                        
+                        if (canUsePreferredKey && Object.keys(preferredKeyWhere).length === preferredKeyArray.length) {
+                            try {
                                 const resultPk = await processRecordWithUtimeComparison(
                                     Model,
                                     filteredItem,
                                     clientUtimeStr,
-                                    compositeKeyWhere,
-                                    ['ingreso_id', 'sucursal'],
+                                    preferredKeyWhere,
+                                    preferredKeyArray,
                                     transaction,
                                     null,
                                     sequelize
@@ -214,36 +212,48 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     }
                                     continue;
                                 }
+                                
+                                // preferredUniqueKeys로 찾지 못한 경우 (not_found) INSERT 시도로 진행
+                                if (resultPk.action === 'not_found') {
+                                    // preferredUniqueKeys로 찾지 못했으므로 INSERT 시도
+                                    // shouldTryPrimaryKey를 false로 설정하여 primary key 조회를 건너뛰고 INSERT로 진행
+                                    shouldTryPrimaryKey = false;
+                                } else {
+                                    // 예상치 못한 action인 경우 continue
+                                    continue;
+                                }
                             }
-                        } catch (ingresoIdErr) {
-                            // 에러 발생 시 복합 key 조회로 진행 (로그 출력하지 않음)
+                        } catch (preferredKeyErr) {
+                            // 에러 발생 시 primary key 조회로 진행 (로그 출력하지 않음)
                         }
                     }
                     
-                    // 1단계: primary key로 기존 레코드 조회 (복합 key)
-                    let canUsePrimaryKey = true;
-                    const primaryKeyWhere = primaryKeyArray.reduce((acc, key) => {
-                        const value = filteredItem[key];
-                        if (value === undefined || value === null) {
-                            canUsePrimaryKey = false;
-                        } else {
-                            acc[key] = value;
-                        }
-                        return acc;
-                    }, {});
+                    // preferredUniqueKeys로 찾지 못했으면 primary key로 조회
+                    // 1단계: primary key로 기존 레코드 조회 (복합 key) - preferredUniqueKeys로 찾지 못한 경우에만
+                    if (shouldTryPrimaryKey) {
+                        let canUsePrimaryKey = true;
+                        const primaryKeyWhere = primaryKeyArray.reduce((acc, key) => {
+                            const value = filteredItem[key];
+                            if (value === undefined || value === null) {
+                                canUsePrimaryKey = false;
+                            } else {
+                                acc[key] = value;
+                            }
+                            return acc;
+                        }, {});
 
-                    if (canUsePrimaryKey && Object.keys(primaryKeyWhere).length === primaryKeyArray.length) {
-                        try {
-                            const resultPk = await processRecordWithUtimeComparison(
-                                Model,
-                                filteredItem,
-                                clientUtimeStr,
-                                primaryKeyWhere,
-                                primaryKeyArray,
-                                transaction,
-                                null, // savepointName 제거 (독립 트랜잭션 사용)
-                                sequelize
-                            );
+                        if (canUsePrimaryKey && Object.keys(primaryKeyWhere).length === primaryKeyArray.length) {
+                            try {
+                                const resultPk = await processRecordWithUtimeComparison(
+                                    Model,
+                                    filteredItem,
+                                    clientUtimeStr,
+                                    primaryKeyWhere,
+                                    primaryKeyArray,
+                                    transaction,
+                                    null, // savepointName 제거 (독립 트랜잭션 사용)
+                                    sequelize
+                                );
 
                             if (resultPk.action === 'updated') {
                                 if (modelName === 'Ingresos') {
@@ -359,7 +369,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         }
                     }
 
-                    // 2단계: primary key로 레코드를 찾지 못했으면 INSERT 시도
+                    // 2단계: preferredUniqueKeys 또는 primary key로 레코드를 찾지 못했으면 INSERT 시도
                     const createData = { ...filteredItem };
                     if (createData.utime) {
                         createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
@@ -370,7 +380,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
                             const identifierStr = formatIdentifier(identifierObj);
                             const clientUtimeInfo = clientUtimeStr ? `Client utime: ${clientUtimeStr}` : 'Client utime: missing';
-                            logInfoWithLocation(`${dbName} ${modelName} INSERT 시도 | ${identifierStr} | 이유: 레코드 없음 (primary key로 조회 실패) | ${clientUtimeInfo}`);
+                            const usedKey = (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys) && tableConfig.preferredUniqueKeys.length > 0) 
+                                ? 'preferredUniqueKeys' 
+                                : 'primary key';
+                            logInfoWithLocation(`${dbName} ${modelName} INSERT 시도 | ${identifierStr} | 이유: 레코드 없음 (${usedKey}로 조회 실패) | ${clientUtimeInfo}`);
                         }
                         
                         const created = await Model.create(createData, { transaction });
