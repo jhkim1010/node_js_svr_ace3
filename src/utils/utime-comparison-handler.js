@@ -80,7 +80,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
     let updatedCount = 0;
     let skippedCount = 0; // utime 비교로 스킵된 항목 수
     
-        const uniqueKeys = getUniqueKeys(Model, primaryKey);
+    const tableConfig = getTableHandlerConfig(modelName);
+    let uniqueKeys = getUniqueKeys(Model, primaryKey);
+    
+    // preferredUniqueKeys가 있으면 그것을 우선 사용
+    if (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys)) {
+        // preferredUniqueKeys를 uniqueKeys 배열의 앞에 추가 (중복 제거)
+        const preferredKeys = tableConfig.preferredUniqueKeys.filter(prefKey => {
+            // prefKey가 uniqueKeys에 이미 있는지 확인
+            return !uniqueKeys.some(existingKey => {
+                if (Array.isArray(prefKey) && Array.isArray(existingKey)) {
+                    return prefKey.length === existingKey.length && 
+                           prefKey.every(key => existingKey.includes(key));
+                }
+                return prefKey === existingKey;
+            });
+        });
+        uniqueKeys = [...preferredKeys, ...uniqueKeys];
+    }
         
     // 각 항목을 독립적인 트랜잭션으로 하나씩 처리
     // 연결 풀 고갈 방지를 위해 순차 처리 (동시 처리 제한)

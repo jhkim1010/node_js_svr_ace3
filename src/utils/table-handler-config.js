@@ -74,8 +74,8 @@ const tableHandlerConfigs = {
         useUtimeComparison: true,
         retryWithAllUniqueKeys: true,
         skipOnUniqueConstraintError: false,
-        // 복합 unique key: ['ingreso_id', 'sucursal']
-        preferredUniqueKeys: [['ingreso_id', 'sucursal']]
+        // 복합 unique key: ['ingreso_id', 'sucursal', 'bmovido']
+        preferredUniqueKeys: [['ingreso_id', 'sucursal', 'bmovido']]
     },
     
     // Vcodes: 전용 핸들러 사용 (vcodes-handler.js)
