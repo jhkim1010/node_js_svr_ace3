@@ -217,7 +217,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 if (resultPk.action === 'not_found') {
                                     // preferredUniqueKeys로 찾지 못했으므로 INSERT 시도
                                     // shouldTryPrimaryKey를 false로 설정하여 primary key 조회를 건너뛰고 INSERT로 진행
+                                    if (modelName === 'Ingresos') {
+                                        const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                        const identifierStr = formatIdentifier(identifier);
+                                        logInfoWithLocation(`${dbName} ${modelName} preferredUniqueKeys로 찾지 못함 (not_found) | ${identifierStr} | INSERT로 진행`);
+                                    }
                                     shouldTryPrimaryKey = false;
+                                    // INSERT로 진행하기 위해 try 블록을 빠져나감
                                 } else {
                                     // 예상치 못한 action인 경우 continue
                                     continue;
