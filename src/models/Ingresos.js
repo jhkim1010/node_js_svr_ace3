@@ -17,7 +17,12 @@ function defineIngresosModel(sequelize) {
     preorg: { type: DataTypes.DOUBLE, allowNull: true },
     fecha: { type: DataTypes.DATEONLY, allowNull: false, defaultValue: Sequelize.literal("'now'::text::date") },
     hora: { type: DataTypes.STRING(20), allowNull: true },
-    sucursal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    sucursal: { 
+        type: DataTypes.INTEGER, 
+        allowNull: false, 
+        defaultValue: 1,
+        primaryKey: true,
+    },
     codigoproducto: { type: DataTypes.STRING(15), allowNull: true },
     utime: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('now()') },
     borrado: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
@@ -48,7 +53,8 @@ function defineIngresosModel(sequelize) {
     schema: 'public',
     timestamps: false,
     indexes: [
-        // 복합 unique key: ingreso_id + sucursal
+        // 복합 기본 키: (ingreso_id, sucursal)
+        // Sequelize는 복합 기본 키를 인덱스로도 정의
         { unique: true, name: 'ingresos_ingreso_id_sucursal_uniq', fields: ['ingreso_id', 'sucursal'] },
         { name: 'item_id_codigo_ingresos', fields: ['ref_id_codigo'] },
         { name: 'item_ingresos', fields: ['codigo'] },
