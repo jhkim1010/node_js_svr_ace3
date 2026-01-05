@@ -1989,11 +1989,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             throw createErr;
                         }
                     }
+                }
                 } else {
                     if (modelName === 'Ingresos') {
                         logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 건너뜀 | requiresSpecialHandling=${requiresSpecialHandling(modelName)} | usePrimaryKeyFirst=${tableConfig.usePrimaryKeyFirst}`);
                     }
-                }
             }
         }
         
