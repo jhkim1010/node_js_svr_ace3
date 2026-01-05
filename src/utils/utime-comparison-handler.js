@@ -85,18 +85,19 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
     
     // preferredUniqueKeys가 있으면 그것을 우선 사용
     if (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys)) {
-        // preferredUniqueKeys를 uniqueKeys 배열의 앞에 추가 (중복 제거)
-        const preferredKeys = tableConfig.preferredUniqueKeys.filter(prefKey => {
-            // prefKey가 uniqueKeys에 이미 있는지 확인
-            return !uniqueKeys.some(existingKey => {
-                if (Array.isArray(prefKey) && Array.isArray(existingKey)) {
-                    return prefKey.length === existingKey.length && 
-                           prefKey.every(key => existingKey.includes(key));
-                }
-                return prefKey === existingKey;
-            });
+        // primary key를 uniqueKeys에서 제거 (preferredUniqueKeys가 있으면 primary key보다 우선)
+        const primaryKeyArray = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
+        uniqueKeys = uniqueKeys.filter(existingKey => {
+            if (Array.isArray(existingKey)) {
+                // primary key와 동일한지 확인
+                return !(existingKey.length === primaryKeyArray.length && 
+                        existingKey.every(key => primaryKeyArray.includes(key)));
+            }
+            return existingKey !== primaryKey;
         });
-        uniqueKeys = [...preferredKeys, ...uniqueKeys];
+        
+        // preferredUniqueKeys를 앞에 추가
+        uniqueKeys = [...tableConfig.preferredUniqueKeys, ...uniqueKeys];
     }
         
     // 각 항목을 독립적인 트랜잭션으로 하나씩 처리
