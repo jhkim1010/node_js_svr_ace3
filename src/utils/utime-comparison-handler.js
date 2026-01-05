@@ -229,20 +229,35 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
                     
                     // preferredUniqueKeys로 찾지 못했으면 primary key로 조회
-                    // 1단계: primary key로 기존 레코드 조회 (복합 key) - preferredUniqueKeys로 찾지 못한 경우에만
+                    // 단, preferredUniqueKey가 primary key와 다른 경우 (예: Ingresos의 경우 ['ingreso_id', 'sucursal', 'bmovido'] vs ['ingreso_id', 'sucursal'])
+                    // primary key로 조회하지 않고 INSERT로 진행
                     if (shouldTryPrimaryKey) {
-                        let canUsePrimaryKey = true;
-                        const primaryKeyWhere = primaryKeyArray.reduce((acc, key) => {
-                            const value = filteredItem[key];
-                            if (value === undefined || value === null) {
-                                canUsePrimaryKey = false;
-                            } else {
-                                acc[key] = value;
+                        // preferredUniqueKey가 primary key와 다른지 확인
+                        if (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys) && tableConfig.preferredUniqueKeys.length > 0) {
+                            const preferredKey = tableConfig.preferredUniqueKeys[0];
+                            const preferredKeyArray = Array.isArray(preferredKey) ? preferredKey : [preferredKey];
+                            const isPreferredKeyDifferentFromPrimaryKey = preferredKeyArray.length !== primaryKeyArray.length ||
+                                !preferredKeyArray.every(key => primaryKeyArray.includes(key));
+                            
+                            if (isPreferredKeyDifferentFromPrimaryKey) {
+                                // preferredUniqueKey가 primary key와 다르면 primary key로 조회하지 않음
+                                shouldTryPrimaryKey = false;
                             }
-                            return acc;
-                        }, {});
+                        }
+                        
+                        if (shouldTryPrimaryKey) {
+                            let canUsePrimaryKey = true;
+                            const primaryKeyWhere = primaryKeyArray.reduce((acc, key) => {
+                                const value = filteredItem[key];
+                                if (value === undefined || value === null) {
+                                    canUsePrimaryKey = false;
+                                } else {
+                                    acc[key] = value;
+                                }
+                                return acc;
+                            }, {});
 
-                        if (canUsePrimaryKey && Object.keys(primaryKeyWhere).length === primaryKeyArray.length) {
+                            if (canUsePrimaryKey && Object.keys(primaryKeyWhere).length === primaryKeyArray.length) {
                             try {
                                 const resultPk = await processRecordWithUtimeComparison(
                                     Model,
@@ -740,7 +755,23 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 
                 // UPDATE operation 처리 (기존 공통 로직 - Codigos, Todocodigos 이외에서 사용)
                 if (operation === 'UPDATE' || operation === 'INSERT' || operation === 'CREATE') {
-                    const availableUniqueKey = findAvailableUniqueKey(filteredItem, uniqueKeys);
+                    // preferredUniqueKeys가 있으면 그것을 우선 사용
+                    let availableUniqueKey = null;
+                    if (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys) && tableConfig.preferredUniqueKeys.length > 0) {
+                        const preferredKey = tableConfig.preferredUniqueKeys[0];
+                        const preferredKeyArray = Array.isArray(preferredKey) ? preferredKey : [preferredKey];
+                        // preferredUniqueKey에 필요한 모든 값이 있는지 확인
+                        const hasPreferredKeyValues = preferredKeyArray.every(key => 
+                            filteredItem[key] !== undefined && filteredItem[key] !== null
+                        );
+                        if (hasPreferredKeyValues) {
+                            availableUniqueKey = preferredKey;
+                        }
+                    }
+                    // preferredUniqueKey로 찾지 못했으면 일반 uniqueKeys에서 찾기
+                    if (!availableUniqueKey) {
+                        availableUniqueKey = findAvailableUniqueKey(filteredItem, uniqueKeys);
+                    }
                     
                     if (availableUniqueKey) {
                         const whereCondition = buildWhereCondition(filteredItem, availableUniqueKey);
