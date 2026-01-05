@@ -220,12 +220,15 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     if (modelName === 'Ingresos') {
                                         const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                         const identifierStr = formatIdentifier(identifier);
-                                        logInfoWithLocation(`${dbName} ${modelName} preferredUniqueKeys로 찾지 못함 (not_found) | ${identifierStr} | INSERT로 진행`);
+                                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys로 찾지 못함 (not_found) | ${identifierStr} | shouldTryPrimaryKey를 false로 설정하고 INSERT로 진행`);
                                     }
                                     shouldTryPrimaryKey = false;
                                     // INSERT로 진행하기 위해 try 블록을 빠져나감
                                 } else {
                                     // 예상치 못한 action인 경우 continue
+                                    if (modelName === 'Ingresos') {
+                                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] 예상치 못한 action: ${resultPk.action} | continue`);
+                                    }
                                     continue;
                                 }
                             } catch (preferredKeyErr) {
@@ -237,6 +240,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     // preferredUniqueKeys로 찾지 못했으면 primary key로 조회
                     // 단, preferredUniqueKey가 primary key와 다른 경우 (예: Ingresos의 경우 ['ingreso_id', 'sucursal', 'bmovido'] vs ['ingreso_id', 'sucursal'])
                     // primary key로 조회하지 않고 INSERT로 진행
+                    if (modelName === 'Ingresos') {
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] shouldTryPrimaryKey 체크 | shouldTryPrimaryKey=${shouldTryPrimaryKey}`);
+                    }
                     if (shouldTryPrimaryKey) {
                         // preferredUniqueKey가 primary key와 다른지 확인
                         if (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys) && tableConfig.preferredUniqueKeys.length > 0) {
@@ -391,6 +397,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
 
                     // 2단계: preferredUniqueKeys 또는 primary key로 레코드를 찾지 못했으면 INSERT 시도
+                    if (modelName === 'Ingresos') {
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 부분 도달 | shouldTryPrimaryKey=${shouldTryPrimaryKey}`);
+                    }
+                    
+                    // SAVEPOINT 생성 (INSERT 실패 시 롤백용)
+                    const savepointName = `sp_item_${i}_${Date.now()}`;
+                    try {
+                        await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] SAVEPOINT 생성 성공: ${savepointName}`);
+                        }
+                    } catch (spErr) {
+                        // SAVEPOINT 생성 실패는 무시
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] SAVEPOINT 생성 실패: ${spErr.message}`);
+                        }
+                    }
+                    
                     const createData = { ...filteredItem };
                     if (createData.utime) {
                         createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
@@ -404,10 +428,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const usedKey = (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys) && tableConfig.preferredUniqueKeys.length > 0) 
                                 ? 'preferredUniqueKeys' 
                                 : 'primary key';
-                            logInfoWithLocation(`${dbName} ${modelName} INSERT 시도 | ${identifierStr} | 이유: 레코드 없음 (${usedKey}로 조회 실패) | ${clientUtimeInfo}`);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 시작 | ${identifierStr} | 이유: 레코드 없음 (${usedKey}로 조회 실패) | ${clientUtimeInfo}`);
                         }
                         
                         const created = await Model.create(createData, { transaction });
+                        
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] Model.create 성공 | ${identifierStr}`);
+                        }
                         // Extract identifier from filteredItem for logging
                         const identifier = {
                             vcode_id: filteredItem.vcode_id,
@@ -421,11 +451,17 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         if (modelName === 'Ingresos') {
                             const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
                             const identifierStr = formatIdentifier(identifierObj);
-                            logInfoWithLocation(`${dbName} ${modelName} INSERT 성공 | ${identifierStr}`);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 성공 | ${identifierStr} | results.push 및 createdCount++ 실행 전`);
                         }
                         
                         results.push({ index: i, action: 'created', data: created, identifier });
                         createdCount++;
+                        
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 완료 | ${identifierStr} | createdCount=${createdCount}`);
+                        }
 
                         // SAVEPOINT 해제
                         try {
@@ -434,6 +470,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             // 무시
                         }
                     } catch (createErr) {
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 실패 (catch 블록) | ${identifierStr} | 에러: ${errorMsg}`);
+                        }
                         const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
                         const lowerMsg = errorMsg.toLowerCase();
 
