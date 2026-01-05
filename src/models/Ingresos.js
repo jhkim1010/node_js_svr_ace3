@@ -55,7 +55,7 @@ function defineIngresosModel(sequelize) {
     indexes: [
         // 복합 기본 키: (ingreso_id, sucursal)
         // Sequelize는 복합 기본 키를 인덱스로도 정의
-        { unique: true, name: 'ingresos_ingreso_id_sucursal_uniq', fields: ['ingreso_id', 'sucursal'] },
+        { unique: true, name: 'ingresos_ingreso_id_sucursal_bmovido_uniq', fields: ['ingreso_id', 'sucursal', 'bmovido'] },
         { name: 'item_id_codigo_ingresos', fields: ['ref_id_codigo'] },
         { name: 'item_ingresos', fields: ['codigo'] },
         { name: 'item_ingresos_borrado', fields: ['codigo', 'borrado'] },
