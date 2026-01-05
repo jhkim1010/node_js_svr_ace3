@@ -8,6 +8,48 @@ const { logErrorWithLocation, logInfoWithLocation } = require('./log-utils');
 const { getTableHandlerConfig, requiresSpecialHandling } = require('./table-handler-config');
 
 /**
+ * 레코드 식별자 정보를 추출하는 헬퍼 함수
+ * @param {Object} item - 데이터 항목
+ * @param {string|Array} primaryKey - Primary key
+ * @returns {Object} 식별자 정보
+ */
+function extractRecordIdentifier(item, primaryKey) {
+    const identifier = {};
+    
+    if (Array.isArray(primaryKey)) {
+        primaryKey.forEach(key => {
+            if (item[key] !== undefined && item[key] !== null) {
+                identifier[key] = item[key];
+            }
+        });
+    } else if (primaryKey && item[primaryKey] !== undefined && item[primaryKey] !== null) {
+        identifier[primaryKey] = item[primaryKey];
+    }
+    
+    // 일반적인 식별 필드들도 추가
+    const commonFields = ['codigo', 'vcode', 'vcode_id', 'ingreso_id', 'sucursal', 'id_todocodigo', 'id_vdetalle', 'creditoventa_id'];
+    commonFields.forEach(field => {
+        if (item[field] !== undefined && item[field] !== null && !identifier[field]) {
+            identifier[field] = item[field];
+        }
+    });
+    
+    return identifier;
+}
+
+/**
+ * 식별자 정보를 문자열로 변환
+ * @param {Object} identifier - 식별자 객체
+ * @returns {string} 식별자 문자열
+ */
+function formatIdentifier(identifier) {
+    const parts = Object.entries(identifier)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(', ');
+    return parts || 'N/A';
+}
+
+/**
  * utime을 비교하여 클라이언트 utime이 더 높을 때만 업데이트하는 핸들러
  * @param {Object} req - Express request 객체
  * @param {Object} res - Express response 객체
@@ -117,12 +159,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                                 
                                 if (resultPk.action === 'skipped') {
+                                    const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                    const identifierStr = formatIdentifier(identifier);
+                                    const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
+                                        ? `Client utime(${resultPk.clientUtime}) <= Server utime(${resultPk.serverUtime})`
+                                        : resultPk.serverUtime
+                                            ? `Client utime missing, Server utime(${resultPk.serverUtime}) exists`
+                                            : 'Both utime missing';
+                                    
+                                    logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                    
                                     results.push({
                                         index: i,
                                         action: 'skipped',
                                         reason: resultPk.reason || 'server_utime_newer',
+                                        reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                         serverUtime: resultPk.serverUtime,
                                         clientUtime: resultPk.clientUtime,
+                                        identifier: identifier,
                                         data: resultPk.data
                                     });
                                     skippedCount++;
@@ -177,13 +231,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             }
 
                             if (resultPk.action === 'skipped') {
-                                // 서버 utime이 더 높아서 skip하는 경우는 정상 동작이므로 로그 출력하지 않음
+                                const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                const identifierStr = formatIdentifier(identifier);
+                                const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
+                                    ? `Client utime(${resultPk.clientUtime}) <= Server utime(${resultPk.serverUtime})`
+                                    : resultPk.serverUtime
+                                        ? `Client utime missing, Server utime(${resultPk.serverUtime}) exists`
+                                        : 'Both utime missing';
+                                
+                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                
                                 results.push({
                                     index: i,
                                     action: 'skipped',
                                     reason: resultPk.reason || 'server_utime_newer',
+                                    reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                     serverUtime: resultPk.serverUtime,
                                     clientUtime: resultPk.clientUtime,
+                                    identifier: identifier,
                                     data: resultPk.data
                                 });
                                 skippedCount++;
@@ -211,11 +276,14 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 const constraintMatch = pkErrorMsg.match(/constraint "([^"]+)"/i);
                                 const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
                                 
+                                const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                const identifierStr = formatIdentifier(identifier);
+                                
                                 // 테이블 설정에 따라 skip 처리
                                 if (tableConfig.logSkipReason) {
                                     const codigo = filteredItem.codigo || filteredItem.id_todocodigo || filteredItem.ingreso_id || 'N/A';
                                     const descripcion = filteredItem.descripcion || filteredItem.desc3 || 'N/A';
-                                    logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
+                                    logErrorWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint 위반 | constraint: ${constraintName} | 에러: ${pkErrorMsg}`);
                                 }
                                 
                                 try {
@@ -229,7 +297,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     index: i,
                                     action: 'skipped',
                                     reason: 'unique_constraint_violation',
+                                    reason_en: `Skipped because unique constraint violation: ${constraintName}`,
                                     constraint: constraintName,
+                                    identifier: identifier,
                                     error: pkErrorMsg
                                 });
                                 skippedCount++;
@@ -340,13 +410,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     }
 
                                     if (resultRetry.action === 'skipped') {
-                                        // 서버 utime이 더 높아서 skip하는 경우는 정상 동작이므로 로그 출력하지 않음
+                                        const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                        const identifierStr = formatIdentifier(identifier);
+                                        const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
+                                            ? `Client utime(${resultRetry.clientUtime}) <= Server utime(${resultRetry.serverUtime})`
+                                            : resultRetry.serverUtime
+                                                ? `Client utime missing, Server utime(${resultRetry.serverUtime}) exists`
+                                                : 'Both utime missing';
+                                        
+                                        logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: unique key retry 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                        
                                         results.push({
                                             index: i,
                                             action: 'skipped',
                                             reason: resultRetry.reason || 'server_utime_newer',
+                                            reason_en: `Retry after unique constraint error: Skipped because server utime is newer or equal: ${utimeInfo}`,
                                             serverUtime: resultRetry.serverUtime,
                                             clientUtime: resultRetry.clientUtime,
+                                            identifier: identifier,
                                             data: resultRetry.data
                                         });
                                         skippedCount++;
@@ -417,12 +498,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             }
 
                                             if (resultRetry.action === 'skipped') {
+                                                const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                                const identifierStr = formatIdentifier(identifier);
+                                                const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
+                                                    ? `Client utime(${resultRetry.clientUtime}) <= Server utime(${resultRetry.serverUtime})`
+                                                    : resultRetry.serverUtime
+                                                        ? `Client utime missing, Server utime(${resultRetry.serverUtime}) exists`
+                                                        : 'Both utime missing';
+                                                
+                                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: unique key retry 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                                
                                                 results.push({
                                                     index: i,
                                                     action: 'skipped',
                                                     reason: resultRetry.reason || 'server_utime_newer',
+                                                    reason_en: `Retry after unique constraint error: Skipped because server utime is newer or equal: ${utimeInfo}`,
                                                     serverUtime: resultRetry.serverUtime,
                                                     clientUtime: resultRetry.clientUtime,
+                                                    identifier: identifier,
                                                     data: resultRetry.data
                                                 });
                                                 skippedCount++;
@@ -455,10 +548,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
 
                             // Primary key로 retry 실패하거나 primary key를 사용할 수 없는 경우
                             // 테이블 설정에 따라 skip 처리
+                            const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifier);
+                            
                             if (tableConfig.logSkipReason) {
                                 const codigo = filteredItem.codigo || filteredItem.id_todocodigo || filteredItem.ingreso_id || 'N/A';
                                 const descripcion = filteredItem.descripcion || filteredItem.desc3 || 'N/A';
-                                logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint (${constraintName})`);
+                                logErrorWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint 위반 (모든 unique key 시도 실패) | constraint: ${constraintName} | 에러: ${errorMsg}`);
                             }
 
                             if (tableConfig.skipOnUniqueConstraintError) {
@@ -466,7 +562,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 index: i,
                                 action: 'skipped',
                                 reason: 'unique_constraint_violation',
+                                reason_en: `Skipped because unique constraint violation after all unique key retries: ${constraintName}`,
                                 constraint: constraintName,
+                                identifier: identifier,
                                 error: errorMsg
                             });
                             skippedCount++;
@@ -496,10 +594,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
                             // 테이블 설정에 따라 skip 이유 표시
+                            const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifier);
+                            
                             if (tableConfig.logSkipReason) {
                                 const codigo = filteredItem.codigo || filteredItem.id_todocodigo || filteredItem.ingreso_id || 'N/A';
                                 const descripcion = filteredItem.descripcion || filteredItem.desc3 || 'N/A';
-                                logErrorWithLocation(`${modelName} SKIP | codigo: ${codigo}, descripcion: ${descripcion} | 이유: foreign key constraint (${fkColumn}=${invalidValue} → ${referencedTable})`);
+                                logErrorWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | codigo: ${codigo}, descripcion: ${descripcion} | 이유: foreign key constraint 위반 | ${fkColumn}=${invalidValue} → ${referencedTable} | constraint: ${constraintName} | 에러: ${errorMsg}`);
                             }
 
                             // 실패한 INSERT로 인해 트랜잭션이 abort 상태가 되지 않도록 SAVEPOINT로 롤백
@@ -680,18 +781,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                             } else {
                                 // 서버 utime이 더 높거나 같으면 스킵
-                                // Extract identifier from existingRecord or filteredItem
-                                const identifier = {
-                                    vcode_id: filteredItem.vcode_id || existingRecord?.vcode_id,
-                                    sucursal: filteredItem.sucursal || existingRecord?.sucursal,
-                                    vcode: filteredItem.vcode || existingRecord?.vcode
-                                };
+                                const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                if (existingRecord) {
+                                    Object.assign(identifier, extractRecordIdentifier(existingRecord, primaryKey));
+                                }
+                                const identifierStr = formatIdentifier(identifier);
+                                const utimeInfo = serverUtimeStr && clientUtimeStr
+                                    ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
+                                    : serverUtimeStr
+                                        ? `Client utime missing, Server utime(${serverUtimeStr}) exists`
+                                        : 'Both utime missing';
+                                
+                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: availableUniqueKey 조회 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
                                 
                                 results.push({ 
                                     index: i, 
                                     action: 'skipped', 
                                     reason: 'server_utime_newer',
-                                    reason_en: 'Skipped because server utime is newer or equal',
+                                    reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                     serverUtime: serverUtimeStr,
                                     clientUtime: clientUtimeStr,
                                     identifier: identifier,
@@ -833,12 +940,27 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     }
                                 } else {
                                     // 서버 utime이 더 높거나 같으면 스킵
+                                    const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                    if (existingRecordByPk) {
+                                        Object.assign(identifier, extractRecordIdentifier(existingRecordByPk, primaryKey));
+                                    }
+                                    const identifierStr = formatIdentifier(identifier);
+                                    const utimeInfo = serverUtimeStr && clientUtimeStr
+                                        ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
+                                        : serverUtimeStr
+                                            ? `Client utime missing, Server utime(${serverUtimeStr}) exists`
+                                            : 'Both utime missing';
+                                    
+                                    logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: primary key 조회 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                    
                                     results.push({ 
                                         index: i, 
                                         action: 'skipped', 
                                         reason: 'server_utime_newer',
+                                        reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                         serverUtime: serverUtimeStr,
                                         clientUtime: clientUtimeStr,
+                                        identifier: identifier,
                                         data: existingRecordByPk 
                                     });
                                     skippedCount++;
@@ -849,7 +971,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     } catch (releaseErr) {
                                         // 무시
                                     }
-                            }
+                                }
                         } else {
                             // 레코드가 없으면 INSERT 시도
                                 // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
@@ -1086,12 +1208,27 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 }
                                             } else {
                                                 // 서버 utime이 더 높거나 같으면 스킵
+                                                const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                                if (retryRecord) {
+                                                    Object.assign(identifier, extractRecordIdentifier(retryRecord, primaryKey));
+                                                }
+                                                const identifierStr = formatIdentifier(identifier);
+                                                const utimeInfo = serverUtimeStr && clientUtimeStr
+                                                    ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
+                                                    : serverUtimeStr
+                                                        ? `Client utime missing, Server utime(${serverUtimeStr}) exists`
+                                                        : 'Both utime missing';
+                                                
+                                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: unique key retry 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                                
                                                 results.push({ 
                                                     index: i, 
                                                     action: 'skipped', 
                                                     reason: 'server_utime_newer',
+                                                    reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                                     serverUtime: serverUtimeStr,
                                                     clientUtime: clientUtimeStr,
+                                                    identifier: identifier,
                                                     data: retryRecord 
                                                 });
                                                 skippedCount++;
@@ -1607,13 +1744,28 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             throw updateErr;
                                         }
                                     } else {
-                                        // 서버 utime이 더 높거나 같으면 스킵 (정상 동작이므로 로그 출력하지 않음)
+                                        // 서버 utime이 더 높거나 같으면 스킵
+                                        const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                        if (retryRecord) {
+                                            Object.assign(identifier, extractRecordIdentifier(retryRecord, primaryKey));
+                                        }
+                                        const identifierStr = formatIdentifier(identifier);
+                                        const utimeInfo = serverUtimeStr && clientUtimeStr
+                                            ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
+                                            : serverUtimeStr
+                                                ? `Client utime missing, Server utime(${serverUtimeStr}) exists`
+                                                : 'Both utime missing';
+                                        
+                                        logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: unique key retry 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                        
                                         results.push({ 
                                             index: i, 
                                             action: 'skipped', 
                                             reason: 'server_utime_newer',
+                                            reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                             serverUtime: serverUtimeStr,
                                             clientUtime: clientUtimeStr,
+                                            identifier: identifier,
                                             data: retryRecord 
                                         });
                                         skippedCount++;
