@@ -222,9 +222,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     // 예상치 못한 action인 경우 continue
                                     continue;
                                 }
+                            } catch (preferredKeyErr) {
+                                // 에러 발생 시 primary key 조회로 진행 (로그 출력하지 않음)
                             }
-                        } catch (preferredKeyErr) {
-                            // 에러 발생 시 primary key 조회로 진행 (로그 출력하지 않음)
                         }
                     }
                     
