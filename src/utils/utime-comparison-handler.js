@@ -27,7 +27,7 @@ function extractRecordIdentifier(item, primaryKey) {
     }
     
     // 일반적인 식별 필드들도 추가
-    const commonFields = ['codigo', 'vcode', 'vcode_id', 'ingreso_id', 'sucursal', 'id_todocodigo', 'id_vdetalle', 'creditoventa_id'];
+    const commonFields = ['codigo', 'vcode', 'vcode_id', 'ingreso_id', 'sucursal', 'bmovido', 'id_todocodigo', 'id_vdetalle', 'creditoventa_id'];
     commonFields.forEach(field => {
         if (item[field] !== undefined && item[field] !== null && !identifier[field]) {
             identifier[field] = item[field];
@@ -1868,7 +1868,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             } else if (typeof item.data.get === 'function') {
                                 // Sequelize instance with get method - extract common identifier fields
                                 identifier = {};
-                                const commonFields = ['vcode_id', 'ingreso_id', 'sucursal', 'vcode', 'id_vdetalle', 'creditoventa_id'];
+                                const commonFields = ['vcode_id', 'ingreso_id', 'sucursal', 'bmovido', 'vcode', 'id_vdetalle', 'creditoventa_id'];
                                 commonFields.forEach(key => {
                                     try {
                                         const value = item.data.get(key);
@@ -1937,7 +1937,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             } else if (typeof error.data.get === 'function') {
                                 // Sequelize instance with get method - extract common identifier fields
                                 identifier = {};
-                                const commonFields = ['vcode_id', 'ingreso_id', 'sucursal', 'vcode', 'id_vdetalle', 'creditoventa_id'];
+                                const commonFields = ['vcode_id', 'ingreso_id', 'sucursal', 'bmovido', 'vcode', 'id_vdetalle', 'creditoventa_id'];
                                 commonFields.forEach(key => {
                                     try {
                                         const value = error.data.get(key);
