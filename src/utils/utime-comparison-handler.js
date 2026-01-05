@@ -1989,17 +1989,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             throw createErr;
                         }
                     }
-                }
                 } else {
                     if (modelName === 'Ingresos') {
                         logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 건너뜀 | requiresSpecialHandling=${requiresSpecialHandling(modelName)} | usePrimaryKeyFirst=${tableConfig.usePrimaryKeyFirst}`);
                     }
                 }
-            } else {
-                if (modelName === 'Ingresos') {
-                    logInfoWithLocation(`${dbName} ${modelName} [DEBUG] useUtimeComparison=false | 일반 처리로 진행`);
-                }
-            }
         }
         
         // 항목 처리 성공 시 해당 트랜잭션 커밋
