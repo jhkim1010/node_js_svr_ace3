@@ -431,12 +431,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             logInfoWithLocation(`${dbName} ${modelName} [DEBUG] shouldTryPrimaryKey=false | primary key 조회 건너뜀 | ${identifierStr} | INSERT로 진행`);
                         }
                     }
+                    
+                    if (modelName === 'Ingresos') {
+                        const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                        const identifierStr = formatIdentifier(identifierObj);
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] shouldTryPrimaryKey 블록 종료 후 | ${identifierStr} | INSERT 시도 부분으로 진행 예정`);
+                    }
 
                     // 2단계: preferredUniqueKeys 또는 primary key로 레코드를 찾지 못했으면 INSERT 시도
                     if (modelName === 'Ingresos') {
                         const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
                         const identifierStr = formatIdentifier(identifierObj);
                         logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 부분 도달 | ${identifierStr} | shouldTryPrimaryKey=${shouldTryPrimaryKey} | requiresSpecialHandling 블록 내부`);
+                    }
+                    
+                    if (modelName === 'Ingresos') {
+                        const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                        const identifierStr = formatIdentifier(identifierObj);
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 직전 | ${identifierStr} | SAVEPOINT 생성 시작`);
                     }
                     
                     // SAVEPOINT 생성 (INSERT 실패 시 롤백용)
@@ -458,6 +470,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
                     }
 
+                    if (modelName === 'Ingresos') {
+                        const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                        const identifierStr = formatIdentifier(identifierObj);
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] Model.create 호출 직전 | ${identifierStr}`);
+                    }
+                    
                     try {
                         if (modelName === 'Ingresos') {
                             const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
@@ -469,12 +487,18 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 시작 | ${identifierStr} | 이유: 레코드 없음 (${usedKey}로 조회 실패) | ${clientUtimeInfo}`);
                         }
                         
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [A] Model.create 호출 직전 | ${identifierStr} | createData keys: ${Object.keys(createData).join(', ')}`);
+                        }
+                        
                         const created = await Model.create(createData, { transaction });
                         
                         if (modelName === 'Ingresos') {
                             const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
                             const identifierStr = formatIdentifier(identifierObj);
-                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] Model.create 성공 | ${identifierStr}`);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [B] Model.create 완료 | ${identifierStr} | created 객체: ${created ? '존재' : 'null'} | created.ingreso_id: ${created ? created.ingreso_id : 'N/A'}`);
                         }
                         // Extract identifier from filteredItem for logging
                         const identifier = {
@@ -489,11 +513,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         if (modelName === 'Ingresos') {
                             const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
                             const identifierStr = formatIdentifier(identifierObj);
-                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 성공 | ${identifierStr} | results.push 및 createdCount++ 실행 전`);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [C] results.push 및 createdCount++ 실행 직전 | ${identifierStr} | 현재 createdCount: ${createdCount}`);
                         }
                         
                         results.push({ index: i, action: 'created', data: created, identifier });
+                        
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [D] results.push 완료 | ${identifierStr} | createdCount++ 실행 직전 | 현재 createdCount: ${createdCount}`);
+                        }
+                        
                         createdCount++;
+                        
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [E] createdCount++ 완료 | ${identifierStr} | 새로운 createdCount: ${createdCount}`);
+                        }
                         
                         if (modelName === 'Ingresos') {
                             const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
@@ -508,13 +545,20 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             // 무시
                         }
                     } catch (createErr) {
+                        const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
                         if (modelName === 'Ingresos') {
                             const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
                             const identifierStr = formatIdentifier(identifierObj);
-                            const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
-                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 실패 (catch 블록) | ${identifierStr} | 에러: ${errorMsg}`);
+                            const errorName = createErr.name || '';
+                            const errorStack = createErr.stack || '';
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [F] INSERT 실패 (catch 블록 진입) | ${identifierStr} | 에러명: ${errorName} | 에러메시지: ${errorMsg}`);
+                            if (createErr.original) {
+                                logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [F-1] 에러 원본: ${JSON.stringify(createErr.original).substring(0, 300)}`);
+                            }
+                            if (errorStack) {
+                                logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [F-2] 에러 스택 (처음 500자): ${errorStack.substring(0, 500)}`);
+                            }
                         }
-                        const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
                         const lowerMsg = errorMsg.toLowerCase();
 
                         // 3단계: UNIQUE 제약 조건 에러 → 어떤 unique key 인지 출력 후 SKIP
@@ -1994,7 +2038,19 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     if (modelName === 'Ingresos') {
                         logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 건너뜀 | requiresSpecialHandling=${requiresSpecialHandling(modelName)} | usePrimaryKeyFirst=${tableConfig.usePrimaryKeyFirst}`);
                     }
+                }
             }
+            
+            if (modelName === 'Ingresos') {
+                const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                const identifierStr = formatIdentifier(identifierObj);
+                logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 종료 후 | ${identifierStr} | 다음 단계로 진행`);
+            }
+        
+        if (modelName === 'Ingresos') {
+            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+            const identifierStr = formatIdentifier(identifierObj);
+            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [1] INSERT 시도 전 마지막 체크 | ${identifierStr}`);
         }
         
         // 항목 처리 성공 시 해당 트랜잭션 커밋
@@ -2003,6 +2059,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             await transaction.commit();
         }
         } catch (itemErr) {
+            if (modelName === 'Ingresos') {
+                const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                const identifierStr = formatIdentifier(identifierObj);
+                const errorMsg = itemErr.message || itemErr.toString();
+                logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [2] catch 블록 진입 | ${identifierStr} | 에러: ${errorMsg}`);
+            }
             // 항목 처리 실패 시 해당 트랜잭션만 롤백
             // 트랜잭션이 아직 완료되지 않았는지 확인하고 롤백
             // 이렇게 하면 "idle in transaction" 상태를 방지할 수 있음
