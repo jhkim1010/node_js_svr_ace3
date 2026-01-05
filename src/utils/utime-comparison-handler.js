@@ -1873,12 +1873,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         }
                     }
                 }
-                
-                // 항목 처리 성공 시 해당 트랜잭션 커밋
-                // 트랜잭션이 아직 완료되지 않았는지 확인
-                if (transaction && !transaction.finished) {
-                    await transaction.commit();
-                }
+            }
+            
+            // 항목 처리 성공 시 해당 트랜잭션 커밋
+            // 트랜잭션이 아직 완료되지 않았는지 확인
+            if (transaction && !transaction.finished) {
+                await transaction.commit();
+            }
         } catch (itemErr) {
             // 항목 처리 실패 시 해당 트랜잭션만 롤백
             // 트랜잭션이 아직 완료되지 않았는지 확인하고 롤백
