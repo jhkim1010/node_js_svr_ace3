@@ -28,8 +28,8 @@ function responseLogger(req, res, next) {
         const routerNameRaw = extractRouterName(path);
         const routerName = `**${routerNameRaw}**`;
         
-        // CRUD 작업 종류
-        const operation = getOperationType(req.method);
+        // CRUD 작업 종류 (커스텀 operation 타입이 있으면 우선 사용)
+        const operation = req._operationType || getOperationType(req.method);
         
         // 데이터 개수 확인
         // GET 요청의 경우 응답 데이터 개수를 우선 사용 (req._responseDataCount)
