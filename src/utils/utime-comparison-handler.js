@@ -129,6 +129,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                  * 4) INSERT 중 FOREIGN KEY 에러 → 어떤 외래키 인지 출력 후 SKIP
                  */
                 if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) {
+                    if (modelName === 'Ingresos') {
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 진입`);
+                    }
                     const primaryKeyArray = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
                     
                     // preferredUniqueKeys로 찾지 못했거나 사용할 수 없는 경우에만 primary key로 조회
@@ -152,6 +155,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         }, {});
                         
                         if (canUsePreferredKey && Object.keys(preferredKeyWhere).length === preferredKeyArray.length) {
+                            if (modelName === 'Ingresos') {
+                                logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys 조회 시도 | canUsePreferredKey=true`);
+                            }
                             try {
                                 const resultPk = await processRecordWithUtimeComparison(
                                     Model,
@@ -223,7 +229,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys로 찾지 못함 (not_found) | ${identifierStr} | shouldTryPrimaryKey를 false로 설정하고 INSERT로 진행`);
                                     }
                                     shouldTryPrimaryKey = false;
+                                    if (modelName === 'Ingresos') {
+                                        const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                        const identifierStr = formatIdentifier(identifier);
+                                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys not_found 처리 완료 | ${identifierStr} | shouldTryPrimaryKey=${shouldTryPrimaryKey} | try 블록 종료 예정`);
+                                    }
                                     // INSERT로 진행하기 위해 try 블록을 빠져나감
+                                    // try 블록을 완료하고 catch를 건너뛰어 INSERT 부분으로 진행
                                 } else {
                                     // 예상치 못한 action인 경우 continue
                                     if (modelName === 'Ingresos') {
@@ -232,8 +244,21 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     continue;
                                 }
                             } catch (preferredKeyErr) {
-                                // 에러 발생 시 primary key 조회로 진행 (로그 출력하지 않음)
+                                // 에러 발생 시 primary key 조회로 진행
+                                if (modelName === 'Ingresos') {
+                                    const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                    const identifierStr = formatIdentifier(identifier);
+                                    logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys 조회 중 에러 발생 | ${identifierStr} | 에러: ${preferredKeyErr.message || preferredKeyErr}`);
+                                }
                             }
+                        } else {
+                            if (modelName === 'Ingresos') {
+                                logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys 사용 불가 | canUsePreferredKey=false 또는 키 개수 불일치`);
+                            }
+                        }
+                    } else {
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys 없음 또는 사용 불가`);
                         }
                     }
                     
@@ -241,9 +266,14 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     // 단, preferredUniqueKey가 primary key와 다른 경우 (예: Ingresos의 경우 ['ingreso_id', 'sucursal', 'bmovido'] vs ['ingreso_id', 'sucursal'])
                     // primary key로 조회하지 않고 INSERT로 진행
                     if (modelName === 'Ingresos') {
-                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] shouldTryPrimaryKey 체크 | shouldTryPrimaryKey=${shouldTryPrimaryKey}`);
+                        const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                        const identifierStr = formatIdentifier(identifierObj);
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] shouldTryPrimaryKey 체크 직전 | ${identifierStr} | shouldTryPrimaryKey=${shouldTryPrimaryKey}`);
                     }
                     if (shouldTryPrimaryKey) {
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] shouldTryPrimaryKey=true | primary key 조회 시도`);
+                        }
                         // preferredUniqueKey가 primary key와 다른지 확인
                         if (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys) && tableConfig.preferredUniqueKeys.length > 0) {
                             const preferredKey = tableConfig.preferredUniqueKeys[0];
@@ -394,11 +424,19 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 throw pkErr;
                             }
                         }
+                    } else {
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] shouldTryPrimaryKey=false | primary key 조회 건너뜀 | ${identifierStr} | INSERT로 진행`);
+                        }
                     }
 
                     // 2단계: preferredUniqueKeys 또는 primary key로 레코드를 찾지 못했으면 INSERT 시도
                     if (modelName === 'Ingresos') {
-                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 부분 도달 | shouldTryPrimaryKey=${shouldTryPrimaryKey}`);
+                        const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                        const identifierStr = formatIdentifier(identifierObj);
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 부분 도달 | ${identifierStr} | shouldTryPrimaryKey=${shouldTryPrimaryKey} | requiresSpecialHandling 블록 내부`);
                     }
                     
                     // SAVEPOINT 생성 (INSERT 실패 시 롤백용)
@@ -1951,6 +1989,15 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             throw createErr;
                         }
                     }
+                }
+                } else {
+                    if (modelName === 'Ingresos') {
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 건너뜀 | requiresSpecialHandling=${requiresSpecialHandling(modelName)} | usePrimaryKeyFirst=${tableConfig.usePrimaryKeyFirst}`);
+                    }
+                }
+            } else {
+                if (modelName === 'Ingresos') {
+                    logInfoWithLocation(`${dbName} ${modelName} [DEBUG] useUtimeComparison=false | 일반 처리로 진행`);
                 }
             }
         }
