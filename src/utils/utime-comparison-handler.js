@@ -167,6 +167,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 );
                                 
                                 if (resultPk.action === 'updated') {
+                                    if (modelName === 'Ingresos') {
+                                        const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                        const identifierStr = formatIdentifier(identifier);
+                                        const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
+                                            ? `Client utime(${resultPk.clientUtime}) > Server utime(${resultPk.serverUtime})`
+                                            : resultPk.clientUtime
+                                                ? `Client utime(${resultPk.clientUtime}) exists, Server utime missing`
+                                                : 'Both utime missing';
+                                        logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr} | 이유: 클라이언트 utime이 더 최신 | ${utimeInfo}`);
+                                    }
                                     results.push({ index: i, action: 'updated', data: resultPk.data });
                                     updatedCount++;
                                     // 트랜잭션이 아직 완료되지 않았는지 확인
@@ -236,6 +246,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             );
 
                             if (resultPk.action === 'updated') {
+                                if (modelName === 'Ingresos') {
+                                    const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                    const identifierStr = formatIdentifier(identifier);
+                                    const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
+                                        ? `Client utime(${resultPk.clientUtime}) > Server utime(${resultPk.serverUtime})`
+                                        : resultPk.clientUtime
+                                            ? `Client utime(${resultPk.clientUtime}) exists, Server utime missing`
+                                            : 'Both utime missing';
+                                    logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr} | 이유: 클라이언트 utime이 더 최신 | ${utimeInfo}`);
+                                }
                                 results.push({ index: i, action: 'updated', data: resultPk.data });
                                 updatedCount++;
                                 
@@ -346,6 +366,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
 
                     try {
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            const clientUtimeInfo = clientUtimeStr ? `Client utime: ${clientUtimeStr}` : 'Client utime: missing';
+                            logInfoWithLocation(`${dbName} ${modelName} INSERT 시도 | ${identifierStr} | 이유: 레코드 없음 (primary key로 조회 실패) | ${clientUtimeInfo}`);
+                        }
+                        
                         const created = await Model.create(createData, { transaction });
                         // Extract identifier from filteredItem for logging
                         const identifier = {
@@ -356,6 +383,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             id_vdetalle: filteredItem.id_vdetalle,
                             creditoventa_id: filteredItem.creditoventa_id
                         };
+                        
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} INSERT 성공 | ${identifierStr}`);
+                        }
+                        
                         results.push({ index: i, action: 'created', data: created, identifier });
                         createdCount++;
 
@@ -415,6 +449,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     );
 
                                     if (resultRetry.action === 'updated') {
+                                        if (modelName === 'Ingresos') {
+                                            const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                            const identifierStr = formatIdentifier(identifier);
+                                            const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
+                                                ? `Client utime(${resultRetry.clientUtime}) > Server utime(${resultRetry.serverUtime})`
+                                                : resultRetry.clientUtime
+                                                    ? `Client utime(${resultRetry.clientUtime}) exists, Server utime missing`
+                                                    : 'Both utime missing';
+                                            logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr} | 이유: unique constraint 에러 후 primary key retry로 클라이언트 utime이 더 최신 | ${utimeInfo}`);
+                                        }
                                         results.push({ index: i, action: 'updated', data: resultRetry.data });
                                         updatedCount++;
                                         retrySuccess = true;
@@ -503,6 +547,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             );
 
                                             if (resultRetry.action === 'updated') {
+                                                if (modelName === 'Ingresos') {
+                                                    const identifier = extractRecordIdentifier(filteredItem, primaryKey);
+                                                    const identifierStr = formatIdentifier(identifier);
+                                                    const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
+                                                        ? `Client utime(${resultRetry.clientUtime}) > Server utime(${resultRetry.serverUtime})`
+                                                        : resultRetry.clientUtime
+                                                            ? `Client utime(${resultRetry.clientUtime}) exists, Server utime missing`
+                                                            : 'Both utime missing';
+                                                    logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr} | 이유: unique constraint 에러 후 unique key retry로 클라이언트 utime이 더 최신 | ${utimeInfo}`);
+                                                }
                                                 results.push({ index: i, action: 'updated', data: resultRetry.data });
                                                 updatedCount++;
                                                 retrySuccess = true;
