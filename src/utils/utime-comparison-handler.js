@@ -2035,8 +2035,91 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     }
                 }
                 } else {
+                    // requiresSpecialHandling 블록의 else: preferredUniqueKeys로 찾지 못하고 shouldTryPrimaryKey=false인 경우 INSERT 시도
                     if (modelName === 'Ingresos') {
-                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 건너뜀 | requiresSpecialHandling=${requiresSpecialHandling(modelName)} | usePrimaryKeyFirst=${tableConfig.usePrimaryKeyFirst}`);
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 else 진입 | preferredUniqueKeys로 찾지 못함 | INSERT 시도 필요`);
+                    }
+                    
+                    // preferredUniqueKeys로 찾지 못한 경우 INSERT 시도
+                    // SAVEPOINT 생성 (INSERT 실패 시 롤백용)
+                    const savepointName = `sp_item_${i}_${Date.now()}`;
+                    try {
+                        await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [ELSE] SAVEPOINT 생성 성공: ${savepointName}`);
+                        }
+                    } catch (spErr) {
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [ELSE] SAVEPOINT 생성 실패: ${spErr.message}`);
+                        }
+                    }
+                    
+                    const createData = { ...filteredItem };
+                    if (createData.utime) {
+                        createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
+                    }
+                    
+                    if (modelName === 'Ingresos') {
+                        const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                        const identifierStr = formatIdentifier(identifierObj);
+                        logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [ELSE] Model.create 호출 직전 | ${identifierStr}`);
+                    }
+                    
+                    try {
+                        const created = await Model.create(createData, { transaction });
+                        
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [ELSE] Model.create 성공 | ${identifierStr}`);
+                        }
+                        
+                        const identifier = {
+                            vcode_id: filteredItem.vcode_id,
+                            ingreso_id: filteredItem.ingreso_id,
+                            sucursal: filteredItem.sucursal,
+                            vcode: filteredItem.vcode,
+                            id_vdetalle: filteredItem.id_vdetalle,
+                            creditoventa_id: filteredItem.creditoventa_id
+                        };
+                        
+                        results.push({ index: i, action: 'created', data: created, identifier });
+                        createdCount++;
+                        
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [ELSE] INSERT 완료 | ${identifierStr} | createdCount=${createdCount}`);
+                        }
+                        
+                        // SAVEPOINT 해제
+                        try {
+                            await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                        } catch (releaseErr) {
+                            // 무시
+                        }
+                        
+                        // 트랜잭션 커밋
+                        if (transaction && !transaction.finished) {
+                            await transaction.commit();
+                        }
+                    } catch (createErr) {
+                        const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
+                        if (modelName === 'Ingresos') {
+                            const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                            const identifierStr = formatIdentifier(identifierObj);
+                            logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [ELSE] INSERT 실패 | ${identifierStr} | 에러: ${errorMsg}`);
+                        }
+                        
+                        // SAVEPOINT 롤백
+                        try {
+                            await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                        } catch (rollbackErr) {
+                            // 무시
+                        }
+                        
+                        // 에러를 다시 던져서 상위 catch 블록에서 처리
+                        throw createErr;
                     }
                 }
             }
@@ -2046,6 +2129,75 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 const identifierStr = formatIdentifier(identifierObj);
                 logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 종료 후 | ${identifierStr} | 다음 단계로 진행`);
             }
+        
+        // requiresSpecialHandling 블록 밖에서도 INSERT 시도 (preferredUniqueKeys로 찾지 못한 경우)
+        // preferredUniqueKeys로 찾지 못하고 shouldTryPrimaryKey=false인 경우 INSERT 시도
+        if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) {
+            // 이미 requiresSpecialHandling 블록 내부에서 처리되었거나, 
+            // preferredUniqueKeys로 찾지 못해서 shouldTryPrimaryKey=false로 설정된 경우
+            // 이 경우는 requiresSpecialHandling 블록 내부의 INSERT 시도 코드에서 처리됨
+            // 여기서는 아무것도 하지 않음
+        } else {
+            // requiresSpecialHandling이 아닌 경우 또는 usePrimaryKeyFirst가 false인 경우
+            // 일반적인 INSERT 시도
+            if (modelName === 'Ingresos') {
+                const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                const identifierStr = formatIdentifier(identifierObj);
+                logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [OUTSIDE] requiresSpecialHandling 블록 밖에서 INSERT 시도 | ${identifierStr}`);
+            }
+            
+            // SAVEPOINT 생성 (INSERT 실패 시 롤백용)
+            const savepointName = `sp_item_${i}_${Date.now()}`;
+            try {
+                await sequelize.query(`SAVEPOINT ${savepointName}`, { transaction });
+            } catch (spErr) {
+                // SAVEPOINT 생성 실패는 무시
+            }
+            
+            const createData = { ...filteredItem };
+            if (createData.utime) {
+                createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
+            }
+            
+            try {
+                const created = await Model.create(createData, { transaction });
+                const identifier = {
+                    vcode_id: filteredItem.vcode_id,
+                    ingreso_id: filteredItem.ingreso_id,
+                    sucursal: filteredItem.sucursal,
+                    vcode: filteredItem.vcode,
+                    id_vdetalle: filteredItem.id_vdetalle,
+                    creditoventa_id: filteredItem.creditoventa_id
+                };
+                results.push({ index: i, action: 'created', data: created, identifier });
+                createdCount++;
+                
+                // SAVEPOINT 해제
+                try {
+                    await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
+                } catch (releaseErr) {
+                    // 무시
+                }
+            } catch (createErr) {
+                // 에러 처리 (간단한 버전)
+                const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
+                if (modelName === 'Ingresos') {
+                    const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
+                    const identifierStr = formatIdentifier(identifierObj);
+                    logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [OUTSIDE] INSERT 실패 | ${identifierStr} | 에러: ${errorMsg}`);
+                }
+                
+                // SAVEPOINT 롤백
+                try {
+                    await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
+                } catch (rollbackErr) {
+                    // 무시
+                }
+                
+                // 에러를 다시 던져서 상위 catch 블록에서 처리
+                throw createErr;
+            }
+        }
         
         if (modelName === 'Ingresos') {
             const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
