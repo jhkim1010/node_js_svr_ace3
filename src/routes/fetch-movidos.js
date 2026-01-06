@@ -34,6 +34,9 @@ router.get('/', async (req, res) => {
         const lastGetUtime = body.last_get_utime;
         const utimeMovidosFetch = body.utime_movidos_fetch;
         
+        // ingreso_id 파라미터 확인 (ID 기반 페이지네이션용, 첫 요청에는 없음)
+        const idIngreso = body.ingreso_id || query.ingreso_id;
+        
         // sucursal_numero는 쿼리 파라미터, 헤더, body 순으로 확인
         // Express는 헤더를 소문자로 변환하므로 소문자로 확인
         const headerSucursalNumero = req.headers['x-sucursal-numero'] || req.headers['X-Sucursal-Numero'];
@@ -46,10 +49,11 @@ router.get('/', async (req, res) => {
         const { limit, offset, page } = parsePaginationParams(paginationSource, 100, 1000);
         
         // 필수 파라미터 검증
-        if (!utimeMovidosFetch) {
+        // ID 기반 페이지네이션을 사용하지 않는 경우에만 utime_movidos_fetch가 필수
+        if (!idIngreso && !utimeMovidosFetch) {
             return res.status(400).json({
                 error: 'Missing required parameter',
-                message: 'utime_movidos_fetch 파라미터가 필요합니다. (body에 포함)'
+                message: 'utime_movidos_fetch 파라미터가 필요합니다. (body에 포함) 또는 ingreso_id를 사용한 ID 기반 페이지네이션을 사용하세요.'
             });
         }
         
@@ -62,7 +66,8 @@ router.get('/', async (req, res) => {
         
         // 서비스 호출
         const result = await fetchMovidos(sequelize, {
-            utimeMovidosFetch,
+            utimeMovidosFetch, // ID 기반 페이지네이션 사용 시 선택적
+            idIngreso, // ID 기반 페이지네이션용
             sucursal: sucursalNumero, // 서비스에서는 sucursal로 전달
             limit,
             offset
