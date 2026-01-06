@@ -188,7 +188,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         await transaction.commit();
                                     }
                                     continue;
-                                }
+                                } // end if (resultPk.action === 'updated') - preferredUniqueKeys 조회 결과
                                 
                                 if (resultPk.action === 'skipped') {
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
@@ -217,7 +217,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         await transaction.commit();
                                     }
                                     continue;
-                                }
+                                } // end if (resultPk.action === 'skipped') - preferredUniqueKeys 조회 결과
                                 
                                 // preferredUniqueKeys로 찾지 못한 경우 (not_found) INSERT 시도로 진행
                                 if (resultPk.action === 'not_found') {
@@ -236,13 +236,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     // }
                                     // INSERT로 진행하기 위해 try 블록을 빠져나감
                                     // try 블록을 완료하고 catch를 건너뛰어 INSERT 부분으로 진행
-                                } else {
+                                } else { // else of if (resultPk.action === 'not_found')
                                     // 예상치 못한 action인 경우 continue
                                     // if (modelName === 'Ingresos') {
                                     //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] 예상치 못한 action: ${resultPk.action} | continue`);
                                     // }
                                     continue;
-                                }
+                                } // end else of if (resultPk.action === 'not_found')
                             } catch (preferredKeyErr) {
                                 // 에러 발생 시 primary key 조회로 진행
                                 // if (modelName === 'Ingresos') {
@@ -250,17 +250,17 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 //     const identifierStr = formatIdentifier(identifier);
                                 //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys 조회 중 에러 발생 | ${identifierStr} | 에러: ${preferredKeyErr.message || preferredKeyErr}`);
                                 // }
-                            }
-                        } else {
+                            } // end catch (preferredKeyErr) - preferredUniqueKeys 조회 try 블록
+                        } else { // else of if (canUsePreferredKey && Object.keys(preferredKeyWhere).length === preferredKeyArray.length)
                             // if (modelName === 'Ingresos') {
                             //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys 사용 불가 | canUsePreferredKey=false 또는 키 개수 불일치`);
                             // }
-                        }
-                    } else {
+                        } // end else of if (canUsePreferredKey && ...) - preferredUniqueKeys 사용 불가
+                    } else { // else of if (tableConfig.preferredUniqueKeys && ...)
                         // if (modelName === 'Ingresos') {
                         //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys 없음 또는 사용 불가`);
                         // }
-                    }
+                    } // end else of if (tableConfig.preferredUniqueKeys && ...) - preferredUniqueKeys 없음
                     
                     // preferredUniqueKeys로 찾지 못했으면 primary key로 조회
                     // 단, preferredUniqueKey가 primary key와 다른 경우 (예: Ingresos의 경우 ['ingreso_id', 'sucursal', 'bmovido'] vs ['ingreso_id', 'sucursal'])
@@ -284,8 +284,8 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             if (isPreferredKeyDifferentFromPrimaryKey) {
                                 // preferredUniqueKey가 primary key와 다르면 primary key로 조회하지 않음
                                 shouldTryPrimaryKey = false;
-                            }
-                        }
+                            } // end if (isPreferredKeyDifferentFromPrimaryKey)
+                        } // end if (tableConfig.preferredUniqueKeys && ...) - preferredUniqueKey와 primary key 비교
                         
                         if (shouldTryPrimaryKey) {
                             let canUsePrimaryKey = true;
@@ -312,7 +312,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     sequelize
                                 );
 
-                            if (resultPk.action === 'updated') {
+                            if (resultPk.action === 'updated') { // primary key 조회 결과 - updated
                                 if (modelName === 'Ingresos') {
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                     const identifierStr = formatIdentifier(identifier);
@@ -333,9 +333,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 
                                 // primary key 기반 처리 완료 → 다음 아이템으로
                                 continue;
-                            }
+                            } // end if (resultPk.action === 'updated') - primary key 조회 결과
 
-                            if (resultPk.action === 'skipped') {
+                            if (resultPk.action === 'skipped') { // primary key 조회 결과 - skipped
                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                 const identifierStr = formatIdentifier(identifier);
                                 const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
@@ -365,9 +365,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 
                                 // primary key 기반 처리 완료 → 다음 아이템으로
                                 continue;
-                            }
+                            } // end if (resultPk.action === 'skipped') - primary key 조회 결과
                             // resultPk.action === 'not_found' 인 경우만 INSERT 시도로 진행
-                        } catch (pkErr) {
+                        } catch (pkErr) { // catch of primary key 조회 try 블록
                             // processRecordWithUtimeComparison에서 에러 발생 시
                             // unique constraint 에러인지 확인하고 SKIP 처리
                             const pkErrorMsg = pkErr.original ? pkErr.original.message : pkErr.message || '';
@@ -419,18 +419,18 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     // skip하지 않는 경우 에러로 처리
                                     throw pkErr;
                                 }
-                            } else {
+                            } else { // else of if (isPkUniqueError)
                                 // unique constraint 에러가 아니면 다시 throw
                                 throw pkErr;
-                            }
-                        }
-                    } else {
+                            } // end else of if (isPkUniqueError)
+                        } // end catch (pkErr) - primary key 조회 try 블록
+                    } else { // else of if (shouldTryPrimaryKey) - shouldTryPrimaryKey=false
                         // if (modelName === 'Ingresos') {
                         //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
                         //     const identifierStr = formatIdentifier(identifierObj);
                         //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] shouldTryPrimaryKey=false | primary key 조회 건너뜀 | ${identifierStr} | INSERT로 진행`);
                         // }
-                    }
+                    } // end else of if (shouldTryPrimaryKey) - shouldTryPrimaryKey=false
                     
                     // if (modelName === 'Ingresos') {
                     //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
@@ -544,7 +544,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         } catch (releaseErr) {
                             // 무시
                         }
-                    } catch (createErr) {
+                    } catch (createErr) { // catch of INSERT try 블록 - requiresSpecialHandling 블록 내부
                         const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
                         // if (modelName === 'Ingresos') {
                         //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
@@ -567,7 +567,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                              lowerMsg.includes('duplicate key') ||
                                              lowerMsg.includes('unique constraint') ||
                                              lowerMsg.includes('violates unique constraint');
-                        if (isUniqueError) {
+                        if (isUniqueError) { // if (isUniqueError) - unique constraint 에러 처리
                             const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
@@ -606,7 +606,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         sequelize
                                     );
 
-                                    if (resultRetry.action === 'updated') {
+                                    if (resultRetry.action === 'updated') { // primary key retry 결과 - updated
                                         if (modelName === 'Ingresos') {
                                             const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                             const identifierStr = formatIdentifier(identifier);
@@ -627,9 +627,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         }
                                         
                                         continue;
-                                    }
+                                    } // end if (resultRetry.action === 'updated') - primary key retry 결과
 
-                                    if (resultRetry.action === 'skipped') {
+                                    if (resultRetry.action === 'skipped') { // primary key retry 결과 - skipped
                                         const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                         const identifierStr = formatIdentifier(identifier);
                                         const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
@@ -659,14 +659,14 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         }
                                         
                                         continue;
-                                    }
+                                    } // end if (resultRetry.action === 'skipped') - primary key retry 결과
                                 } catch (retryErr) {
                                     // retry 실패 시 다른 unique key로 시도
-                                }
-                            }
+                                } // end catch (retryErr) - primary key retry try 블록
+                            } // end if (canRetryWithPrimaryKey && ...) - primary key retry
                             
                             // 2. Primary key로 실패했으면 다른 unique key (복합 포함)로 시도
-                            if (!retrySuccess) {
+                            if (!retrySuccess) { // if (!retrySuccess) - 다른 unique key로 retry
                                 for (const uniqueKey of uniqueKeys) {
                                     // Primary key는 이미 시도했으므로 건너뛰기
                                     const isPrimaryKey = Array.isArray(uniqueKey)
@@ -676,7 +676,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     
                                     if (isPrimaryKey) {
                                         continue;
-                                    }
+                                    } // end if (isPrimaryKey)
                                     
                                     // Unique key에 필요한 모든 값이 있는지 확인
                                     const uniqueKeyArray = Array.isArray(uniqueKey) ? uniqueKey : [uniqueKey];
@@ -704,7 +704,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 sequelize
                                             );
 
-                                            if (resultRetry.action === 'updated') {
+                                            if (resultRetry.action === 'updated') { // unique key retry 결과 - updated
                                                 if (modelName === 'Ingresos') {
                                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                                     const identifierStr = formatIdentifier(identifier);
@@ -725,9 +725,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 }
                                                 
                                                 break; // 성공했으면 루프 종료
-                                            }
+                                            } // end if (resultRetry.action === 'updated') - unique key retry 결과
 
-                                            if (resultRetry.action === 'skipped') {
+                                            if (resultRetry.action === 'skipped') { // unique key retry 결과 - skipped
                                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                                 const identifierStr = formatIdentifier(identifier);
                                                 const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
@@ -757,24 +757,24 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 }
                                                 
                                                 break; // 성공했으면 루프 종료
-                                            }
+                                            } // end if (resultRetry.action === 'skipped') - unique key retry 결과
                                         } catch (retryErr) {
                                             // 이 unique key로 실패했으면 다음 unique key로 시도
                                             continue;
-                                        }
-                                    }
-                                }
-                            }
+                                        } // end catch (retryErr) - unique key retry try 블록
+                                    } // end if (canUseUniqueKey && ...) - unique key retry
+                                } // end for (const uniqueKey of uniqueKeys)
+                            } // end if (!retrySuccess) - 다른 unique key로 retry
                             
                             // 3. 모든 unique key로 시도했지만 실패한 경우에만 skip 처리
-                            if (retrySuccess) {
+                            if (retrySuccess) { // if (retrySuccess) - retry 성공
                                 // 트랜잭션 커밋하여 연결 풀로 반환
                                 if (transaction && !transaction.finished) {
                                     await transaction.commit();
                                 }
                                 
                                 continue;
-                            }
+                            } // end if (retrySuccess) - retry 성공
 
                             // Primary key로 retry 실패하거나 primary key를 사용할 수 없는 경우
                             // 테이블 설정에 따라 skip 처리
@@ -785,7 +785,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 const codigo = filteredItem.codigo || filteredItem.id_todocodigo || filteredItem.ingreso_id || 'N/A';
                                 const descripcion = filteredItem.descripcion || filteredItem.desc3 || 'N/A';
                                 logErrorWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | codigo: ${codigo}, descripcion: ${descripcion} | 이유: unique constraint 위반 (모든 unique key 시도 실패) | constraint: ${constraintName} | 에러: ${errorMsg}`);
-                            }
+                            } // end if (tableConfig.logSkipReason)
 
                             if (tableConfig.skipOnUniqueConstraintError) {
                             results.push({
@@ -798,15 +798,15 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 error: errorMsg
                             });
                             skippedCount++;
-                            } else {
+                            } else { // else of if (tableConfig.skipOnUniqueConstraintError)
                                 // skip하지 않는 경우 에러로 처리
                                 throw createErr;
-                            }
+                            } // end else of if (tableConfig.skipOnUniqueConstraintError)
 
                             // 이후 작업은 다음 루프로 진행 (새 SAVEPOINT를 생성)
-                        }
+                        } // end if (isUniqueError) - unique constraint 에러 처리
                         // 4단계: FOREIGN KEY 제약 조건 에러 → 어떤 외래키 인지 출력 후 SKIP
-                        else if (
+                        else if ( // else if - foreign key constraint 에러 처리
                             createErr.constructor.name.includes('ForeignKeyConstraintError') ||
                             lowerMsg.includes('foreign key constraint') ||
                             lowerMsg.includes('violates foreign key') ||
@@ -862,29 +862,29 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             // 트랜잭션 커밋하여 연결 풀로 반환
                             if (transaction && !transaction.finished) {
                                 await transaction.commit();
-                            }
-                    } else {
+                            } // end if (transaction && !transaction.finished) - foreign key 에러 처리
+                    } else { // else of else if - 그 외 에러 처리
                             // 그 외 에러는 SAVEPOINT 롤백 후 그대로 throw (실패로 처리)
                             try {
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
                                 // 무시
-                            }
+                            } // end catch (rollbackErr)
                             throw createErr;
-                        }
-                    }
+                        } // end else of else if - 그 외 에러 처리
+                    } // end catch (createErr) - INSERT try 블록
 
                     // Codigos, Todocodigos 에 대해서는 여기까지 처리했으므로 다음 아이템으로
                     // 트랜잭션 커밋하여 연결 풀로 반환
                     if (transaction && !transaction.finished) {
                         await transaction.commit();
-                    }
+                    } // end if (transaction && !transaction.finished) - Codigos/Todocodigos 처리 완료
                     
                     continue;
-                }
+                } // end if (useUtimeComparison) - useUtimeComparison 블록 종료
                 
                 // UPDATE operation 처리 (기존 공통 로직 - Codigos, Todocodigos 이외에서 사용)
-                if (operation === 'UPDATE' || operation === 'INSERT' || operation === 'CREATE') {
+                if (operation === 'UPDATE' || operation === 'INSERT' || operation === 'CREATE') { // if (operation === 'UPDATE' || ...) - UPDATE/INSERT/CREATE 처리
                     // preferredUniqueKeys가 있으면 그것을 우선 사용
                     let availableUniqueKey = null;
                     if (tableConfig.preferredUniqueKeys && Array.isArray(tableConfig.preferredUniqueKeys) && tableConfig.preferredUniqueKeys.length > 0) {
@@ -901,9 +901,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     // preferredUniqueKey로 찾지 못했으면 일반 uniqueKeys에서 찾기
                     if (!availableUniqueKey) {
                         availableUniqueKey = findAvailableUniqueKey(filteredItem, uniqueKeys);
-                    }
+                    } // end if (!availableUniqueKey)
                     
-                    if (availableUniqueKey) {
+                    if (availableUniqueKey) { // if (availableUniqueKey) - availableUniqueKey로 조회
                         const whereCondition = buildWhereCondition(filteredItem, availableUniqueKey);
                         
                         // 기존 레코드 조회 (utime을 문자열로 직접 가져오기 위해 raw 옵션 사용)
@@ -973,7 +973,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 shouldUpdate = false;
                             }
                             
-                            if (shouldUpdate) {
+                            if (shouldUpdate) { // if (shouldUpdate) - 업데이트 수행
                                 // 업데이트 수행
                                 const updateData = { ...filteredItem };
                                 const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
@@ -982,7 +982,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
                                 if (updateData.utime) {
                                     updateData.utime = convertUtimeToSequelizeLiteral(updateData.utime);
-                                }
+                                } // end if (updateData.utime)
                                 
                                 await Model.update(updateData, { where: whereCondition, transaction });
                                 const updated = Array.isArray(availableUniqueKey)
@@ -1004,7 +1004,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     utimeComparison = `Client utime(${clientUtimeStr}) exists, Server utime missing`;
                                 } else if (!clientUtimeStr && !serverUtimeStr) {
                                     utimeComparison = `Both client and server have no utime`;
-                                }
+                                } // end if-else chain - utimeComparison
                                 
                                 results.push({ 
                                     index: i, 
@@ -1024,8 +1024,8 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
                                 } catch (releaseErr) {
                                     // 무시
-                                }
-                            } else {
+                                } // end catch (releaseErr)
+                            } else { // else of if (shouldUpdate) - 스킵 처리
                                 // 서버 utime이 더 높거나 같으면 스킵
                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                 if (existingRecord) {
@@ -1057,9 +1057,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
                                 } catch (releaseErr) {
                                     // 무시
-                                }
-                            }
-                        } else {
+                                } // end catch (releaseErr)
+                            } // end else of if (shouldUpdate) - 스킵 처리
+                        } else { // else of if (existingRecord) - 레코드 없음, primary key로 확인
                             // availableUniqueKey로 레코드를 찾지 못했을 때, primary key로도 확인
                             let existingRecordByPk = null;
                             if (primaryKey) {
@@ -1094,11 +1094,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             },
                                             raw: true
                                         });
-                                    }
-                                }
-                            }
+                                    } // end if (!isPrimaryKeySameAsUniqueKey)
+                                } // end if (primaryKeyValue)
+                            } // end if (primaryKey)
                             
-                            if (existingRecordByPk) {
+                            if (existingRecordByPk) { // if (existingRecordByPk) - primary key로 레코드 찾음
                                 // primary key로 레코드를 찾았으면 utime 비교 수행
                                 let serverUtimeStr = null;
                                 if (existingRecordByPk.utime_str) {
@@ -1184,12 +1184,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     } catch (releaseErr) {
                                         // 무시
                                     }
-                                } else {
+                                } else { // else of if (shouldUpdate) - primary key 조회 후 스킵
                                     // 서버 utime이 더 높거나 같으면 스킵
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                     if (existingRecordByPk) {
                                         Object.assign(identifier, extractRecordIdentifier(existingRecordByPk, primaryKey));
-                                    }
+                                    } // end if (existingRecordByPk)
                                     const identifierStr = formatIdentifier(identifier);
                                     const utimeInfo = serverUtimeStr && clientUtimeStr
                                         ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
@@ -1216,9 +1216,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
                                     } catch (releaseErr) {
                                         // 무시
-                                    }
-                                }
-                        } else {
+                                    } // end catch (releaseErr)
+                                } // end else of if (shouldUpdate) - primary key 조회 후 스킵
+                        } else { // else of if (existingRecordByPk) - 레코드 없음, INSERT 시도
                             // 레코드가 없으면 INSERT 시도
                                 // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
                                 const createData = { ...filteredItem };
@@ -1244,10 +1244,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
                                     } catch (releaseErr) {
                                         // 무시
-                                    }
-                                } catch (createErr) {
+                                    } // end catch (releaseErr)
+                                } catch (createErr) { // catch of INSERT try 블록 - availableUniqueKey로 찾지 못한 경우
                                     // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 primary key로 레코드를 조회하여 utime 비교 수행
-                                    if (isUniqueConstraintError(createErr) && primaryKey) {
+                                    if (isUniqueConstraintError(createErr) && primaryKey) { // if (isUniqueConstraintError(createErr) && primaryKey) - unique constraint 에러 처리
                                         try {
                                             // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
                                             await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
@@ -1503,11 +1503,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             // 무시
                                         }
                                         throw createErr;
-                                    }
-                                }
-                            }
-                        }
-                    } else {
+                                    } // end else of if (isUniqueConstraintError(createErr) && primaryKey)
+                                } // end catch (createErr) - INSERT try 블록
+                            } // end else of if (existingRecordByPk) - 레코드 없음, INSERT 시도
+                        } // end else of if (existingRecord) - 레코드 없음, primary key로 확인
+                    } else { // else of if (availableUniqueKey) - unique key 없음, INSERT 시도
                         // unique key가 없으면 INSERT 시도
                         // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
                         const createData = { ...filteredItem };
@@ -1760,7 +1760,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             }
                         }
                     }
-                } else {
+                } else { // else of if (operation === 'UPDATE' || ...) - UPDATE가 아닌 경우
                     // UPDATE가 아닌 경우 기본 처리
                     // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
                     const createData = { ...filteredItem };
@@ -1776,14 +1776,14 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const seconds = String(createData.utime.getSeconds()).padStart(2, '0');
                             const ms = String(createData.utime.getMilliseconds()).padStart(3, '0');
                             utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-                        } else {
+                        } else { // else of if (createData.utime instanceof Date)
                             // 문자열인 경우 그대로 사용 (timezone 변환 없음)
                             utimeStr = String(createData.utime);
-                        }
+                        } // end else of if (createData.utime instanceof Date)
                         // Sequelize.literal을 사용하여 문자열을 그대로 저장 (timezone 변환 방지)
                         const Sequelize = require('sequelize');
                         createData.utime = Sequelize.literal(`'${utimeStr.replace(/'/g, "''")}'::timestamp`);
-                    }
+                    } // end if (createData.utime)
                     try {
                     const created = await Model.create(createData, { transaction });
                     // Extract identifier from filteredItem for logging
@@ -1797,7 +1797,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     };
                     results.push({ index: i, action: 'created', data: created, identifier });
                     createdCount++;
-                    } catch (createErr) {
+                    } catch (createErr) { // catch of INSERT try 블록 - UPDATE가 아닌 경우
                         // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 모든 unique key로 레코드를 조회하여 utime 비교 수행
                         if (isUniqueConstraintError(createErr) && primaryKey) {
                             const errorMsg = createErr.original ? createErr.original.message : createErr.message;
@@ -2032,9 +2032,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             }
                             throw createErr;
                         }
-                    }
-                }
-                } else {
+                    } // end catch (createErr) - INSERT try 블록
+                } // end if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) - requiresSpecialHandling 블록
+                } else { // else of if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst)
                     // requiresSpecialHandling 블록의 else: preferredUniqueKeys로 찾지 못하고 shouldTryPrimaryKey=false인 경우 INSERT 시도
                     // if (modelName === 'Ingresos') {
                     //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] requiresSpecialHandling 블록 else 진입 | preferredUniqueKeys로 찾지 못함 | INSERT 시도 필요`);
@@ -2120,9 +2120,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         
                         // 에러를 다시 던져서 상위 catch 블록에서 처리
                         throw createErr;
-                    }
-                }
-            }
+                    } // end catch (createErr) - [ELSE] INSERT try 블록
+                } // end else of if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) - requiresSpecialHandling 블록의 else
+            } // end if (useUtimeComparison) - useUtimeComparison 블록
             
             // if (modelName === 'Ingresos') {
             //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
@@ -2137,7 +2137,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             // preferredUniqueKeys로 찾지 못해서 shouldTryPrimaryKey=false로 설정된 경우
             // 이 경우는 requiresSpecialHandling 블록 내부의 INSERT 시도 코드에서 처리됨
             // 여기서는 아무것도 하지 않음
-        } else {
+        } else { // else of if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) - requiresSpecialHandling 블록 밖
             // requiresSpecialHandling이 아닌 경우 또는 usePrimaryKeyFirst가 false인 경우
             // 일반적인 INSERT 시도
             // if (modelName === 'Ingresos') {
@@ -2196,8 +2196,8 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 
                 // 에러를 다시 던져서 상위 catch 블록에서 처리
                 throw createErr;
-            }
-        }
+            } // end catch (createErr) - [OUTSIDE] INSERT try 블록
+        } // end else of if (requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst) - requiresSpecialHandling 블록 밖
         
         // if (modelName === 'Ingresos') {
         //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
