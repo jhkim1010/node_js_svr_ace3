@@ -51,7 +51,7 @@ router.get('/', async (req, res) => {
                 )
             );
         } else if (fechaInicio) {
-            // 날짜 범위 조회
+            // 날짜 범위 조회 (BETWEEN 사용)
             const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
             if (!dateRegex.test(fechaInicio)) {
                 return res.status(400).json({ 
@@ -60,14 +60,8 @@ router.get('/', async (req, res) => {
                 });
             }
             
-            whereConditions.push(
-                Sequelize.where(
-                    Sequelize.fn('DATE', Sequelize.col('fecha')),
-                    { [Op.gte]: fechaInicio }
-                )
-            );
-            
             if (fechaFin) {
+                // fecha_inicio와 fecha_fin이 모두 있으면 BETWEEN 사용
                 if (!dateRegex.test(fechaFin)) {
                     return res.status(400).json({ 
                         error: 'Invalid fecha_fin format. Expected YYYY-MM-DD',
@@ -77,7 +71,15 @@ router.get('/', async (req, res) => {
                 whereConditions.push(
                     Sequelize.where(
                         Sequelize.fn('DATE', Sequelize.col('fecha')),
-                        { [Op.lte]: fechaFin }
+                        { [Op.between]: [fechaInicio, fechaFin] }
+                    )
+                );
+            } else {
+                // fecha_inicio만 있으면 >= 조건 사용
+                whereConditions.push(
+                    Sequelize.where(
+                        Sequelize.fn('DATE', Sequelize.col('fecha')),
+                        { [Op.gte]: fechaInicio }
                     )
                 );
             }
