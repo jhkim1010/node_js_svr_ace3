@@ -296,6 +296,38 @@ router.post('/', async (req, res) => {
             raw: true
         });
         
+        // 쿼리 8: fventas 데이터 집계 (현재 월) - tipofactura별 그룹화
+        // 조건: fecha >= date_trunc('month', CURRENT_DATE) AND fecha < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month') AND borrado is false
+        const fventasMesWhereConditions = [
+            Sequelize.where(
+                Sequelize.col('fecha'),
+                { [Sequelize.Op.gte]: Sequelize.literal("date_trunc('month', CURRENT_DATE)") }
+            ),
+            Sequelize.where(
+                Sequelize.col('fecha'),
+                { [Sequelize.Op.lt]: Sequelize.literal("date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'") }
+            ),
+            { borrado: false }
+        ];
+        
+        // sucursal 필터링 추가 (제공된 경우)
+        if (sucursal) {
+            fventasMesWhereConditions.push({ sucursal: sucursal });
+        }
+        
+        const fventasMesResult = await Fventas.findAll({
+            attributes: [
+                [sequelize.fn('SUM', sequelize.col('monto')), 'total_ventas_mes'],
+                'tipofactura'
+            ],
+            where: {
+                [Sequelize.Op.and]: fventasMesWhereConditions
+            },
+            group: ['tipofactura'],
+            order: [['tipofactura', 'ASC']],
+            raw: true
+        });
+        
         // Sucursal별로 그룹화된 결과를 배열로 변환
         const vcodeSummary = (vcodeResult || []).map(item => ({
             sucursal: item.sucursal || null,
@@ -350,6 +382,11 @@ router.post('/', async (req, res) => {
             sum_monto: parseFloat(item.sum_monto || 0)
         }));
         
+        const fventasMesSummary = (fventasMesResult || []).map(item => ({
+            tipofactura: item.tipofactura || null,
+            total_ventas_mes: parseFloat(item.total_ventas_mes || 0)
+        }));
+        
         const responseData = {
             fecha: targetDate || otherDate, // 요청된 날짜 또는 현재 날짜 (YYYY-MM-DD)
             fecha_vcodes: vcodeDate, // vcodes 쿼리에 사용된 날짜
@@ -360,7 +397,8 @@ router.post('/', async (req, res) => {
             vcodes_mpago: vcodeMpagoSummary, // Sucursal별 배열
             ingresos: ingresosSummary, // Sucursal별 배열
             stocks: stocksSummary, // Sucursal별 배열
-            fventas: fventasSummary // tipofactura별 배열
+            fventas: fventasSummary, // tipofactura별 배열 (해당 날짜)
+            fventas_mes: fventasMesSummary // tipofactura별 배열 (현재 월)
         };
         
         // 응답 전송 중 에러만 로깅
