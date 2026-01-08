@@ -291,6 +291,10 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
+    const dbName = req.dbConfig?.database ? `[${req.dbConfig.database}]` : '[N/A]';
+    const dataCount = Array.isArray(req.body.data) ? req.body.data.length : (req.body.data ? 1 : 0);
+    const operation = req.body.operation || 'CREATE';
+    
     try {
         const Gastos = getModelForRequest(req, 'Gastos');
         // Gastos 동기화 로직에서는 (id_ga, sucursal) 복합 키를 기본 식별자로 사용
@@ -299,6 +303,28 @@ router.post('/', async (req, res) => {
         // BATCH_SYNC 작업 처리
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
             const result = await handleUtimeComparisonArrayData(req, res, Gastos, compositePrimaryKey, 'Gastos');
+            
+            // 실패한 항목이 있으면 상세 로깅
+            if (result.failed > 0 && result.errors && result.errors.length > 0) {
+                console.error(`[Gastos POST] ${dbName} | BATCH_SYNC 실패: ${result.failed}개 항목 실패`);
+                result.errors.forEach((error, index) => {
+                    console.error(`[Gastos POST] ${dbName} | 실패 항목 ${index + 1}:`, {
+                        index: error.index,
+                        action: error.action,
+                        error: error.error?.message || error.error,
+                        errorType: error.error?.constructor?.name || typeof error.error,
+                        data: error.data ? {
+                            id_ga: error.data.id_ga,
+                            sucursal: error.data.sucursal,
+                            fecha: error.data.fecha,
+                            costo: error.data.costo
+                        } : null,
+                        originalError: error.error?.original?.message || null,
+                        sql: error.error?.sql || null
+                    });
+                });
+            }
+            
             await notifyBatchSync(req, Gastos, result);
             return res.status(200).json(result);
         }
@@ -307,6 +333,28 @@ router.post('/', async (req, res) => {
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             // utime 비교 + primary key 우선 순서 적용
             const result = await handleUtimeComparisonArrayData(req, res, Gastos, compositePrimaryKey, 'Gastos');
+            
+            // 실패한 항목이 있으면 상세 로깅
+            if (result.failed > 0 && result.errors && result.errors.length > 0) {
+                console.error(`[Gastos POST] ${dbName} | ${operation} 실패: ${result.failed}개 항목 실패`);
+                result.errors.forEach((error, index) => {
+                    console.error(`[Gastos POST] ${dbName} | 실패 항목 ${index + 1}:`, {
+                        index: error.index,
+                        action: error.action,
+                        error: error.error?.message || error.error,
+                        errorType: error.error?.constructor?.name || typeof error.error,
+                        data: error.data ? {
+                            id_ga: error.data.id_ga,
+                            sucursal: error.data.sucursal,
+                            fecha: error.data.fecha,
+                            costo: error.data.costo
+                        } : null,
+                        originalError: error.error?.original?.message || null,
+                        sql: error.error?.sql || null
+                    });
+                });
+            }
+            
             await notifyBatchSync(req, Gastos, result);
             return res.status(200).json(result);
         }
@@ -316,6 +364,27 @@ router.post('/', async (req, res) => {
         req.body.data = Array.isArray(rawData) ? rawData : [rawData];
 
         const result = await handleUtimeComparisonArrayData(req, res, Gastos, compositePrimaryKey, 'Gastos');
+
+        // 실패한 항목이 있으면 상세 로깅
+        if (result.failed > 0 && result.errors && result.errors.length > 0) {
+            console.error(`[Gastos POST] ${dbName} | ${operation} 실패: ${result.failed}개 항목 실패`);
+            result.errors.forEach((error, index) => {
+                console.error(`[Gastos POST] ${dbName} | 실패 항목 ${index + 1}:`, {
+                    index: error.index,
+                    action: error.action,
+                    error: error.error?.message || error.error,
+                    errorType: error.error?.constructor?.name || typeof error.error,
+                    data: error.data ? {
+                        id_ga: error.data.id_ga,
+                        sucursal: error.data.sucursal,
+                        fecha: error.data.fecha,
+                        costo: error.data.costo
+                    } : null,
+                    originalError: error.error?.original?.message || null,
+                    sql: error.error?.sql || null
+                });
+            });
+        }
 
         // 첫 번째 결과를 기반으로 응답 구성
         const first = result.results && result.results[0];
@@ -331,6 +400,28 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Gastos, action === 'created' ? 'create' : 'update', data);
         res.status(action === 'created' ? 201 : 200).json(data);
     } catch (err) {
+        // 예외 발생 시 상세 로깅
+        console.error(`[Gastos POST] ${dbName} | 예외 발생:`, {
+            operation: operation,
+            dataCount: dataCount,
+            error: err.message,
+            errorType: err.constructor.name,
+            stack: err.stack,
+            originalError: err.original ? {
+                message: err.original.message,
+                code: err.original.code,
+                detail: err.original.detail,
+                hint: err.original.hint
+            } : null,
+            sql: err.sql || null,
+            validationErrors: err.errors ? err.errors.map(e => ({
+                field: e.path,
+                value: e.value,
+                message: e.message,
+                type: e.type
+            })) : undefined
+        });
+        
         handleInsertUpdateError(err, req, 'Gastos', 'id_ga', 'gastos');
         res.status(400).json({ 
             error: 'Failed to create gasto', 
