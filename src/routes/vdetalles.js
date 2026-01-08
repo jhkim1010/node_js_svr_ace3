@@ -19,25 +19,40 @@ router.get('/', async (req, res) => {
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
         const sequelize = Vdetalle.sequelize;
         
-        // vcodes 정보 조회
+        // vcodes 정보 조회 (sucursal도 함께 사용)
+        let vcodesWhereClause = 'WHERE vcode_id = :vcodeId';
+        const vcodesReplacements = { vcodeId };
+        
+        if (!Number.isNaN(sucursal)) {
+            vcodesWhereClause += ' AND sucursal = :sucursal';
+            vcodesReplacements.sucursal = sucursal;
+        }
+        
         const vcodesQuery = `
             SELECT tpago, tefectivo, tcredito, tbanco, treservado, tfavor, d_num_caja, d_num_terminal, vendedor
             FROM vcodes 
-            WHERE vcode_id = :vcodeId
+            ${vcodesWhereClause}
+            LIMIT 1
         `;
         const vcodesResult = await sequelize.query(vcodesQuery, {
-            replacements: { vcodeId },
+            replacements: vcodesReplacements,
             type: sequelize.QueryTypes.SELECT
         });
         
-        // cliente 정보 조회
+        // cliente 정보 조회 (sucursal도 함께 사용하여 정확한 레코드 찾기)
+        let clienteSubquery = 'SELECT ref_id_cliente FROM vcodes WHERE vcode_id = :vcodeId';
+        if (!Number.isNaN(sucursal)) {
+            clienteSubquery += ' AND sucursal = :sucursal';
+        }
+        clienteSubquery += ' LIMIT 1';
+        
         const clienteQuery = `
             SELECT dni, nombre, direccion, localidad, provincia, vendedor 
             FROM clientes 
-            WHERE id = (SELECT ref_id_cliente FROM vcodes WHERE vcode_id = :vcodeId)
+            WHERE id = (${clienteSubquery})
         `;
         const clienteResult = await sequelize.query(clienteQuery, {
-            replacements: { vcodeId },
+            replacements: vcodesReplacements,
             type: sequelize.QueryTypes.SELECT
         });
         
@@ -64,13 +79,19 @@ router.get('/', async (req, res) => {
             type: sequelize.QueryTypes.SELECT
         });
         
-        // cheque 정보 조회
+        // cheque 정보 조회 (sucursal도 함께 사용하여 정확한 레코드 찾기)
+        let chequeSubquery = 'SELECT vcode FROM vcodes WHERE vcode_id = :vcodeId';
+        if (!Number.isNaN(sucursal)) {
+            chequeSubquery += ' AND sucursal = :sucursal';
+        }
+        chequeSubquery += ' LIMIT 1';
+        
         const chequeQuery = `
             SELECT * FROM cheques c 
-            WHERE c.vcode = (SELECT vcode FROM vcodes WHERE vcode_id = :vcodeId)
+            WHERE c.vcode = (${chequeSubquery})
         `;
         const chequeResult = await sequelize.query(chequeQuery, {
-            replacements: { vcodeId },
+            replacements: vcodesReplacements,
             type: sequelize.QueryTypes.SELECT
         });
         

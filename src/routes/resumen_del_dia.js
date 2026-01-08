@@ -401,6 +401,37 @@ router.post('/', async (req, res) => {
             fventas_mes: fventasMesSummary // tipofactura별 배열 (현재 월)
         };
         
+        // 응답 데이터 로깅
+        console.log('[resumen_del_dia] 응답 데이터 요약:', {
+            fecha: responseData.fecha,
+            fecha_vcodes: responseData.fecha_vcodes,
+            fecha_otros: responseData.fecha_otros,
+            sucursal_filter: sucursal || 'all',
+            vcodes_count: vcodeSummary.length,
+            gastos_count: gastosSummary.length,
+            vdetalle_count: vdetalleSummary.length,
+            vcodes_mpago_count: vcodeMpagoSummary.length,
+            ingresos_count: ingresosSummary.length,
+            stocks_count: stocksSummary.length,
+            fventas_count: fventasSummary.length,
+            fventas_mes_count: fventasMesSummary.length,
+            vcodes_total_venta: vcodeSummary.reduce((sum, item) => sum + (item.total_venta_day || 0), 0),
+            gastos_total: gastosSummary.reduce((sum, item) => sum + (item.total_gasto_day || 0), 0),
+            fventas_total: fventasSummary.reduce((sum, item) => sum + (item.sum_monto || 0), 0),
+            fventas_mes_total: fventasMesSummary.reduce((sum, item) => sum + (item.total_ventas_mes || 0), 0)
+        });
+        
+        // 상세 데이터 로깅 (디버깅용)
+        if (vcodeSummary.length > 0) {
+            console.log('[resumen_del_dia] vcodes 상세:', JSON.stringify(vcodeSummary, null, 2));
+        }
+        if (fventasSummary.length > 0) {
+            console.log('[resumen_del_dia] fventas 상세:', JSON.stringify(fventasSummary, null, 2));
+        }
+        if (fventasMesSummary.length > 0) {
+            console.log('[resumen_del_dia] fventas_mes 상세:', JSON.stringify(fventasMesSummary, null, 2));
+        }
+        
         // 응답 전송 중 에러만 로깅
         res.on('error', (err) => {
             console.error('[resumen_del_dia] 응답 전송 중 에러:', err);
