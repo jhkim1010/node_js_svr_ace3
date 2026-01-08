@@ -46,27 +46,22 @@ router.post('/', async (req, res) => {
     const dataCount = Array.isArray(req.body.data) ? req.body.data.length : (req.body.data ? 1 : 0);
     const operation = req.body.operation || 'CREATE';
     
-    // Log incoming request
-    console.log(`[Vcodes POST] ${dbName} | Received: operation=${operation}, dataCount=${dataCount}, path=${req.path}`);
-    
     try {
         const Vcode = getModelForRequest(req, 'Vcode');
         
         // BATCH_SYNC 작업 처리 (Vcodes 전용 핸들러 사용)
         // vcodes는 vcode_id와 sucursal의 복합 unique key를 사용
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            console.log(`[Vcodes POST] ${dbName} | Processing BATCH_SYNC with ${req.body.data.length} items`);
             const result = await handleVcodesBatchSync(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
             await notifyBatchSync(req, Vcode, result);
-            console.log(`[Vcodes POST] ${dbName} | BATCH_SYNC completed: ${result.processed} processed, ${result.created} created, ${result.updated} updated, ${result.skipped || 0} skipped, ${result.failed} failed`);
+            console.log(`[Vcodes POST] ${dbName} | BATCH_SYNC: ${dataCount} items → ${result.processed} processed (${result.created} created, ${result.updated} updated, ${result.skipped || 0} skipped, ${result.failed} failed)`);
             return res.status(200).json(result);
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도) (utime 비교를 통한 개별 처리)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            console.log(`[Vcodes POST] ${dbName} | Processing ${operation} with ${req.body.data.length} items using utime comparison`);
             const result = await handleUtimeComparisonArrayData(req, res, Vcode, ['vcode_id', 'sucursal'], 'Vcode');
-            console.log(`[Vcodes POST] ${dbName} | ${operation} completed: ${result.processed || 0} processed, ${result.created || 0} created, ${result.updated || 0} updated, ${result.skipped || 0} skipped, ${result.failed || 0} failed`);
+            console.log(`[Vcodes POST] ${dbName} | ${operation}: ${dataCount} items → ${result.processed || 0} processed (${result.created || 0} created, ${result.updated || 0} updated, ${result.skipped || 0} skipped, ${result.failed || 0} failed)`);
             return res.status(200).json(result);
         }
         
