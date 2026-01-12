@@ -269,65 +269,89 @@ router.post('/', async (req, res) => {
         
         // 쿼리 7: fventas 데이터 집계 - tipofactura별 그룹화
         // 조건: fecha = target_date AND borrado is false
-        const fventasWhereConditions = [
-            Sequelize.where(
-                Sequelize.fn('DATE', Sequelize.col('fecha')),
-                otherDate
-            ),
-            { borrado: false }
-        ];
-        
-        // sucursal 필터링 추가 (제공된 경우)
-        if (sucursal) {
-            fventasWhereConditions.push({ sucursal: sucursal });
+        // 당일 데이터가 없어도 에러가 발생하지 않도록 독립적으로 처리
+        let fventasResult = [];
+        try {
+            const fventasWhereConditions = [
+                Sequelize.where(
+                    Sequelize.fn('DATE', Sequelize.col('fecha')),
+                    otherDate
+                ),
+                { borrado: false }
+            ];
+            
+            // sucursal 필터링 추가 (제공된 경우)
+            if (sucursal) {
+                fventasWhereConditions.push({ sucursal: sucursal });
+            }
+            
+            fventasResult = await Fventas.findAll({
+                attributes: [
+                    [sequelize.fn('COUNT', sequelize.col('*')), 'count'],
+                    [sequelize.fn('SUM', sequelize.col('monto')), 'sum_monto'],
+                    'tipofactura'
+                ],
+                where: {
+                    [Sequelize.Op.and]: fventasWhereConditions
+                },
+                group: ['tipofactura'],
+                order: [['tipofactura', 'ASC']],
+                raw: true
+            });
+        } catch (fventasErr) {
+            console.error('[resumen_del_dia] 당일 fventas 쿼리 실패 (계속 진행):', {
+                fecha: otherDate,
+                sucursal: sucursal || 'all',
+                error: fventasErr.message
+            });
+            // 당일 데이터 쿼리 실패해도 이번 달 데이터는 반드시 포함해야 하므로 계속 진행
+            fventasResult = [];
         }
-        
-        const fventasResult = await Fventas.findAll({
-            attributes: [
-                [sequelize.fn('COUNT', sequelize.col('*')), 'count'],
-                [sequelize.fn('SUM', sequelize.col('monto')), 'sum_monto'],
-                'tipofactura'
-            ],
-            where: {
-                [Sequelize.Op.and]: fventasWhereConditions
-            },
-            group: ['tipofactura'],
-            order: [['tipofactura', 'ASC']],
-            raw: true
-        });
         
         // 쿼리 8: fventas 데이터 집계 (요청한 날짜가 속한 월) - tipofactura별 그룹화
         // 조건: fecha >= date_trunc('month', 요청날짜) AND fecha < (date_trunc('month', 요청날짜) + INTERVAL '1 month') AND borrado is false
         // 요청한 날짜가 속한 월의 총합을 계산 (과거 날짜를 요청해도 해당 월의 총합을 보여줌)
-        const fventasMesWhereConditions = [
-            Sequelize.where(
-                Sequelize.col('fecha'),
-                { [Sequelize.Op.gte]: Sequelize.literal(`date_trunc('month', '${otherDate}'::date)`) }
-            ),
-            Sequelize.where(
-                Sequelize.col('fecha'),
-                { [Sequelize.Op.lt]: Sequelize.literal(`date_trunc('month', '${otherDate}'::date) + INTERVAL '1 month'`) }
-            ),
-            { borrado: false }
-        ];
-        
-        // sucursal 필터링 추가 (제공된 경우)
-        if (sucursal) {
-            fventasMesWhereConditions.push({ sucursal: sucursal });
+        // 이번 달 데이터는 반드시 포함되어야 하므로 독립적으로 처리
+        let fventasMesResult = [];
+        try {
+            const fventasMesWhereConditions = [
+                Sequelize.where(
+                    Sequelize.col('fecha'),
+                    { [Sequelize.Op.gte]: Sequelize.literal(`date_trunc('month', '${otherDate}'::date)`) }
+                ),
+                Sequelize.where(
+                    Sequelize.col('fecha'),
+                    { [Sequelize.Op.lt]: Sequelize.literal(`date_trunc('month', '${otherDate}'::date) + INTERVAL '1 month'`) }
+                ),
+                { borrado: false }
+            ];
+            
+            // sucursal 필터링 추가 (제공된 경우)
+            if (sucursal) {
+                fventasMesWhereConditions.push({ sucursal: sucursal });
+            }
+            
+            fventasMesResult = await Fventas.findAll({
+                attributes: [
+                    [sequelize.fn('SUM', sequelize.col('monto')), 'total_ventas_mes'],
+                    'tipofactura'
+                ],
+                where: {
+                    [Sequelize.Op.and]: fventasMesWhereConditions
+                },
+                group: ['tipofactura'],
+                order: [['tipofactura', 'ASC']],
+                raw: true
+            });
+        } catch (fventasMesErr) {
+            console.error('[resumen_del_dia] 이번 달 fventas 쿼리 실패:', {
+                fecha: otherDate,
+                sucursal: sucursal || 'all',
+                error: fventasMesErr.message
+            });
+            // 이번 달 데이터 쿼리 실패 시에도 빈 배열로 설정하여 응답에 포함
+            fventasMesResult = [];
         }
-        
-        const fventasMesResult = await Fventas.findAll({
-            attributes: [
-                [sequelize.fn('SUM', sequelize.col('monto')), 'total_ventas_mes'],
-                'tipofactura'
-            ],
-            where: {
-                [Sequelize.Op.and]: fventasMesWhereConditions
-            },
-            group: ['tipofactura'],
-            order: [['tipofactura', 'ASC']],
-            raw: true
-        });
         
         // Sucursal별로 그룹화된 결과를 배열로 변환
         const vcodeSummary = (vcodeResult || []).map(item => ({
