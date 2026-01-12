@@ -31,6 +31,9 @@ router.get('/', async (req, res) => {
         // 검색어 파라미터 확인
         const filteringWord = query.filtering_word || query.filteringWord || body.filtering_word || body.filteringWord || query.search || body.search;
         
+        // 페이지네이션 파라미터 확인
+        const offset = parseInt(query.offset || body.offset || 0, 10);
+        
         // WHERE 조건 구성
         let whereConditions = [];
         
@@ -117,15 +120,14 @@ router.get('/', async (req, res) => {
             }
         }
         
-        // filtering_word 검색 조건 추가 (clientenombre, dni, numfactura, tipofactura에서 검색)
+        // filtering_word 검색 조건 추가 (clientenombre, numfactura, cae에서만 검색)
         if (filteringWord && filteringWord.trim()) {
             const searchTerm = `%${filteringWord.trim()}%`;
             whereConditions.push({
                 [Op.or]: [
                     { clientenombre: { [Op.iLike]: searchTerm } },
-                    { dni: { [Op.iLike]: searchTerm } },
                     { numfactura: { [Op.iLike]: searchTerm } },
-                    { tipofactura: { [Op.iLike]: searchTerm } }
+                    { cae: { [Op.iLike]: searchTerm } }
                 ]
             });
         }
@@ -140,11 +142,24 @@ router.get('/', async (req, res) => {
         // 100개 단위로 제한
         const limit = 100;
         const records = await Fventas.findAll({ 
+            attributes: [
+                'fecha',
+                'hora',
+                'dni',
+                'clientenombre',
+                'monto',
+                'numfactura',
+                'tipofactura',
+                'cae',
+                'tipo_pago',
+                'sucursal'
+            ],
             where: {
                 [Op.and]: whereConditions
             },
             limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
-            order: [['fecha', 'DESC'], ['tipofactura', 'DESC'], ['numfactura', 'DESC']] // 날짜, tipofactura, numfactura 내림차순 정렬
+            offset: offset,
+            order: [['fecha', 'ASC']] // fecha 오름차순 정렬
         });
         
         // 다음 배치가 있는지 확인
@@ -157,7 +172,9 @@ router.get('/', async (req, res) => {
             pagination: {
                 count: data.length,
                 total: totalCount,
-                hasMore: hasMore
+                hasMore: hasMore,
+                offset: offset,
+                limit: limit
             }
         };
         
