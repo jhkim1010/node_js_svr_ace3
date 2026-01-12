@@ -296,16 +296,17 @@ router.post('/', async (req, res) => {
             raw: true
         });
         
-        // 쿼리 8: fventas 데이터 집계 (현재 월) - tipofactura별 그룹화
-        // 조건: fecha >= date_trunc('month', CURRENT_DATE) AND fecha < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month') AND borrado is false
+        // 쿼리 8: fventas 데이터 집계 (요청한 날짜가 속한 월) - tipofactura별 그룹화
+        // 조건: fecha >= date_trunc('month', 요청날짜) AND fecha < (date_trunc('month', 요청날짜) + INTERVAL '1 month') AND borrado is false
+        // 요청한 날짜가 속한 월의 총합을 계산 (과거 날짜를 요청해도 해당 월의 총합을 보여줌)
         const fventasMesWhereConditions = [
             Sequelize.where(
                 Sequelize.col('fecha'),
-                { [Sequelize.Op.gte]: Sequelize.literal("date_trunc('month', CURRENT_DATE)") }
+                { [Sequelize.Op.gte]: Sequelize.literal(`date_trunc('month', '${otherDate}'::date)`) }
             ),
             Sequelize.where(
                 Sequelize.col('fecha'),
-                { [Sequelize.Op.lt]: Sequelize.literal("date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'") }
+                { [Sequelize.Op.lt]: Sequelize.literal(`date_trunc('month', '${otherDate}'::date) + INTERVAL '1 month'`) }
             ),
             { borrado: false }
         ];
