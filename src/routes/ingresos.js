@@ -179,13 +179,37 @@ router.get('/summary', async (req, res) => {
         const sequelize = Ingresos.sequelize;
         
         // 날짜 범위 파라미터 (필수)
-        const startDate = req.body?.start_date || req.query?.start_date;
-        const endDate = req.body?.end_date || req.query?.end_date;
+        const startDate = req.body?.start_date || req.query?.start_date || req.body?.fecha_inicio || req.query?.fecha_inicio;
+        const endDate = req.body?.end_date || req.query?.end_date || req.body?.fecha_fin || req.query?.fecha_fin;
         
         if (!startDate || !endDate) {
             return res.status(400).json({ 
                 error: 'Missing required parameters', 
-                details: 'start_date and end_date are required' 
+                details: 'start_date and end_date (or fecha_inicio and fecha_fin) are required' 
+            });
+        }
+        
+        // 날짜 형식 검증
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(startDate)) {
+            return res.status(400).json({ 
+                error: 'Invalid start_date format. Expected YYYY-MM-DD',
+                received: startDate
+            });
+        }
+        if (!dateRegex.test(endDate)) {
+            return res.status(400).json({ 
+                error: 'Invalid end_date format. Expected YYYY-MM-DD',
+                received: endDate
+            });
+        }
+        
+        // 날짜 범위 검증
+        if (startDate > endDate) {
+            return res.status(400).json({ 
+                error: 'Invalid date range: start_date must be less than or equal to end_date',
+                start_date: startDate,
+                end_date: endDate
             });
         }
         

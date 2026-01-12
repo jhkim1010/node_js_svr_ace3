@@ -19,6 +19,20 @@ async function getIngresosReport(req) {
         throw new Error('fecha_inicio and fecha_fin are required');
     }
 
+    // 날짜 형식 검증
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(startDate)) {
+        throw new Error(`Invalid fecha_inicio format. Expected YYYY-MM-DD, received: ${startDate}`);
+    }
+    if (!dateRegex.test(endDate)) {
+        throw new Error(`Invalid fecha_fin format. Expected YYYY-MM-DD, received: ${endDate}`);
+    }
+
+    // 날짜 범위 검증
+    if (startDate > endDate) {
+        throw new Error(`Invalid date range: fecha_inicio (${startDate}) must be less than or equal to fecha_fin (${endDate})`);
+    }
+
     // SQL injection 방지를 위해 이스케이프 처리
     const escapedStartDate = startDate.replace(/'/g, "''");
     const escapedEndDate = endDate.replace(/'/g, "''");

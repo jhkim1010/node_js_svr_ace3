@@ -35,9 +35,10 @@ router.get('/', async (req, res) => {
         let whereConditions = [];
         
         // 날짜 필터링
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        
         if (fecha) {
             // 특정 날짜만 조회 (정확히 일치)
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
             if (!dateRegex.test(fecha)) {
                 return res.status(400).json({ 
                     error: 'Invalid fecha format. Expected YYYY-MM-DD',
@@ -50,38 +51,58 @@ router.get('/', async (req, res) => {
                     fecha
                 )
             );
-        } else if (fechaInicio) {
-            // 날짜 범위 조회 (BETWEEN 사용)
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-            if (!dateRegex.test(fechaInicio)) {
-                return res.status(400).json({ 
-                    error: 'Invalid fecha_inicio format. Expected YYYY-MM-DD',
-                    received: fechaInicio
-                });
-            }
-            
-            if (fechaFin) {
-                // fecha_inicio와 fecha_fin이 모두 있으면 BETWEEN 사용
-                if (!dateRegex.test(fechaFin)) {
+        } else {
+            // fechaInicio 또는 fechaFin이 있는 경우 처리
+            if (fechaInicio || fechaFin) {
+                // fechaInicio 검증
+                if (fechaInicio && !dateRegex.test(fechaInicio)) {
+                    return res.status(400).json({ 
+                        error: 'Invalid fecha_inicio format. Expected YYYY-MM-DD',
+                        received: fechaInicio
+                    });
+                }
+                
+                // fechaFin 검증
+                if (fechaFin && !dateRegex.test(fechaFin)) {
                     return res.status(400).json({ 
                         error: 'Invalid fecha_fin format. Expected YYYY-MM-DD',
                         received: fechaFin
                     });
                 }
-                whereConditions.push(
-                    Sequelize.where(
-                        Sequelize.fn('DATE', Sequelize.col('fecha')),
-                        { [Op.between]: [fechaInicio, fechaFin] }
-                    )
-                );
-            } else {
-                // fecha_inicio만 있으면 >= 조건 사용
-                whereConditions.push(
-                    Sequelize.where(
-                        Sequelize.fn('DATE', Sequelize.col('fecha')),
-                        { [Op.gte]: fechaInicio }
-                    )
-                );
+                
+                // fechaInicio와 fechaFin이 모두 있는 경우 범위 검증
+                if (fechaInicio && fechaFin) {
+                    if (fechaInicio > fechaFin) {
+                        return res.status(400).json({ 
+                            error: 'Invalid date range: fecha_inicio must be less than or equal to fecha_fin',
+                            fecha_inicio: fechaInicio,
+                            fecha_fin: fechaFin
+                        });
+                    }
+                    // BETWEEN 사용 (양쪽 끝 포함)
+                    whereConditions.push(
+                        Sequelize.where(
+                            Sequelize.fn('DATE', Sequelize.col('fecha')),
+                            { [Op.between]: [fechaInicio, fechaFin] }
+                        )
+                    );
+                } else if (fechaInicio) {
+                    // fechaInicio만 있으면 >= 조건 사용
+                    whereConditions.push(
+                        Sequelize.where(
+                            Sequelize.fn('DATE', Sequelize.col('fecha')),
+                            { [Op.gte]: fechaInicio }
+                        )
+                    );
+                } else if (fechaFin) {
+                    // fechaFin만 있으면 <= 조건 사용
+                    whereConditions.push(
+                        Sequelize.where(
+                            Sequelize.fn('DATE', Sequelize.col('fecha')),
+                            { [Op.lte]: fechaFin }
+                        )
+                    );
+                }
             }
         }
         

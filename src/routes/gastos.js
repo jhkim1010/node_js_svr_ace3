@@ -41,9 +41,10 @@ router.get('/', async (req, res) => {
         let whereConditions = [];
         
         // 날짜 필터링
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        
         if (fecha) {
             // 특정 날짜만 조회 (정확히 일치)
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
             if (!dateRegex.test(fecha)) {
                 return res.status(400).json({ 
                     error: 'Invalid fecha format. Expected YYYY-MM-DD',
@@ -56,36 +57,52 @@ router.get('/', async (req, res) => {
                     fecha
                 )
             );
-        } else if (fechaInicio) {
-            // 날짜 범위 조회
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-            if (!dateRegex.test(fechaInicio)) {
-                return res.status(400).json({ 
-                    error: 'Invalid fecha_inicio format. Expected YYYY-MM-DD',
-                    received: fechaInicio
-                });
-            }
-            
-            // SQL injection 방지를 위해 작은따옴표 이스케이프
-            const escapedFechaInicio = fechaInicio.replace(/'/g, "''");
-            // fecha >= fechaInicio 조건
-            whereConditions.push(
-                Sequelize.literal(`DATE(fecha) >= '${escapedFechaInicio}'`)
-            );
-            
-            if (fechaFin) {
-                if (!dateRegex.test(fechaFin)) {
+        } else {
+            // fechaInicio 또는 fechaFin이 있는 경우 처리
+            if (fechaInicio || fechaFin) {
+                // fechaInicio 검증
+                if (fechaInicio && !dateRegex.test(fechaInicio)) {
+                    return res.status(400).json({ 
+                        error: 'Invalid fecha_inicio format. Expected YYYY-MM-DD',
+                        received: fechaInicio
+                    });
+                }
+                
+                // fechaFin 검증
+                if (fechaFin && !dateRegex.test(fechaFin)) {
                     return res.status(400).json({ 
                         error: 'Invalid fecha_fin format. Expected YYYY-MM-DD',
                         received: fechaFin
                     });
                 }
+                
+                // fechaInicio와 fechaFin이 모두 있는 경우 범위 검증
+                if (fechaInicio && fechaFin) {
+                    if (fechaInicio > fechaFin) {
+                        return res.status(400).json({ 
+                            error: 'Invalid date range: fecha_inicio must be less than or equal to fecha_fin',
+                            fecha_inicio: fechaInicio,
+                            fecha_fin: fechaFin
+                        });
+                    }
+                }
+                
                 // SQL injection 방지를 위해 작은따옴표 이스케이프
-                const escapedFechaFin = fechaFin.replace(/'/g, "''");
-                // fecha <= fechaFin 조건
-                whereConditions.push(
-                    Sequelize.literal(`DATE(fecha) <= '${escapedFechaFin}'`)
-                );
+                if (fechaInicio) {
+                    const escapedFechaInicio = fechaInicio.replace(/'/g, "''");
+                    // fecha >= fechaInicio 조건
+                    whereConditions.push(
+                        Sequelize.literal(`DATE(fecha) >= '${escapedFechaInicio}'`)
+                    );
+                }
+                
+                if (fechaFin) {
+                    const escapedFechaFin = fechaFin.replace(/'/g, "''");
+                    // fecha <= fechaFin 조건
+                    whereConditions.push(
+                        Sequelize.literal(`DATE(fecha) <= '${escapedFechaFin}'`)
+                    );
+                }
             }
         }
         
@@ -141,14 +158,19 @@ router.get('/', async (req, res) => {
             sqlWhereConditions.push(`DATE(g.fecha) = $${paramIndex}`);
             sqlParams.push(fecha);
             paramIndex++;
-        } else if (fechaInicio) {
-            sqlWhereConditions.push(`DATE(g.fecha) >= $${paramIndex}`);
-            sqlParams.push(fechaInicio);
-            paramIndex++;
-            if (fechaFin) {
-                sqlWhereConditions.push(`DATE(g.fecha) <= $${paramIndex}`);
-                sqlParams.push(fechaFin);
-                paramIndex++;
+        } else {
+            // fechaInicio 또는 fechaFin이 있는 경우 처리
+            if (fechaInicio || fechaFin) {
+                if (fechaInicio) {
+                    sqlWhereConditions.push(`DATE(g.fecha) >= $${paramIndex}`);
+                    sqlParams.push(fechaInicio);
+                    paramIndex++;
+                }
+                if (fechaFin) {
+                    sqlWhereConditions.push(`DATE(g.fecha) <= $${paramIndex}`);
+                    sqlParams.push(fechaFin);
+                    paramIndex++;
+                }
             }
         }
         
