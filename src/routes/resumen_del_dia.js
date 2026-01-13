@@ -308,7 +308,7 @@ router.post('/', async (req, res) => {
             fventasResult = [];
         }
         
-        // 쿼리 8: fventas 데이터 집계 (요청한 날짜가 속한 월) - tipofactura별 그룹화
+        // 쿼리 8: fventas 데이터 집계 (요청한 날짜가 속한 월) - tipofactura, sucursal별 그룹화
         // 조건: fecha >= date_trunc('month', 요청날짜) AND fecha < (date_trunc('month', 요청날짜) + INTERVAL '1 month') AND borrado is false
         // 요청한 날짜가 속한 월의 총합을 계산 (과거 날짜를 요청해도 해당 월의 총합을 보여줌)
         // 이번 달 데이터는 반드시 포함되어야 하므로 독립적으로 처리
@@ -333,14 +333,16 @@ router.post('/', async (req, res) => {
             
             fventasMesResult = await Fventas.findAll({
                 attributes: [
+                    'sucursal',
+                    [sequelize.fn('COUNT', sequelize.col('*')), 'cntEvent'],
                     [sequelize.fn('SUM', sequelize.col('monto')), 'total_ventas_mes'],
                     'tipofactura'
                 ],
                 where: {
                     [Sequelize.Op.and]: fventasMesWhereConditions
                 },
-                group: ['tipofactura'],
-                order: [['tipofactura', 'ASC']],
+                group: ['tipofactura', 'sucursal'],
+                order: [['tipofactura', 'ASC'], ['sucursal', 'ASC']],
                 raw: true
             });
         } catch (fventasMesErr) {
@@ -408,8 +410,10 @@ router.post('/', async (req, res) => {
         }));
         
         const fventasMesSummary = (fventasMesResult || []).map(item => ({
+            sucursal: item.sucursal || null,
+            cntEvent: parseInt(item.cntEvent || item.cntevent || 0, 10),
             tipofactura: item.tipofactura || null,
-            total_ventas_mes: parseFloat(item.total_ventas_mes || 0)
+            total_ventas_mes: parseFloat(item.total_ventas_mes || item.total_ventas_mes || 0)
         }));
         
         const responseData = {
@@ -423,7 +427,7 @@ router.post('/', async (req, res) => {
             ingresos: ingresosSummary, // Sucursal별 배열
             stocks: stocksSummary, // Sucursal별 배열
             fventas: fventasSummary, // tipofactura별 배열 (해당 날짜)
-            fventas_mes: fventasMesSummary // tipofactura별 배열 (현재 월)
+            fventas_mes: fventasMesSummary // tipofactura, sucursal별 배열 (현재 월)
         };
         
         // 응답 데이터 로깅 (정상 응답 시 간단한 요약만)
