@@ -525,6 +525,13 @@ async function setupDbListener(host, port, database, user, password, ssl = false
     });
 
     const client = await pool.connect();
+    
+    // 아르헨티나 시간대 설정 (UTC-3)
+    try {
+        await client.query("SET timezone = 'America/Argentina/Buenos_Aires'");
+    } catch (err) {
+        console.warn(`[WebSocket Timezone] ⚠️ Timezone 설정 실패 (무시): ${err.message}`);
+    }
 
     // 모든 테이블의 INSERT, UPDATE, DELETE 채널 리스닝
     const channels = getTableChannels();

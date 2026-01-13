@@ -1,3 +1,6 @@
+// 아르헨티나 시간대 설정 (UTC-3) - 서버 시작 시 전역 설정
+process.env.TZ = 'America/Argentina/Buenos_Aires';
+
 const express = require('express');
 const cors = require('cors');
 const http = require('http');

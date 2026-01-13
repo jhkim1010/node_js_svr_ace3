@@ -138,7 +138,11 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
         host: host,
         port: parseInt(port, 10),
         dialect: 'postgres',
-        dialectOptions: ssl ? { ssl: { rejectUnauthorized: false } } : {},
+        dialectOptions: {
+            ...(ssl ? { ssl: { rejectUnauthorized: false } } : {}),
+            // 아르헨티나 시간대 설정 (UTC-3)
+            options: "-c timezone=America/Argentina/Buenos_Aires"
+        },
         pool: {
             // 각 데이터베이스가 필요에 따라 전체 최대값(400)까지 사용할 수 있도록 설정
             // DB_POOL_MAX가 명시적으로 설정되어 있으면 그 값을 사용
@@ -165,6 +169,15 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
                 /SequelizeInvalidConnectionError/,
                 /SequelizeConnectionTimedOutError/
             ]
+        }
+    });
+    
+    // 연결 후 timezone 설정 (각 연결마다 보장)
+    sequelize.addHook('afterConnect', async (connection) => {
+        try {
+            await connection.query("SET timezone = 'America/Argentina/Buenos_Aires'");
+        } catch (err) {
+            console.warn(`[Timezone] ⚠️ Timezone 설정 실패 (무시): ${err.message}`);
         }
     });
     
