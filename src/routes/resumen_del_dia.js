@@ -267,15 +267,16 @@ router.post('/', async (req, res) => {
             type: Sequelize.QueryTypes.SELECT
         });
         
-        // 쿼리 7: fventas 데이터 집계 - tipofactura별 그룹화
-        // 조건: fecha = target_date AND borrado is false
+        // 쿼리 7: fventas 데이터 집계 (당일) - tipofactura, sucursal별 그룹화
+        // 조건: DATE(fecha) = CURRENT_DATE AND borrado is false
+        // 서버의 현재 날짜 기준 당일 데이터를 추출
         // 당일 데이터가 없어도 에러가 발생하지 않도록 독립적으로 처리
         let fventasResult = [];
         try {
             const fventasWhereConditions = [
                 Sequelize.where(
                     Sequelize.fn('DATE', Sequelize.col('fecha')),
-                    otherDate
+                    Sequelize.literal('CURRENT_DATE')
                 ),
                 { borrado: false }
             ];
@@ -287,6 +288,7 @@ router.post('/', async (req, res) => {
             
             fventasResult = await Fventas.findAll({
                 attributes: [
+                    'sucursal',
                     [sequelize.fn('COUNT', sequelize.col('*')), 'count'],
                     [sequelize.fn('SUM', sequelize.col('monto')), 'sum_monto'],
                     'tipofactura'
@@ -294,8 +296,8 @@ router.post('/', async (req, res) => {
                 where: {
                     [Sequelize.Op.and]: fventasWhereConditions
                 },
-                group: ['tipofactura'],
-                order: [['tipofactura', 'ASC']],
+                group: ['tipofactura', 'sucursal'],
+                order: [['tipofactura', 'ASC'], ['sucursal', 'ASC']],
                 raw: true
             });
         } catch (fventasErr) {
@@ -404,6 +406,7 @@ router.post('/', async (req, res) => {
         }));
         
         const fventasSummary = (fventasResult || []).map(item => ({
+            sucursal: item.sucursal || null,
             tipofactura: item.tipofactura || null,
             count: parseInt(item.count || 0, 10),
             sum_monto: parseFloat(item.sum_monto || 0)
@@ -426,7 +429,7 @@ router.post('/', async (req, res) => {
             vcodes_mpago: vcodeMpagoSummary, // Sucursal별 배열
             ingresos: ingresosSummary, // Sucursal별 배열
             stocks: stocksSummary, // Sucursal별 배열
-            fventas: fventasSummary, // tipofactura별 배열 (해당 날짜)
+            fventas: fventasSummary, // tipofactura, sucursal별 배열 (당일)
             fventas_mes: fventasMesSummary // tipofactura, sucursal별 배열 (현재 월)
         };
         
