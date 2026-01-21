@@ -7,6 +7,9 @@ const connectionPool = new Map();
 // 전체 연결 풀의 총 최대값 (환경 변수로 설정 가능, 기본값: 500)
 const TOTAL_POOL_MAX = parseInt(process.env.DB_POOL_TOTAL_MAX) || parseInt(process.env.MAX_CONNECTIONS) || 500;
 
+// 각 데이터베이스당 최대 연결 수 (환경 변수로 설정 가능, 기본값: 50)
+const DB_POOL_MAX_DEFAULT = 50;
+
 // PostgreSQL 서버의 실제 max_connections를 캐시 (동적으로 조회)
 let cachedPgMaxConnections = null;
 let pgMaxConnectionsPromise = null; // 조회 중인 경우 Promise 저장
@@ -70,12 +73,11 @@ async function getPostgresMaxConnections(sequelize) {
 }
 
 // 각 데이터베이스의 pool.max를 동적으로 계산 (동기 버전)
-// 사용자가 원하는 대로 각 데이터베이스가 전체 최대값(400)까지 사용할 수 있도록 설정
+// PostgreSQL 서버의 max_connections를 고려하여 각 데이터베이스당 적절한 최대값 반환
 function calculatePoolMaxForDatabase() {
-    // DB_POOL_MAX가 명시적으로 설정되어 있지 않으면, 각 데이터베이스가 전체 최대값(400)까지 사용 가능
-    // 필요에 따라 자유롭게 사용할 수 있도록 함
-    // PostgreSQL 서버의 max_connections는 첫 번째 연결 생성 시 확인하여 경고만 표시
-    return TOTAL_POOL_MAX;
+    // DB_POOL_MAX가 명시적으로 설정되어 있지 않으면 기본값(50) 사용
+    // 여러 데이터베이스를 사용할 때 서버 한계(100)를 초과하지 않도록 조정
+    return DB_POOL_MAX_DEFAULT;
 }
 
 // Docker 환경 감지 함수
@@ -123,9 +125,9 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     const { totalUsed } = getTotalPoolUsage();
     
     // 각 데이터베이스의 pool.max 설정
-    // DB_POOL_MAX가 명시적으로 설정되어 있으면 사용, 없으면 PostgreSQL 서버의 max_connections를 고려하여 계산
+    // DB_POOL_MAX가 명시적으로 설정되어 있으면 사용, 없으면 기본값(50) 사용
     const explicitPoolMax = process.env.DB_POOL_MAX ? parseInt(process.env.DB_POOL_MAX) : null;
-    const poolMax = explicitPoolMax || calculatePoolMaxForDatabase();
+    const poolMax = explicitPoolMax !== null ? explicitPoolMax : calculatePoolMaxForDatabase();
     
     // 전체 최대값을 초과하지 않도록 확인
     if (totalUsed >= TOTAL_POOL_MAX) {
@@ -144,8 +146,8 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
             options: "-c timezone=America/Argentina/Buenos_Aires"
         },
         pool: {
-            // 각 데이터베이스가 필요에 따라 전체 최대값(400)까지 사용할 수 있도록 설정
-            // DB_POOL_MAX가 명시적으로 설정되어 있으면 그 값을 사용
+            // 각 데이터베이스당 최대 연결 수 (기본값: 50, 환경 변수 DB_POOL_MAX로 설정 가능)
+            // PostgreSQL 서버의 max_connections(100)를 고려하여 여러 DB 사용 시 서버 한계 초과 방지
             max: poolMax,
             min: 0,               // 최소 연결 수 (0으로 설정하여 사용하지 않을 때 연결을 닫음)
             idle: parseInt(process.env.DB_POOL_IDLE) || 5000,  // 유휴 연결 유지 시간 (5초 - 빠른 정리로 연결 수 관리)
