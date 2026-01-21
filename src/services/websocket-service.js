@@ -97,6 +97,10 @@ function initializeWebSocket(server) {
         wss = new WebSocket.Server({ 
             server,
             perMessageDeflate: false, // 압축 비활성화 (선택사항)
+            clientTracking: true, // 클라이언트 추적 활성화
+            // 타임아웃 설정: ping을 보낸 후 pong을 기다리는 시간 (기본값 45초보다 길게 설정)
+            // ping은 60초마다 보내므로, clientTimeout을 120초로 설정하여 충분한 여유 확보
+            clientTimeout: 120000, // 120초 (2분) - ping 간격(60초)의 2배로 설정
             verifyClient: (info) => {
                 const path = info.req.url;
                 const upgrade = info.req.headers.upgrade;
@@ -186,8 +190,9 @@ function initializeWebSocket(server) {
             }
         });
 
-        // ping/pong으로 연결 유지 (60초마다 - 1000개 이상 연결 시 성능 최적화)
-        // 30초에서 60초로 증가하여 ping 빈도 감소 (연결 유지에는 충분함)
+        // ping/pong으로 연결 유지 (30초마다 - 연결 안정성 향상)
+        // clientTimeout이 120초이므로, 30초마다 ping을 보내면 충분한 여유가 있음
+        // 클라이언트가 pong을 응답하지 않아도 최대 4번의 ping 기회가 있음 (30초 × 4 = 120초)
         let pingInterval = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
                 try {
@@ -205,7 +210,7 @@ function initializeWebSocket(server) {
                     pingInterval = null;
                 }
             }
-        }, 60000); // 60초로 증가 (1000개 이상 연결 시 성능 최적화)
+        }, 30000); // 30초마다 ping 전송 (연결 안정성 향상)
 
         // ping interval 정리 헬퍼 함수
         const cleanupPingInterval = () => {
