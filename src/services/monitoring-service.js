@@ -444,6 +444,82 @@ async function checkPostgresConnectionCount() {
             } else {
                 console.log(`[PostgreSQL 연결 수] 총 ${serverTotal}개`);
             }
+            
+            // 연결 개수가 10개 이상인 데이터베이스에 대해 상세 정보 조회 및 출력
+            const highConnectionDbs = connectionDetails.filter(detail => detail.total >= 10);
+            if (highConnectionDbs.length > 0) {
+                console.log(`\n[PostgreSQL 연결 수] ⚠️ 연결 개수가 10개 이상인 데이터베이스 상세 정보:`);
+                
+                for (const dbDetail of highConnectionDbs) {
+                    const dbName = dbDetail.database === '<NULL>' ? null : dbDetail.database;
+                    
+                    try {
+                        // 해당 데이터베이스의 연결 상세 정보 조회 (application_name, client_addr별)
+                        let appDetails;
+                        if (dbName) {
+                            // datname이 있는 경우
+                            [appDetails] = await firstSequelize.query(`
+                                SELECT 
+                                    COALESCE(application_name::text, '<NULL>') as application_name,
+                                    COALESCE(client_addr::text, '<NULL>') as client_addr,
+                                    COALESCE(usename::text, '<NULL>') as usename,
+                                    count(*) FILTER (WHERE state = 'active') as active_count,
+                                    count(*) FILTER (WHERE state = 'idle') as idle_count,
+                                    count(*) FILTER (WHERE state = 'idle in transaction') as idle_in_transaction_count,
+                                    count(*) as total_count
+                                FROM pg_stat_activity
+                                WHERE datname = :dbName
+                                GROUP BY application_name, client_addr, usename
+                                ORDER BY total_count DESC
+                            `, {
+                                replacements: { dbName: dbName }
+                            });
+                        } else {
+                            // datname이 NULL인 경우
+                            [appDetails] = await firstSequelize.query(`
+                                SELECT 
+                                    COALESCE(application_name::text, '<NULL>') as application_name,
+                                    COALESCE(client_addr::text, '<NULL>') as client_addr,
+                                    COALESCE(usename::text, '<NULL>') as usename,
+                                    count(*) FILTER (WHERE state = 'active') as active_count,
+                                    count(*) FILTER (WHERE state = 'idle') as idle_count,
+                                    count(*) FILTER (WHERE state = 'idle in transaction') as idle_in_transaction_count,
+                                    count(*) as total_count
+                                FROM pg_stat_activity
+                                WHERE datname IS NULL
+                                GROUP BY application_name, client_addr, usename
+                                ORDER BY total_count DESC
+                            `);
+                        }
+                        
+                        console.log(`\n  📊 데이터베이스: ${dbDetail.database} (총 ${dbDetail.total}개 연결)`);
+                        
+                        if (appDetails && appDetails.length > 0) {
+                            for (const appDetail of appDetails) {
+                                const appName = appDetail.application_name || '<NULL>';
+                                const clientAddr = appDetail.client_addr || '<NULL>';
+                                const username = appDetail.usename || '<NULL>';
+                                const active = parseInt(appDetail.active_count, 10);
+                                const idle = parseInt(appDetail.idle_count, 10);
+                                const idleInTx = parseInt(appDetail.idle_in_transaction_count, 10);
+                                const total = parseInt(appDetail.total_count, 10);
+                                
+                                const stateInfo = [];
+                                if (active > 0) stateInfo.push(`Active:${active}`);
+                                if (idle > 0) stateInfo.push(`Idle:${idle}`);
+                                if (idleInTx > 0) stateInfo.push(`IdleInTx:${idleInTx}`);
+                                
+                                console.log(`    - ${appName} (${clientAddr}, user:${username}) → ${total}개 ${stateInfo.length > 0 ? `[${stateInfo.join(', ')}]` : ''}`);
+                            }
+                        } else {
+                            console.log(`    (상세 정보 없음)`);
+                        }
+                    } catch (err) {
+                        console.error(`    ⚠️ ${dbDetail.database} 상세 정보 조회 실패: ${err.message}`);
+                    }
+                }
+                console.log(''); // 빈 줄 추가
+            }
         } else {
             console.log(`[PostgreSQL 연결 수] 총 ${serverTotal}개`);
         }
