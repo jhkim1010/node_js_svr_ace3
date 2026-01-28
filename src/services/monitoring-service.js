@@ -495,6 +495,9 @@ async function checkPostgresConnectionCount() {
                         console.log(`\n  📊 데이터베이스: ${dbDetail.database} (총 ${dbDetail.total}개 연결)`);
                         
                         if (appDetails && appDetails.length > 0) {
+                            // 먼저 상세 정보 출력
+                            let hasNullConnections = false;
+                            
                             for (const appDetail of appDetails) {
                                 const appName = appDetail.application_name || '<NULL>';
                                 const clientAddr = appDetail.client_addr || '<NULL>';
@@ -510,6 +513,75 @@ async function checkPostgresConnectionCount() {
                                 if (idleInTx > 0) stateInfo.push(`IdleInTx:${idleInTx}`);
                                 
                                 console.log(`    - ${appName} (${clientAddr}, user:${username}) → ${total}개 ${stateInfo.length > 0 ? `[${stateInfo.join(', ')}]` : ''}`);
+                                
+                                // application_name과 client_addr이 모두 NULL인 연결 감지
+                                if ((appDetail.application_name === '<NULL>' || !appDetail.application_name) && 
+                                    (appDetail.client_addr === '<NULL>' || !appDetail.client_addr)) {
+                                    hasNullConnections = true;
+                                }
+                            }
+                            
+                            // NULL 연결들을 자동으로 kill
+                            if (hasNullConnections) {
+                                try {
+                                    // 해당 데이터베이스의 NULL 연결 PID 조회
+                                    let nullPidsQuery;
+                                    if (dbName) {
+                                        [nullPidsQuery] = await firstSequelize.query(`
+                                            SELECT pid, state, usename, datname
+                                            FROM pg_stat_activity
+                                            WHERE datname = :dbName
+                                                AND (application_name IS NULL OR application_name = '')
+                                                AND (client_addr IS NULL)
+                                                AND pid != pg_backend_pid()
+                                            ORDER BY pid
+                                        `, {
+                                            replacements: { dbName: dbName }
+                                        });
+                                    } else {
+                                        [nullPidsQuery] = await firstSequelize.query(`
+                                            SELECT pid, state, usename, datname
+                                            FROM pg_stat_activity
+                                            WHERE datname IS NULL
+                                                AND (application_name IS NULL OR application_name = '')
+                                                AND (client_addr IS NULL)
+                                                AND pid != pg_backend_pid()
+                                            ORDER BY pid
+                                        `);
+                                    }
+                                    
+                                    if (nullPidsQuery && nullPidsQuery.length > 0) {
+                                        console.log(`\n    🔪 NULL 연결 자동 종료 시작 (${nullPidsQuery.length}개)...`);
+                                        
+                                        let killedCount = 0;
+                                        let failedCount = 0;
+                                        
+                                        for (const conn of nullPidsQuery) {
+                                            try {
+                                                const pid = conn.pid;
+                                                const [terminateResult] = await firstSequelize.query(
+                                                    `SELECT pg_terminate_backend($1) as terminated`,
+                                                    { replacements: [pid] }
+                                                );
+                                                
+                                                if (terminateResult && terminateResult[0] && terminateResult[0].terminated) {
+                                                    killedCount++;
+                                                    console.log(`      ✅ PID ${pid} 종료 완료 (user:${conn.usename || 'unknown'}, state:${conn.state || 'unknown'})`);
+                                                } else {
+                                                    failedCount++;
+                                                    console.log(`      ❌ PID ${pid} 종료 실패`);
+                                                }
+                                            } catch (err) {
+                                                failedCount++;
+                                                console.error(`      ❌ PID ${conn.pid} 종료 중 오류: ${err.message}`);
+                                            }
+                                        }
+                                        
+                                        console.log(`    📊 NULL 연결 종료 결과: ${killedCount}개 종료, ${failedCount}개 실패`);
+                                    }
+                                } catch (err) {
+                                    console.error(`    ⚠️ NULL 연결 PID 조회 실패: ${err.message}`);
+                                }
                             }
                         } else {
                             console.log(`    (상세 정보 없음)`);
