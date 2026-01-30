@@ -19,6 +19,11 @@ async function getStocksReport(req) {
     
     // 검색 및 정렬 파라미터 확인
     const filteringWord = req.body?.filtering_word || req.query?.filtering_word || req.body?.filteringWord || req.query?.filteringWord || req.body?.search || req.query?.search;
+    
+    // color_id 파라미터 확인 (ref_id_color 필터링용)
+    const colorId = req.body?.color_id || req.query?.color_id;
+    const colorIdInt = colorId ? parseInt(colorId, 10) : null;
+    
     const sortColumn = req.body?.sort_column || req.query?.sort_column || req.body?.sortBy || req.query?.sortBy;
     const sortAscending = req.body?.sort_ascending !== undefined 
         ? (req.body?.sort_ascending === 'true' || req.body?.sort_ascending === true)
@@ -45,26 +50,26 @@ async function getStocksReport(req) {
         idField = 'ref_id_todocodigo';
         query = `
             SELECT 
-                tcode, 
-                tdesc, 
-                fecha1 as first_date, 
-                fecha2 as last_date, 
-                pre1, 
-                pre2, 
-                pre3, 
-                pre4, 
-                pre5,
-                totaling3, 
-                totalventa3, 
-                todaying3, 
-                todayvnt3, 
-                totalreservado3, 
-                cntoffset3, 
-                stockreal3, 
-                porcentaje, 
-                sucursal, 
-                ref_id_todocodigo
-            FROM public.screendetails2_total_id
+                s.tcode, 
+                s.tdesc, 
+                s.fecha1 as first_date, 
+                s.fecha2 as last_date, 
+                s.pre1, 
+                s.pre2, 
+                s.pre3, 
+                s.pre4, 
+                s.pre5,
+                s.totaling3, 
+                s.totalventa3, 
+                s.todaying3, 
+                s.todayvnt3, 
+                s.totalreservado3, 
+                s.cntoffset3, 
+                s.stockreal3, 
+                s.porcentaje, 
+                s.sucursal, 
+                s.ref_id_todocodigo
+            FROM public.screendetails2_total_id s
         `;
     } else {
         // valor1이 0이거나 없는 경우: screendetails2_id 조회
@@ -72,33 +77,47 @@ async function getStocksReport(req) {
         idField = 'id_codigo1';
         query = `
             SELECT 
-                codigo, 
-                descripcion, 
-                fecha1 as first_date, 
-                fecha2 as last_date, 
-                pre1, 
-                pre2, 
-                pre3, 
-                pre4, 
-                pre5, 
-                totaling, 
-                totalventa, 
-                todayingreso, 
-                todayventa, 
-                totalreservado, 
-                cntoffset, 
-                stockreal, 
-                porcentaje, 
-                sucursal, 
-                id_codigo1 
-            FROM public.screendetails2_id
+                s.codigo, 
+                s.descripcion, 
+                s.fecha1 as first_date, 
+                s.fecha2 as last_date, 
+                s.pre1, 
+                s.pre2, 
+                s.pre3, 
+                s.pre4, 
+                s.pre5, 
+                s.totaling, 
+                s.totalventa, 
+                s.todayingreso, 
+                s.todayventa, 
+                s.totalreservado, 
+                s.cntoffset, 
+                s.stockreal, 
+                s.porcentaje, 
+                s.sucursal, 
+                s.id_codigo1 
+            FROM public.screendetails2_id s
+            ${colorIdInt !== null ? 'LEFT JOIN codigos c ON s.id_codigo1 = c.id_codigo' : ''}
         `;
     }
 
     // sucursal 필터 추가
     if (sucursal) {
-        whereConditions.push(`sucursal = $${paramIndex}`);
+        whereConditions.push(`s.sucursal = $${paramIndex}`);
         queryParams.push(sucursal);
+        paramIndex++;
+    }
+    
+    // color_id 필터 추가
+    if (colorIdInt !== null && !isNaN(colorIdInt)) {
+        if (bcolorview) {
+            // screendetails2_total_id의 경우: ref_id_todocodigo를 통해 codigos의 ref_id_color 확인
+            whereConditions.push(`EXISTS (SELECT 1 FROM codigos WHERE ref_id_todocodigo = s.ref_id_todocodigo AND ref_id_color = $${paramIndex})`);
+        } else {
+            // screendetails2_id의 경우: id_codigo1을 통해 codigos의 ref_id_color 확인
+            whereConditions.push(`c.ref_id_color = $${paramIndex}`);
+        }
+        queryParams.push(colorIdInt);
         paramIndex++;
     }
 
@@ -106,7 +125,7 @@ async function getStocksReport(req) {
     if (maxUtime) {
         const maxId = parseInt(maxUtime, 10);
         if (!isNaN(maxId)) {
-            whereConditions.push(`${idField} > $${paramIndex}`);
+            whereConditions.push(`s.${idField} > $${paramIndex}`);
             queryParams.push(maxId);
             paramIndex++;
         }
@@ -118,7 +137,7 @@ async function getStocksReport(req) {
         let utimeStr = String(lastGetUtime);
         utimeStr = utimeStr.replace(/T/, ' ').replace(/[Zz]/, '').replace(/[+-]\d{2}:?\d{2}$/, '').trim();
         // fecha1 또는 fecha2를 사용하여 필터링 (테이블에 utime 필드가 없으므로 fecha1 사용)
-        whereConditions.push(`fecha1::text > $${paramIndex}`);
+        whereConditions.push(`s.fecha1::text > $${paramIndex}`);
         queryParams.push(utimeStr);
         paramIndex++;
     }
@@ -129,14 +148,14 @@ async function getStocksReport(req) {
         if (bcolorview) {
             // screendetails2_total_id 테이블의 경우: tcode, tdesc (todocodigo의 codigo, descripcion에 해당)
             whereConditions.push(`(
-                tcode ILIKE $${paramIndex} OR 
-                tdesc ILIKE $${paramIndex}
+                s.tcode ILIKE $${paramIndex} OR 
+                s.tdesc ILIKE $${paramIndex}
             )`);
         } else {
             // screendetails2_id 테이블의 경우: codigo, descripcion
             whereConditions.push(`(
-                codigo ILIKE $${paramIndex} OR 
-                descripcion ILIKE $${paramIndex}
+                s.codigo ILIKE $${paramIndex} OR 
+                s.descripcion ILIKE $${paramIndex}
             )`);
         }
         queryParams.push(searchTerm);
@@ -175,11 +194,21 @@ async function getStocksReport(req) {
         : '';
 
     // 총 데이터 개수 조회
-    const countQuery = `
-        SELECT COUNT(*) as total
-        FROM ${bcolorview ? 'public.screendetails2_total_id' : 'public.screendetails2_id'}
-        ${whereClause}
-    `;
+    let countQuery;
+    if (bcolorview) {
+        countQuery = `
+            SELECT COUNT(*) as total
+            FROM public.screendetails2_total_id s
+            ${whereClause}
+        `;
+    } else {
+        countQuery = `
+            SELECT COUNT(*) as total
+            FROM public.screendetails2_id s
+            ${colorIdInt !== null ? 'LEFT JOIN codigos c ON s.id_codigo1 = c.id_codigo' : ''}
+            ${whereClause}
+        `;
+    }
     const [countResult] = await sequelize.query(countQuery, {
         bind: queryParams,
         type: Sequelize.QueryTypes.SELECT
@@ -191,7 +220,7 @@ async function getStocksReport(req) {
 
     // ORDER BY 및 LIMIT 추가
     query += whereClause;
-    query += ` ORDER BY ${validSortBy} ${sortOrder}`;
+    query += ` ORDER BY s.${validSortBy} ${sortOrder}`;
     query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     queryParams.push(limit + 1); // 다음 배치 존재 여부 확인을 위해 1개 더 조회
     queryParams.push(0);
@@ -335,7 +364,8 @@ async function getStocksReport(req) {
             valor1: valor1,
             filtering_word: filteringWord || null,
             sort_column: validSortBy,
-            sort_ascending: sortAscending
+            sort_ascending: sortAscending,
+            color_id: colorIdInt
         },
         summary: {
             total_items: stocks.length,

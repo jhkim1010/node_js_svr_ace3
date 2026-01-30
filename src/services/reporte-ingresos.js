@@ -14,6 +14,10 @@ async function getIngresosReport(req) {
     // 검색어 파라미터 확인
     const filteringWord = req.query.filtering_word || req.query.filteringWord || req.query.search;
 
+    // color_id 파라미터 확인 (ref_id_color 필터링용)
+    const colorId = req.query.color_id || req.body?.color_id;
+    const colorIdInt = colorId ? parseInt(colorId, 10) : null;
+
     // 날짜 범위 필터 (필수)
     if (!startDate || !endDate) {
         throw new Error('fecha_inicio and fecha_fin are required');
@@ -49,6 +53,9 @@ async function getIngresosReport(req) {
         whereConditions.push(`(i.codigo ILIKE '%${escapedWord}%' OR i.desc3 ILIKE '%${escapedWord}%')`);
     }
 
+    // color_id 필터링 조건 (JOIN된 codigos 테이블의 ref_id_color 사용)
+    // 이 조건은 각 쿼리의 WHERE 절에 추가됨
+
     const whereClause = whereConditions.join(' AND ');
 
     // 조건 확인 (유틸리티 함수 사용)
@@ -75,6 +82,7 @@ async function getIngresosReport(req) {
         LEFT JOIN empresas e1 
             ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE ${whereClause}
+            ${colorIdInt !== null ? `AND c.ref_id_color = ${colorIdInt}` : ''}
         GROUP BY e1.id_empresa
         ORDER BY e1.id_empresa
     `;
@@ -93,6 +101,7 @@ async function getIngresosReport(req) {
         LEFT JOIN tipos t1 
             ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE AND t1.tpdesc != '' 
         WHERE ${whereClause}
+            ${colorIdInt !== null ? `AND c.ref_id_color = ${colorIdInt}` : ''}
         GROUP BY t1.id_tipo
         ORDER BY t1.id_tipo
     `;
@@ -109,6 +118,7 @@ async function getIngresosReport(req) {
         LEFT JOIN color cl
             ON c.ref_id_color = cl.id_color AND cl.borrado IS FALSE
         WHERE ${whereClause}
+            ${colorIdInt !== null ? `AND c.ref_id_color = ${colorIdInt}` : ''}
         GROUP BY cl.id_color
         ORDER BY cl.id_color
     `;
@@ -131,6 +141,7 @@ async function getIngresosReport(req) {
         LEFT JOIN empresas e1 
             ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE ${whereClause}
+            ${colorIdInt !== null ? `AND c.ref_id_color = ${colorIdInt}` : ''}
         GROUP BY i.codigo
         ORDER BY i.codigo
     `;
@@ -211,7 +222,8 @@ async function getIngresosReport(req) {
             fecha_fin: endDate,
             start_date: startDate,
             end_date: endDate,
-            filtering_word: filteringWord || null
+            filtering_word: filteringWord || null,
+            color_id: colorIdInt
         },
         summary: {
             total_companies: filteredCompanySummary.length,

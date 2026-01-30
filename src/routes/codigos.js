@@ -24,6 +24,11 @@ router.get('/', async (req, res) => {
         
         // 검색 및 정렬 파라미터 확인
         const filteringWord = req.body?.filtering_word || req.query?.filtering_word || req.body?.filteringWord || req.query?.filteringWord || req.body?.search || req.query?.search;
+        
+        // color_id 파라미터 확인 (ref_id_color 필터링용)
+        const colorId = req.body?.color_id || req.query?.color_id;
+        const colorIdInt = colorId ? parseInt(colorId, 10) : null;
+        
         const sortColumn = req.body?.sort_column || req.query?.sort_column || req.body?.sortBy || req.query?.sortBy;
         const sortAscending = req.body?.sort_ascending !== undefined 
             ? (req.body?.sort_ascending === 'true' || req.body?.sort_ascending === true)
@@ -78,6 +83,12 @@ router.get('/', async (req, res) => {
                 c.descripcion ILIKE :filteringWord
             )`);
             replacements.filteringWord = searchTerm;
+        }
+        
+        // color_id 필터링 조건 추가
+        if (colorIdInt !== null && !isNaN(colorIdInt)) {
+            whereConditions.push('c.ref_id_color = :colorId');
+            replacements.colorId = colorIdInt;
         }
         
         const whereClause = whereConditions.length > 0 
@@ -162,7 +173,8 @@ router.get('/', async (req, res) => {
             filters: {
                 filtering_word: filteringWord || null,
                 sort_column: validSortBy,
-                sort_ascending: sortAscending
+                sort_ascending: sortAscending,
+                color_id: colorIdInt
             }
         };
         

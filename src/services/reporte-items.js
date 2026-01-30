@@ -34,6 +34,10 @@ async function getItemsReport(req) {
     const escapedStartDate = startDate.replace(/'/g, "''");
     const escapedEndDate = endDate.replace(/'/g, "''");
 
+    // color_id 파라미터 확인 (ref_id_color 필터링용)
+    const colorId = req.query.color_id || req.body?.color_id;
+    const colorIdInt = colorId ? parseInt(colorId, 10) : null;
+
     // 조건 확인 (유틸리티 함수 사용)
     const conditions = await checkAllReportConditions(sequelize, {
         logResults: true,
@@ -59,6 +63,7 @@ async function getItemsReport(req) {
             ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
+            ${colorIdInt !== null ? `AND c.ref_id_color = ${colorIdInt}` : ''}
         GROUP BY e1.id_empresa
         ORDER BY e1.id_empresa
     `;
@@ -78,6 +83,7 @@ async function getItemsReport(req) {
             ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE AND t1.tpdesc != '' 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
+            ${colorIdInt !== null ? `AND c.ref_id_color = ${colorIdInt}` : ''}
         GROUP BY t1.id_tipo
         ORDER BY t1.id_tipo
     `;
@@ -95,6 +101,7 @@ async function getItemsReport(req) {
             ON c.ref_id_color = cl.id_color AND cl.borrado IS FALSE
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
+            ${colorIdInt !== null ? `AND c.ref_id_color = ${colorIdInt}` : ''}
         GROUP BY cl.id_color
         ORDER BY cl.id_color
     `;
@@ -118,6 +125,7 @@ async function getItemsReport(req) {
             ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
             AND v1.borrado IS FALSE
+            ${colorIdInt !== null ? `AND c.ref_id_color = ${colorIdInt}` : ''}
         GROUP BY codigo1
         ORDER BY codigo1
     `;
@@ -197,7 +205,8 @@ async function getItemsReport(req) {
             fecha_inicio: startDate,
             fecha_fin: endDate,
             start_date: startDate,
-            end_date: endDate
+            end_date: endDate,
+            color_id: colorIdInt
         },
         summary: {
             total_companies: filteredCompanySummary.length,
