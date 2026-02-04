@@ -75,21 +75,27 @@ async function getGastosReport(req) {
 
     const detailWhereClause = 'WHERE ' + detailWhereConditions.join(' AND ');
 
+    // 디버깅: 쿼리 정보 로깅
+    console.log('[Gastos 보고서] 쿼리 구성:');
+    console.log(`   Summary 쿼리: rubro별 집계 (GROUP BY LEFT(codigo, 1))`);
+    console.log(`   Detail 쿼리: codigo와 sucursal로 GROUP BY 처리됨`);
+
     const detailQuery = `
         SELECT 
-            fecha,
-            hora,
-            tema,
-            costo,
-            sucursal,
-            g1.codigo,
-            gi.desc_gasto as rubro,
-            g1.id_ga
+            MAX(g1.fecha) as fecha,
+            MAX(g1.hora) as hora,
+            MAX(g1.tema) as tema,
+            SUM(g1.costo) as costo,
+            g1.sucursal as sucursal,
+            g1.codigo as codigo,
+            MAX(gi.desc_gasto) as rubro,
+            MAX(g1.id_ga) as id_ga
         FROM gastos g1
         INNER JOIN gasto_info gi 
             ON gi.codigo = g1.codigo
         ${detailWhereClause}
-        ORDER BY g1.fecha DESC, g1.hora DESC
+        GROUP BY g1.codigo, g1.sucursal
+        ORDER BY g1.codigo, g1.sucursal
     `;
 
     // 두 쿼리 실행

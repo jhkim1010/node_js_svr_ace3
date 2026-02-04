@@ -178,7 +178,8 @@ async function getIngresosReport(req) {
             MAX(i.desc3) as "ProductName", 
             SUM(i.cant3) as "totalCantidad", 
             MAX(t1.id_tipo) as "CategoryCode", 
-            MAX(e1.id_empresa) as "CompanyCode" 
+            MAX(e1.id_empresa) as "CompanyCode",
+            i.sucursal as "sucursal"
         FROM ingresos i 
         LEFT JOIN codigos c 
             ON i.ref_id_codigo = c.id_codigo AND i.borrado IS FALSE 
@@ -189,8 +190,8 @@ async function getIngresosReport(req) {
         LEFT JOIN empresas e1 
             ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE ${productWhereClause}
-        GROUP BY i.codigo
-        ORDER BY i.codigo
+        GROUP BY i.codigo, i.sucursal
+        ORDER BY i.codigo, i.sucursal
     `;
     
     // 디버깅: 쿼리 정보 로깅
@@ -199,6 +200,7 @@ async function getIngresosReport(req) {
     console.log(`   Category 쿼리: 필터 없음 (resumen은 전체 데이터)`);
     console.log(`   Color 쿼리: 필터 없음 (resumen은 전체 데이터)`);
     console.log(`   Product 쿼리: color_id=${colorIdInt || '없음'}, tipo_id=${tipoIdInt || '없음'} ${dateChanged ? '(기간 변경으로 필터 무시)' : ''}`);
+    console.log(`   [중요] Product 쿼리는 codigo와 sucursal로 GROUP BY 처리됨`);
 
     // 조건에 따라 쿼리 실행
     let companySummary = [];
