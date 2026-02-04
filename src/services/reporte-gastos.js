@@ -101,15 +101,7 @@ async function getGastosReport(req) {
     }
 
     // sucursal 파라미터에 따라 SELECT와 GROUP BY 조건부 구성
-    const sucursalSelect = sucursalInt !== null && !isNaN(sucursalInt) 
-        ? 'g1.sucursal as sucursal,' 
-        : '';
-    const sucursalGroupBy = sucursalInt !== null && !isNaN(sucursalInt) 
-        ? ', g1.sucursal' 
-        : '';
-    const sucursalOrderBy = sucursalInt !== null && !isNaN(sucursalInt) 
-        ? ', g1.sucursal' 
-        : '';
+    const includeSucursal = sucursalInt !== null && !isNaN(sucursalInt);
 
     const detailQuery = `
         SELECT 
@@ -117,15 +109,15 @@ async function getGastosReport(req) {
             MAX(g1.hora) as hora,
             MAX(g1.tema) as tema,
             SUM(g1.costo) as costo,
-            ${sucursalSelect ? sucursalSelect + '\n            ' : ''}g1.codigo as codigo,
+            g1.codigo as codigo${includeSucursal ? ',\n            g1.sucursal as sucursal' : ''},
             MAX(gi.desc_gasto) as rubro,
             MAX(g1.id_ga) as id_ga
         FROM gastos g1
         INNER JOIN gasto_info gi 
             ON gi.codigo = g1.codigo
         ${detailWhereClause}
-        GROUP BY g1.codigo${sucursalGroupBy}
-        ORDER BY g1.codigo${sucursalOrderBy}
+        GROUP BY g1.codigo${includeSucursal ? ', g1.sucursal' : ''}
+        ORDER BY g1.codigo${includeSucursal ? ', g1.sucursal' : ''}
     `;
 
     // 두 쿼리 실행

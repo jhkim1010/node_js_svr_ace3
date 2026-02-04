@@ -170,15 +170,7 @@ async function getItemsReport(req) {
     const productWhereClause = productWhereConditions.join(' AND ');
     
     // sucursal 파라미터에 따라 SELECT와 GROUP BY 조건부 구성
-    const sucursalSelect = sucursalInt !== null && !isNaN(sucursalInt) 
-        ? 'v1.sucursal as "sucursal",' 
-        : '';
-    const sucursalGroupBy = sucursalInt !== null && !isNaN(sucursalInt) 
-        ? ', v1.sucursal' 
-        : '';
-    const sucursalOrderBy = sucursalInt !== null && !isNaN(sucursalInt) 
-        ? ', v1.sucursal' 
-        : '';
+    const includeSucursal = sucursalInt !== null && !isNaN(sucursalInt);
     
     const productQuery = `
         SELECT 
@@ -186,7 +178,7 @@ async function getItemsReport(req) {
             MAX(v1.desc1) as "ProductName", 
             SUM(v1.cant1) as "totalCantidad", 
             MAX(t1.id_tipo) as "CategoryCode", 
-            MAX(e1.id_empresa) as "CompanyCode"${sucursalSelect ? '\n            ' + sucursalSelect.slice(0, -1) : ''}
+            MAX(e1.id_empresa) as "CompanyCode"${includeSucursal ? ',\n            v1.sucursal as "sucursal"' : ''}
         FROM vdetalle v1 
         LEFT JOIN codigos c 
             ON v1.ref_id_codigo = c.id_codigo AND v1.borrado IS FALSE 
@@ -197,8 +189,8 @@ async function getItemsReport(req) {
         LEFT JOIN empresas e1 
             ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE ${productWhereClause}
-        GROUP BY codigo1${sucursalGroupBy}
-        ORDER BY codigo1${sucursalOrderBy}
+        GROUP BY codigo1${includeSucursal ? ', v1.sucursal' : ''}
+        ORDER BY codigo1${includeSucursal ? ', v1.sucursal' : ''}
     `;
     
     // 디버깅: 쿼리 정보 로깅
@@ -207,7 +199,7 @@ async function getItemsReport(req) {
     console.log(`   Category 쿼리: 필터 없음 (resumen은 전체 데이터)`);
     console.log(`   Color 쿼리: 필터 없음 (resumen은 전체 데이터)`);
     console.log(`   Product 쿼리: color_id=${colorIdInt || '없음'}, tipo_id=${tipoIdInt || '없음'}, sucursal=${sucursalInt || '없음'} ${dateChanged ? '(기간 변경으로 필터 무시)' : ''}`);
-    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+    if (includeSucursal) {
         console.log(`   [중요] Product 쿼리는 codigo1과 sucursal로 GROUP BY 처리됨`);
     } else {
         console.log(`   [중요] Product 쿼리는 codigo1로만 GROUP BY 처리됨`);
