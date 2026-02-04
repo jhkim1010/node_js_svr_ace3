@@ -82,6 +82,11 @@ async function getIngresosReport(req) {
         whereConditions.push(`(i.codigo ILIKE '%${escapedWord}%' OR i.desc3 ILIKE '%${escapedWord}%')`);
     }
 
+    // sucursal 필터 추가 (있을 경우 resumen에도 적용)
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        whereConditions.push(`i.sucursal = ${sucursalInt}`);
+    }
+
     // color_id 필터링 조건 (JOIN된 codigos 테이블의 ref_id_color 사용)
     // 이 조건은 각 쿼리의 WHERE 절에 추가됨
 
@@ -209,9 +214,15 @@ async function getIngresosReport(req) {
     
     // 디버깅: 쿼리 정보 로깅
     console.log('[Ingresos 보고서] 쿼리 구성:');
-    console.log(`   Company 쿼리: 필터 없음 (resumen은 전체 데이터)`);
-    console.log(`   Category 쿼리: 필터 없음 (resumen은 전체 데이터)`);
-    console.log(`   Color 쿼리: 필터 없음 (resumen은 전체 데이터)`);
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        console.log(`   Company 쿼리: sucursal=${sucursalInt} 필터 적용`);
+        console.log(`   Category 쿼리: sucursal=${sucursalInt} 필터 적용`);
+        console.log(`   Color 쿼리: sucursal=${sucursalInt} 필터 적용`);
+    } else {
+        console.log(`   Company 쿼리: 필터 없음 (resumen은 전체 데이터)`);
+        console.log(`   Category 쿼리: 필터 없음 (resumen은 전체 데이터)`);
+        console.log(`   Color 쿼리: 필터 없음 (resumen은 전체 데이터)`);
+    }
     console.log(`   Product 쿼리: color_id=${colorIdInt || '없음'}, tipo_id=${tipoIdInt || '없음'}, sucursal=${sucursalInt || '없음'} ${dateChanged ? '(기간 변경으로 필터 무시)' : ''}`);
     if (includeSucursal) {
         console.log(`   [중요] Product 쿼리는 codigo와 sucursal로 GROUP BY 처리됨`);

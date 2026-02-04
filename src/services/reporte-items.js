@@ -85,8 +85,22 @@ async function getItemsReport(req) {
     console.log(`   Category 쿼리: 항상 실행 (resumen 유지)`);
     console.log(`   Color 쿼리: 항상 실행 (resumen 유지)`);
 
+    // resumen 쿼리용 WHERE 조건 구성 (sucursal 필터 포함)
+    const resumenWhereConditions = [
+        `v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'`,
+        'v1.borrado IS FALSE'
+    ];
+    
+    // sucursal 필터 추가 (있을 경우 resumen에도 적용)
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        resumenWhereConditions.push(`v1.sucursal = ${sucursalInt}`);
+    }
+    
+    const resumenWhereClause = resumenWhereConditions.join(' AND ');
+
     // Company별 집계 쿼리
     // 주의: color_id 필터는 적용하지 않음 (resumen은 전체 데이터 기준)
+    // sucursal 필터는 적용함 (있을 경우)
     const companyQuery = `
         SELECT 
             e1.id_empresa as "CompanyCode", 
@@ -99,14 +113,14 @@ async function getItemsReport(req) {
             ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
         LEFT JOIN empresas e1 
             ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
-        WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
-            AND v1.borrado IS FALSE
+        WHERE ${resumenWhereClause}
         GROUP BY e1.id_empresa
         ORDER BY e1.id_empresa
     `;
 
     // Category별 집계 쿼리 (resumen x tipo)
     // 주의: color_id 필터는 적용하지 않음 (resumen은 전체 데이터 기준으로 유지)
+    // sucursal 필터는 적용함 (있을 경우)
     const categoryQuery = `
         SELECT 
             t1.id_tipo as "CategoryCode", 
@@ -119,14 +133,14 @@ async function getItemsReport(req) {
             ON c.ref_id_todocodigo = t.id_todocodigo AND t.borrado IS FALSE
         LEFT JOIN tipos t1 
             ON t1.id_tipo = t.ref_id_tipo AND t1.borrado IS FALSE AND t1.tpdesc != '' 
-        WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
-            AND v1.borrado IS FALSE
+        WHERE ${resumenWhereClause}
         GROUP BY t1.id_tipo
         ORDER BY t1.id_tipo
     `;
 
     // Color별 집계 쿼리 (resumen x color)
     // 주의: color_id 필터는 적용하지 않음 (resumen은 전체 데이터 기준으로 유지)
+    // sucursal 필터는 적용함 (있을 경우)
     const colorQuery = `
         SELECT 
             cl.id_color as "ColorCode", 
@@ -137,8 +151,7 @@ async function getItemsReport(req) {
             ON v1.ref_id_codigo = c.id_codigo AND v1.borrado IS FALSE 
         LEFT JOIN color cl
             ON c.ref_id_color = cl.id_color AND cl.borrado IS FALSE
-        WHERE v1.fecha1 BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'
-            AND v1.borrado IS FALSE
+        WHERE ${resumenWhereClause}
         GROUP BY cl.id_color
         ORDER BY cl.id_color
     `;
@@ -195,9 +208,15 @@ async function getItemsReport(req) {
     
     // 디버깅: 쿼리 정보 로깅
     console.log('[Items 보고서] 쿼리 구성:');
-    console.log(`   Company 쿼리: 필터 없음 (resumen은 전체 데이터)`);
-    console.log(`   Category 쿼리: 필터 없음 (resumen은 전체 데이터)`);
-    console.log(`   Color 쿼리: 필터 없음 (resumen은 전체 데이터)`);
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        console.log(`   Company 쿼리: sucursal=${sucursalInt} 필터 적용`);
+        console.log(`   Category 쿼리: sucursal=${sucursalInt} 필터 적용`);
+        console.log(`   Color 쿼리: sucursal=${sucursalInt} 필터 적용`);
+    } else {
+        console.log(`   Company 쿼리: 필터 없음 (resumen은 전체 데이터)`);
+        console.log(`   Category 쿼리: 필터 없음 (resumen은 전체 데이터)`);
+        console.log(`   Color 쿼리: 필터 없음 (resumen은 전체 데이터)`);
+    }
     console.log(`   Product 쿼리: color_id=${colorIdInt || '없음'}, tipo_id=${tipoIdInt || '없음'}, sucursal=${sucursalInt || '없음'} ${dateChanged ? '(기간 변경으로 필터 무시)' : ''}`);
     if (includeSucursal) {
         console.log(`   [중요] Product 쿼리는 codigo1과 sucursal로 GROUP BY 처리됨`);
