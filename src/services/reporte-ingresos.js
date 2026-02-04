@@ -32,6 +32,10 @@ async function getIngresosReport(req) {
     const tipoId = dateChanged ? null : (req.query.tipo_id || req.body?.tipo_id || req.query.category_id || req.body?.category_id);
     const tipoIdInt = tipoId ? parseInt(tipoId, 10) : null;
     
+    // sucursal 파라미터 확인
+    const sucursal = req.query.sucursal || req.body?.sucursal;
+    const sucursalInt = sucursal ? parseInt(sucursal, 10) : null;
+    
     // 디버깅: 파라미터 로깅
     console.log('[Ingresos 보고서] 파라미터 확인:');
     console.log(`   date_changed: ${dateChanged}`);
@@ -39,6 +43,8 @@ async function getIngresosReport(req) {
     console.log(`   color_id (parsed): ${colorIdInt} ${dateChanged ? '(기간 변경으로 무시됨)' : ''}`);
     console.log(`   tipo_id (raw): ${tipoId}`);
     console.log(`   tipo_id (parsed): ${tipoIdInt} ${dateChanged ? '(기간 변경으로 무시됨)' : ''}`);
+    console.log(`   sucursal (raw): ${sucursal}`);
+    console.log(`   sucursal (parsed): ${sucursalInt || '없음'}`);
     console.log(`   필터 적용 대상: 제품 상세 내역만 (resumen 집계는 제외)`);
 
     // 날짜 범위 필터 (필수)
@@ -159,6 +165,11 @@ async function getIngresosReport(req) {
     // 기간이 변경되면 필터를 무시
     let productWhereConditions = [whereClause];
     
+    // sucursal 필터 추가 (있을 경우)
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        productWhereConditions.push(`i.sucursal = ${sucursalInt}`);
+    }
+    
     // color_id와 tipo_id 필터는 기간이 변경되지 않았을 때만 적용
     if (!dateChanged) {
         if (colorIdInt !== null && !isNaN(colorIdInt)) {
@@ -172,14 +183,24 @@ async function getIngresosReport(req) {
     
     const productWhereClause = productWhereConditions.join(' AND ');
     
+    // sucursal 파라미터에 따라 SELECT와 GROUP BY 조건부 구성
+    const sucursalSelect = sucursalInt !== null && !isNaN(sucursalInt) 
+        ? 'i.sucursal as "sucursal",' 
+        : '';
+    const sucursalGroupBy = sucursalInt !== null && !isNaN(sucursalInt) 
+        ? ', i.sucursal' 
+        : '';
+    const sucursalOrderBy = sucursalInt !== null && !isNaN(sucursalInt) 
+        ? ', i.sucursal' 
+        : '';
+    
     const productQuery = `
         SELECT 
             i.codigo as "codigo", 
             MAX(i.desc3) as "ProductName", 
             SUM(i.cant3) as "totalCantidad", 
             MAX(t1.id_tipo) as "CategoryCode", 
-            MAX(e1.id_empresa) as "CompanyCode",
-            i.sucursal as "sucursal"
+            MAX(e1.id_empresa) as "CompanyCode"${sucursalSelect ? '\n            ' + sucursalSelect.slice(0, -1) : ''}
         FROM ingresos i 
         LEFT JOIN codigos c 
             ON i.ref_id_codigo = c.id_codigo AND i.borrado IS FALSE 
@@ -190,8 +211,8 @@ async function getIngresosReport(req) {
         LEFT JOIN empresas e1 
             ON e1.id_empresa = t.ref_id_empresa AND e1.borrado IS FALSE AND e1.empdesc != '' 
         WHERE ${productWhereClause}
-        GROUP BY i.codigo, i.sucursal
-        ORDER BY i.codigo, i.sucursal
+        GROUP BY i.codigo${sucursalGroupBy}
+        ORDER BY i.codigo${sucursalOrderBy}
     `;
     
     // 디버깅: 쿼리 정보 로깅
@@ -199,8 +220,12 @@ async function getIngresosReport(req) {
     console.log(`   Company 쿼리: 필터 없음 (resumen은 전체 데이터)`);
     console.log(`   Category 쿼리: 필터 없음 (resumen은 전체 데이터)`);
     console.log(`   Color 쿼리: 필터 없음 (resumen은 전체 데이터)`);
-    console.log(`   Product 쿼리: color_id=${colorIdInt || '없음'}, tipo_id=${tipoIdInt || '없음'} ${dateChanged ? '(기간 변경으로 필터 무시)' : ''}`);
-    console.log(`   [중요] Product 쿼리는 codigo와 sucursal로 GROUP BY 처리됨`);
+    console.log(`   Product 쿼리: color_id=${colorIdInt || '없음'}, tipo_id=${tipoIdInt || '없음'}, sucursal=${sucursalInt || '없음'} ${dateChanged ? '(기간 변경으로 필터 무시)' : ''}`);
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        console.log(`   [중요] Product 쿼리는 codigo와 sucursal로 GROUP BY 처리됨`);
+    } else {
+        console.log(`   [중요] Product 쿼리는 codigo로만 GROUP BY 처리됨`);
+    }
 
     // 조건에 따라 쿼리 실행
     let companySummary = [];
@@ -366,6 +391,7 @@ async function getIngresosReport(req) {
             filtering_word: filteringWord || null,
             color_id: colorIdInt,
             tipo_id: tipoIdInt,
+            sucursal: sucursalInt,
             date_changed: dateChanged
         },
         summary: {

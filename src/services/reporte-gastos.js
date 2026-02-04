@@ -10,10 +10,19 @@ async function getGastosReport(req) {
     const fechaInicio = req.query.fecha_inicio || req.query.start_date || req.query.fecha_desde;
     const fechaFin = req.query.fecha_fin || req.query.end_date || req.query.fecha_hasta;
 
+    // sucursal 파라미터 확인
+    const sucursal = req.query.sucursal || req.body?.sucursal;
+    const sucursalInt = sucursal ? parseInt(sucursal, 10) : null;
+
     // 날짜가 없으면 에러 반환
     if (!fechaInicio) {
         throw new Error('fecha_inicio is required');
     }
+    
+    // 디버깅: 파라미터 로깅
+    console.log('[Gastos 보고서] 파라미터 확인:');
+    console.log(`   sucursal (raw): ${sucursal}`);
+    console.log(`   sucursal (parsed): ${sucursalInt || '없음'}`);
 
     // WHERE 조건 구성
     let whereConditions = [];
@@ -72,13 +81,35 @@ async function getGastosReport(req) {
 
     // 삭제되지 않은 항목만 조회
     detailWhereConditions.push(`g1.borrado IS FALSE`);
+    
+    // sucursal 필터 추가 (있을 경우)
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        detailWhereConditions.push(`g1.sucursal = $${detailParamIndex}`);
+        detailQueryParams.push(sucursalInt);
+        detailParamIndex++;
+    }
 
     const detailWhereClause = 'WHERE ' + detailWhereConditions.join(' AND ');
 
     // 디버깅: 쿼리 정보 로깅
     console.log('[Gastos 보고서] 쿼리 구성:');
     console.log(`   Summary 쿼리: rubro별 집계 (GROUP BY LEFT(codigo, 1))`);
-    console.log(`   Detail 쿼리: codigo와 sucursal로 GROUP BY 처리됨`);
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        console.log(`   Detail 쿼리: codigo와 sucursal로 GROUP BY 처리됨 (sucursal=${sucursalInt} 필터 적용)`);
+    } else {
+        console.log(`   Detail 쿼리: codigo로만 GROUP BY 처리됨`);
+    }
+
+    // sucursal 파라미터에 따라 SELECT와 GROUP BY 조건부 구성
+    const sucursalSelect = sucursalInt !== null && !isNaN(sucursalInt) 
+        ? 'g1.sucursal as sucursal,' 
+        : '';
+    const sucursalGroupBy = sucursalInt !== null && !isNaN(sucursalInt) 
+        ? ', g1.sucursal' 
+        : '';
+    const sucursalOrderBy = sucursalInt !== null && !isNaN(sucursalInt) 
+        ? ', g1.sucursal' 
+        : '';
 
     const detailQuery = `
         SELECT 
@@ -86,16 +117,15 @@ async function getGastosReport(req) {
             MAX(g1.hora) as hora,
             MAX(g1.tema) as tema,
             SUM(g1.costo) as costo,
-            g1.sucursal as sucursal,
-            g1.codigo as codigo,
+            ${sucursalSelect ? sucursalSelect + '\n            ' : ''}g1.codigo as codigo,
             MAX(gi.desc_gasto) as rubro,
             MAX(g1.id_ga) as id_ga
         FROM gastos g1
         INNER JOIN gasto_info gi 
             ON gi.codigo = g1.codigo
         ${detailWhereClause}
-        GROUP BY g1.codigo, g1.sucursal
-        ORDER BY g1.codigo, g1.sucursal
+        GROUP BY g1.codigo${sucursalGroupBy}
+        ORDER BY g1.codigo${sucursalOrderBy}
     `;
 
     // 두 쿼리 실행
@@ -119,7 +149,8 @@ async function getGastosReport(req) {
             fecha_inicio: fechaInicio,
             fecha_fin: fechaFin || null,
             start_date: fechaInicio,
-            end_date: fechaFin || null
+            end_date: fechaFin || null,
+            sucursal: sucursalInt
         },
         summary: {
             total_rubros: summary.length,
