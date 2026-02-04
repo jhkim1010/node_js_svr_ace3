@@ -174,12 +174,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     if (modelName === 'Ingresos') {
                                         const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                         const identifierStr = formatIdentifier(identifier);
-                                        const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
-                                            ? `Client utime(${resultPk.clientUtime}) > Server utime(${resultPk.serverUtime})`
-                                            : resultPk.clientUtime
-                                                ? `Client utime(${resultPk.clientUtime}) exists, Server utime missing`
-                                                : 'Both utime missing';
-                                        logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr} | 이유: 클라이언트 utime이 더 최신 | ${utimeInfo}`);
+                                        logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr}`);
                                     }
                                     results.push({ index: i, action: 'updated', data: resultPk.data });
                                     updatedCount++;
@@ -193,13 +188,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 if (resultPk.action === 'skipped') {
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                     const identifierStr = formatIdentifier(identifier);
-                                    const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
-                                        ? `Client utime(${resultPk.clientUtime}) <= Server utime(${resultPk.serverUtime})`
-                                        : resultPk.serverUtime
-                                            ? `Client utime missing, Server utime(${resultPk.serverUtime}) exists`
-                                            : 'Both utime missing';
-                                    
-                                    logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                    logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
                                     
                                     results.push({
                                         index: i,
@@ -316,12 +305,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 if (modelName === 'Ingresos') {
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                     const identifierStr = formatIdentifier(identifier);
-                                    const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
-                                        ? `Client utime(${resultPk.clientUtime}) > Server utime(${resultPk.serverUtime})`
-                                        : resultPk.clientUtime
-                                            ? `Client utime(${resultPk.clientUtime}) exists, Server utime missing`
-                                            : 'Both utime missing';
-                                    logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr} | 이유: 클라이언트 utime이 더 최신 | ${utimeInfo}`);
+                                    logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr}`);
                                 }
                                 results.push({ index: i, action: 'updated', data: resultPk.data });
                                 updatedCount++;
@@ -338,13 +322,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             if (resultPk.action === 'skipped') { // primary key 조회 결과 - skipped
                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                 const identifierStr = formatIdentifier(identifier);
-                                const utimeInfo = resultPk.serverUtime && resultPk.clientUtime
-                                    ? `Client utime(${resultPk.clientUtime}) <= Server utime(${resultPk.serverUtime})`
-                                    : resultPk.serverUtime
-                                        ? `Client utime missing, Server utime(${resultPk.serverUtime}) exists`
-                                        : 'Both utime missing';
-                                
-                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
                                 
                                 results.push({
                                     index: i,
@@ -610,12 +588,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         if (modelName === 'Ingresos') {
                                             const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                             const identifierStr = formatIdentifier(identifier);
-                                            const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
-                                                ? `Client utime(${resultRetry.clientUtime}) > Server utime(${resultRetry.serverUtime})`
-                                                : resultRetry.clientUtime
-                                                    ? `Client utime(${resultRetry.clientUtime}) exists, Server utime missing`
-                                                    : 'Both utime missing';
-                                            logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr} | 이유: unique constraint 에러 후 primary key retry로 클라이언트 utime이 더 최신 | ${utimeInfo}`);
+                                            logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr}`);
                                         }
                                         results.push({ index: i, action: 'updated', data: resultRetry.data });
                                         updatedCount++;
@@ -632,13 +605,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     if (resultRetry.action === 'skipped') { // primary key retry 결과 - skipped
                                         const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                         const identifierStr = formatIdentifier(identifier);
-                                        const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
-                                            ? `Client utime(${resultRetry.clientUtime}) <= Server utime(${resultRetry.serverUtime})`
-                                            : resultRetry.serverUtime
-                                                ? `Client utime missing, Server utime(${resultRetry.serverUtime}) exists`
-                                                : 'Both utime missing';
-                                        
-                                        logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: unique key retry 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                        logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
                                         
                                         results.push({
                                             index: i,
@@ -713,7 +680,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                         : resultRetry.clientUtime
                                                             ? `Client utime(${resultRetry.clientUtime}) exists, Server utime missing`
                                                             : 'Both utime missing';
-                                                    logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr} | 이유: unique constraint 에러 후 unique key retry로 클라이언트 utime이 더 최신 | ${utimeInfo}`);
+                                                    logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr}`);
                                                 }
                                                 results.push({ index: i, action: 'updated', data: resultRetry.data });
                                                 updatedCount++;
@@ -730,13 +697,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             if (resultRetry.action === 'skipped') { // unique key retry 결과 - skipped
                                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                                 const identifierStr = formatIdentifier(identifier);
-                                                const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
-                                                    ? `Client utime(${resultRetry.clientUtime}) <= Server utime(${resultRetry.serverUtime})`
-                                                    : resultRetry.serverUtime
-                                                        ? `Client utime missing, Server utime(${resultRetry.serverUtime}) exists`
-                                                        : 'Both utime missing';
-                                                
-                                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: unique key retry 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
                                                 
                                                 results.push({
                                                     index: i,
@@ -1032,13 +993,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     Object.assign(identifier, extractRecordIdentifier(existingRecord, primaryKey));
                                 }
                                 const identifierStr = formatIdentifier(identifier);
-                                const utimeInfo = serverUtimeStr && clientUtimeStr
-                                    ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
-                                    : serverUtimeStr
-                                        ? `Client utime missing, Server utime(${serverUtimeStr}) exists`
-                                        : 'Both utime missing';
-                                
-                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: availableUniqueKey 조회 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
                                 
                                 results.push({ 
                                     index: i, 
@@ -1191,13 +1146,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         Object.assign(identifier, extractRecordIdentifier(existingRecordByPk, primaryKey));
                                     } // end if (existingRecordByPk)
                                     const identifierStr = formatIdentifier(identifier);
-                                    const utimeInfo = serverUtimeStr && clientUtimeStr
-                                        ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
-                                        : serverUtimeStr
-                                            ? `Client utime missing, Server utime(${serverUtimeStr}) exists`
-                                            : 'Both utime missing';
-                                    
-                                    logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: primary key 조회 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                    logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
                                     
                                     results.push({ 
                                         index: i, 
@@ -1459,13 +1408,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                     Object.assign(identifier, extractRecordIdentifier(retryRecord, primaryKey));
                                                 }
                                                 const identifierStr = formatIdentifier(identifier);
-                                                const utimeInfo = serverUtimeStr && clientUtimeStr
-                                                    ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
-                                                    : serverUtimeStr
-                                                        ? `Client utime missing, Server utime(${serverUtimeStr}) exists`
-                                                        : 'Both utime missing';
-                                                
-                                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: unique key retry 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
                                                 
                                                 results.push({ 
                                                     index: i, 
@@ -1996,13 +1939,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             Object.assign(identifier, extractRecordIdentifier(retryRecord, primaryKey));
                                         }
                                         const identifierStr = formatIdentifier(identifier);
-                                        const utimeInfo = serverUtimeStr && clientUtimeStr
-                                            ? `Client utime(${clientUtimeStr}) <= Server utime(${serverUtimeStr})`
-                                            : serverUtimeStr
-                                                ? `Client utime missing, Server utime(${serverUtimeStr}) exists`
-                                                : 'Both utime missing';
-                                        
-                                        logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr} | 이유: unique key retry 후 서버 utime이 더 최신이거나 같음 | ${utimeInfo}`);
+                                        logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
                                         
                                         results.push({ 
                                             index: i, 
