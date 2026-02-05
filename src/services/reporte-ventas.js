@@ -127,18 +127,15 @@ async function getVentasReport(req) {
     const sucursal = query.sucursal || body.sucursal;
     const sucursalInt = sucursal ? parseInt(sucursal, 10) : null;
     
-    // 디버깅: 파라미터 로깅
-    console.log('[Ventas 보고서] 파라미터 확인:');
-    console.log(`   movidos (raw): ${movidos}`);
-    console.log(`   movidos (parsed): ${isMovidos}`);
-    console.log(`   sucursal (raw): ${sucursal}`);
-    console.log(`   sucursal (parsed): ${sucursalInt || '없음'}`);
-    if (isMovidos) {
-        console.log(`   [중요] b_movido IS TRUE 조건이 적용됩니다.`);
-    }
-    if (sucursalInt !== null && !isNaN(sucursalInt)) {
-        console.log(`   [중요] sucursal=${sucursalInt} 필터가 적용됩니다.`);
-    }
+    // 간단한 파라미터 로깅
+    const filters = [];
+    if (isMovidos) filters.push('movidos=1');
+    if (sucursalInt !== null && !isNaN(sucursalInt)) filters.push(`sucursal=${sucursalInt}`);
+    if (isDescontado) filters.push('descontado=1');
+    if (isReservado) filters.push('reservado=1');
+    if (isCredito) filters.push('credito=1');
+    if (dni) filters.push(`dni=${dni}`);
+    console.log(`[Ventas 보고서] unit=${unit}${filters.length > 0 ? ` | ${filters.join(', ')}` : ''}`);
 
     // 날짜가 없으면 에러 반환
     if (!fechaInicio || !fechaFin) {
