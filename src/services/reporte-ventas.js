@@ -8,9 +8,10 @@ const { Sequelize } = require('sequelize');
  * @param {boolean} isCredito - credito 필터 여부
  * @param {string} dni - dni 필터 (선택사항)
  * @param {boolean} isMovidos - movidos 필터 여부
+ * @param {number} sucursal - sucursal 필터 (선택사항)
  * @returns {string} SQL WHERE 조건 문자열
  */
-function buildAdditionalFilters(isDescontado, isReservado, isCredito, dni = null, isMovidos = false) {
+function buildAdditionalFilters(isDescontado, isReservado, isCredito, dni = null, isMovidos = false, sucursal = null) {
     const conditions = [];
     
     if (isDescontado) {
@@ -27,6 +28,10 @@ function buildAdditionalFilters(isDescontado, isReservado, isCredito, dni = null
     
     if (isMovidos) {
         conditions.push('AND b_movido IS TRUE');
+    }
+    
+    if (sucursal !== null && !isNaN(sucursal)) {
+        conditions.push(`AND sucursal = ${sucursal}`);
     }
     
     if (dni) {
@@ -118,12 +123,21 @@ async function getVentasReport(req) {
     const movidos = query.movidos || body.movidos;
     const isMovidos = movidos === 'true' || movidos === true || movidos === '1' || movidos === 1;
     
+    // sucursal 파라미터 파싱
+    const sucursal = query.sucursal || body.sucursal;
+    const sucursalInt = sucursal ? parseInt(sucursal, 10) : null;
+    
     // 디버깅: 파라미터 로깅
     console.log('[Ventas 보고서] 파라미터 확인:');
     console.log(`   movidos (raw): ${movidos}`);
     console.log(`   movidos (parsed): ${isMovidos}`);
+    console.log(`   sucursal (raw): ${sucursal}`);
+    console.log(`   sucursal (parsed): ${sucursalInt || '없음'}`);
     if (isMovidos) {
         console.log(`   [중요] b_movido IS TRUE 조건이 적용됩니다.`);
+    }
+    if (sucursalInt !== null && !isNaN(sucursalInt)) {
+        console.log(`   [중요] sucursal=${sucursalInt} 필터가 적용됩니다.`);
     }
 
     // 날짜가 없으면 에러 반환
@@ -173,7 +187,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado = false
-                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni, isMovidos)}
+                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni, isMovidos, sucursalInt)}
                     GROUP BY fecha, sucursal
                     ORDER BY fecha DESC
                 `;
@@ -195,7 +209,7 @@ async function getVentasReport(req) {
                     FROM public.vcodes
                     WHERE fecha BETWEEN :fechaInicio AND :fechaFin 
                         AND borrado IS FALSE
-                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni, isMovidos)}
+                        AND b_cancelado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni, isMovidos, sucursalInt)}
                     GROUP BY DATE_TRUNC('month', fecha), sucursal
                     ORDER BY DATE_TRUNC('month', fecha) DESC
                 `;
@@ -340,7 +354,7 @@ async function getVentasReport(req) {
                                 vcode_id as id
                             FROM public.vcodes
                             WHERE fecha = :fechaInicio 
-                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni, isMovidos)}
+                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni, isMovidos, sucursalInt)}
                             ORDER BY vcode_id ASC
                         `;
                     } else {
@@ -374,7 +388,7 @@ async function getVentasReport(req) {
                             FROM public.vcodes
                             WHERE fecha >= :fechaInicio 
                                 AND fecha <= :fechaFin 
-                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni, isMovidos)}
+                                AND borrado IS FALSE${buildAdditionalFilters(isDescontado, isReservado, isCredito, dni, isMovidos, sucursalInt)}
                             ORDER BY vcode_id ASC
                         `;
                     }
@@ -417,6 +431,7 @@ async function getVentasReport(req) {
             reservado: isReservado,
             credito: isCredito,
             movidos: isMovidos,
+            sucursal: sucursalInt,
             period_days: period.days,
             period_months: period.months,
             period_years: period.years,
