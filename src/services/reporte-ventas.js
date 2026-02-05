@@ -127,7 +127,7 @@ async function getVentasReport(req) {
     const sucursal = query.sucursal || body.sucursal;
     const sucursalInt = sucursal ? parseInt(sucursal, 10) : null;
     
-    // 간단한 파라미터 로깅
+    // 응답 로거에서 사용할 정보 저장
     const filters = [];
     if (isMovidos) filters.push('movidos=1');
     if (sucursalInt !== null && !isNaN(sucursalInt)) filters.push(`sucursal=${sucursalInt}`);
@@ -135,7 +135,7 @@ async function getVentasReport(req) {
     if (isReservado) filters.push('reservado=1');
     if (isCredito) filters.push('credito=1');
     if (dni) filters.push(`dni=${dni}`);
-    console.log(`[Ventas 보고서] unit=${unit}${filters.length > 0 ? ` | ${filters.join(', ')}` : ''}`);
+    req._ventasInfo = `unit=${unit}${filters.length > 0 ? ` | ${filters.join(', ')}` : ''}`;
 
     // 날짜가 없으면 에러 반환
     if (!fechaInicio || !fechaFin) {
@@ -417,6 +417,9 @@ async function getVentasReport(req) {
         }
     }
 
+    // 응답 데이터 개수 저장 (응답 로거에서 사용)
+    req._responseDataCount = data.length;
+    
     return {
         filters: {
             fecha_inicio: fechaInicio,

@@ -66,8 +66,10 @@ function responseLogger(req, res, next) {
             const skippedText = stats.skipped > 0 ? ` | Skipped: ${stats.skipped}` : '';
             console.log(`${statusEmoji} ${dbName} | ${routerName} | ${operationWithMethod} | Total: ${stats.total} | Created: ${stats.created} | Updated: ${stats.updated} | Deleted: ${stats.deleted} | Failed: ${stats.failed}${skippedText}${statusText}`);
         } else {
+            // ventas 보고서의 경우 추가 정보 포함
+            const ventasInfo = req._ventasInfo ? ` | ${req._ventasInfo}` : '';
             // 1줄로 출력
-            console.log(`${statusEmoji} ${dbName} | ${routerName} | ${operationWithMethod} | ${dataCount}개${statusText}`);
+            console.log(`${statusEmoji} ${dbName} | ${routerName} | ${operationWithMethod} | ${dataCount}개${ventasInfo}${statusText}`);
         }
     });
     
