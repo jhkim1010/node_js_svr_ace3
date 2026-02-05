@@ -203,12 +203,6 @@ router.get('/', async (req, res) => {
             ? 'WHERE ' + sqlWhereConditions.join(' AND ')
             : '';
         
-        // 디버깅: rubro 필터 적용 확인
-        console.log('[Gastos] 파라미터 확인:');
-        console.log(`   rubro (raw): ${rubro}`);
-        console.log(`   [중요] rubro 필터는 summary 쿼리에는 적용되지 않음 (전체 rubro 표시)`);
-        console.log(`   [중요] rubro 필터는 detail 쿼리에만 적용됨`);
-        
         // Rubro별 집계 쿼리 실행 (PostgreSQL에서 대소문자 유지를 위해 따옴표 사용)
         const rubroSummaryQuery = `
             SELECT 
@@ -226,15 +220,6 @@ router.get('/', async (req, res) => {
         
         let rubroSummary = [];
         try {
-            // 디버깅: summary 쿼리 정보 로깅
-            console.log('[Gastos] Rubro summary 쿼리 실행:');
-            console.log(`   WHERE 절: ${sqlWhereClause}`);
-            console.log(`   파라미터 개수: ${sqlParams.length}`);
-            console.log(`   [중요] rubro 필터는 summary 쿼리에 적용되지 않음 (전체 rubro 표시)`);
-            if (rubro && rubro.trim()) {
-                console.log(`   [참고] rubro='${rubro.trim()}' 파라미터가 있지만 summary에는 적용 안 됨`);
-            }
-            
             const rubroResults = await sequelize.query(rubroSummaryQuery, {
                 bind: sqlParams.length > 0 ? sqlParams : undefined,
                 type: Sequelize.QueryTypes.SELECT
@@ -250,10 +235,6 @@ router.get('/', async (req, res) => {
                     codigo_rubro: item.codigo_rubro || item.codigorubro || item.codigoRubro || ''
                 };
             }) : [];
-            
-            // 디버깅: summary 쿼리 결과 로깅
-            console.log('[Gastos] Rubro summary 쿼리 결과:');
-            console.log(`   결과 개수: ${rubroSummary.length}개 (전체 rubro 기준)`);
         } catch (rubroErr) {
             console.error('[Gastos] Rubro summary query error:', rubroErr.message);
             console.error('   Stack:', rubroErr.stack);
@@ -267,15 +248,6 @@ router.get('/', async (req, res) => {
             }
         });
         
-        // 디버깅: detail 쿼리 정보 로깅
-        console.log('[Gastos] Detail 쿼리 실행:');
-        console.log(`   WHERE 조건 개수: ${whereConditions.length}`);
-        if (rubro && rubro.trim()) {
-            console.log(`   [필터 적용] rubro='${rubro.trim()}' 필터가 detail 쿼리에만 적용됨`);
-        } else {
-            console.log(`   [필터 없음] rubro 파라미터가 없으므로 모든 데이터 표시`);
-        }
-        
         // 100개 단위로 제한
         const limit = 100;
         const records = await Gastos.findAll({ 
@@ -285,14 +257,6 @@ router.get('/', async (req, res) => {
             limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
             order: [['id_ga', 'DESC']] // id_ga 내림차순 정렬
         });
-        
-        // 디버깅: detail 쿼리 결과 로깅
-        console.log('[Gastos] Detail 쿼리 결과:');
-        console.log(`   결과 개수: ${records.length}개 (limit: ${limit + 1})`);
-        console.log(`   실제 반환 개수: ${records.length > limit ? limit : records.length}개`);
-        if (rubro && rubro.trim()) {
-            console.log(`   [참고] rubro='${rubro.trim()}' 필터가 적용된 detail: ${records.length > limit ? limit : records.length}개`);
-        }
         
         // 다음 배치가 있는지 확인
         const hasMore = records.length > limit;
@@ -305,17 +269,6 @@ router.get('/', async (req, res) => {
             if (lastRecord.id_ga !== null && lastRecord.id_ga !== undefined) {
                 nextLastIdGa = String(lastRecord.id_ga);
             }
-        }
-        
-        // 디버깅: 최종 응답 데이터 확인
-        console.log('[Gastos] 최종 응답 데이터:');
-        console.log(`   summary_by_rubro: ${rubroSummary.length}개 (전체 rubro 기준, rubro 필터 미적용)`);
-        console.log(`   data (detail): ${data.length}개`);
-        console.log(`   pagination.total: ${totalCount}개`);
-        if (rubro && rubro.trim()) {
-            console.log(`   [중요] rubro='${rubro.trim()}' 필터가 detail에만 적용되었습니다.`);
-            console.log(`   [중요] summary_by_rubro는 rubro 필터와 무관하게 전체 rubro를 표시합니다.`);
-            console.log(`   [참고] items 보고서와 동일하게, summary는 필터링되지 않고 detail만 필터링됩니다.`);
         }
         
         // 페이지네이션 정보와 함께 응답
@@ -335,6 +288,11 @@ router.get('/', async (req, res) => {
         
         // 응답 로거에서 사용할 데이터 개수 저장
         req._responseDataCount = data.length;
+        
+        // 간단한 로그 출력
+        const rubroInfo = rubro && rubro.trim() ? `rubro=${rubro.trim()}` : '';
+        const filters = [rubroInfo].filter(Boolean).join(', ');
+        console.log(`[Gastos] summary: ${rubroSummary.length}개, detail: ${data.length}개, total: ${totalCount}개${filters ? ` | ${filters}` : ''}`);
         
         res.json(responseData);
     } catch (err) {
