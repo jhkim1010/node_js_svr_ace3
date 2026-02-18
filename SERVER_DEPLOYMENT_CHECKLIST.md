@@ -594,6 +594,28 @@ curl https://sync.coolsistema.com/api/monitoring/status
 
 ## ⚠️ 문제 발생 시 확인 사항
 
+### 클라이언트 ETIMEDOUT (connect ETIMEDOUT ... :3030)
+
+**증상**: 클라이언트에서 fetch/API 호출 시 `connect ETIMEDOUT 62.72.7.245:3030` 또는 `ETIMEDOUT` 발생.
+
+**원인**:
+- 이 서버는 **HTTP 전용**이며 포트 3030에서만 수신합니다.
+- 프로덕션에서는 **Nginx가 443(HTTPS)**에서 받아 `localhost:3030`으로만 프록시하므로, **외부에서는 3030 포트가 열려 있지 않습니다.**
+- 클라이언트가 `https://sync.coolsistema.com:3030`처럼 **URL에 포트 3030**을 넣으면, 브라우저/클라이언트가 62.72.7.245:3030으로 직접 연결을 시도하고, 방화벽/미개방으로 인해 **타임아웃**이 납니다.
+
+**해결 (클라이언트 앱 설정)**:
+- **올바른 Base URL**: `https://sync.coolsistema.com` (포트 생략 → 기본 443 사용)
+- **잘못된 예**: `https://sync.coolsistema.com:3030` (사용 금지)
+
+클라이언트 앱의 서버 URL 설정에서 포트를 제거하거나 443으로 두세요.  
+예: Node server URL = `https://sync.coolsistema.com` (끝에 `:3030` 없음).
+
+**서버 측 참고**:
+- `src/server.js`는 `http.createServer()`만 사용 (HTTPS 미지원).
+- Nginx가 SSL 종료 후 `proxy_pass http://localhost:3030`으로 전달하는 구성이어야 합니다.
+
+---
+
 ### 연결 풀 관련 문제
 
 **증상**: "remaining connection slots are reserved" 오류
