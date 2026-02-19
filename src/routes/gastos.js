@@ -5,7 +5,7 @@ const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } =
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -296,15 +296,7 @@ router.get('/', async (req, res) => {
         
         res.json(responseData);
     } catch (err) {
-        console.error('\nERROR: Gastos fetch error:');
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        console.error('   Full error:', err);
-        if (err.original) {
-            console.error('   Original error:', err.original);
-        }
-        console.error('');
-        
+        logTableError('gastos', 'list gastos', err, req);
         const errorResponse = buildDatabaseErrorResponse(err, req, 'list gastos');
         res.status(500).json(errorResponse);
     }
@@ -319,8 +311,14 @@ router.get('/:id', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch gasto', details: err.message });
+        logTableError('gastos', 'fetch gasto', err, req);
+        res.status(500).json({
+            error: 'Failed to fetch gasto',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -434,7 +432,8 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Gastos, action === 'created' ? 'create' : 'update', data);
         res.status(action === 'created' ? 201 : 200).json(data);
     } catch (err) {
-        // 예외 발생 시 상세 로깅
+        logTableError('gastos', `create/update gasto (POST) ${operation}`, err, req);
+        // 예외 발생 시 상세 로깅 (기존 구조 유지)
         console.error(`[Gastos POST] ${dbName} | 예외 발생:`, {
             operation: operation,
             dataCount: dataCount,
@@ -508,8 +507,14 @@ router.put('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update gasto', details: err.message });
+        logTableError('gastos', 'update gasto', err, req);
+        res.status(400).json({
+            error: 'Failed to update gasto',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -537,8 +542,14 @@ router.delete('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to delete gasto', details: err.message });
+        logTableError('gastos', 'delete gasto', err, req);
+        res.status(400).json({
+            error: 'Failed to delete gasto',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 

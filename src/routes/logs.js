@@ -3,7 +3,7 @@ const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError } = require('../utils/error-handler');
+const { handleInsertUpdateError, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -14,8 +14,14 @@ router.get('/', async (req, res) => {
         const records = await Logs.findAll({ limit: 100, order: [['id_log', 'DESC']] });
         res.json(records);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to list logs', details: err.message });
+        logTableError('logs', 'list logs', err, req);
+        res.status(500).json({
+            error: 'Failed to list logs',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -28,8 +34,14 @@ router.get('/:id', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch log', details: err.message });
+        logTableError('logs', 'fetch log', err, req);
+        res.status(500).json({
+            error: 'Failed to fetch log',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -66,6 +78,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Logs, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
+        logTableError('logs', 'create/update log', err, req);
         handleInsertUpdateError(err, req, 'Logs', ['fecha', 'hora', 'evento', 'progname'], 'logs');
         res.status(400).json({ 
             error: 'Failed to create log', 
@@ -133,8 +146,14 @@ router.put('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update log', details: err.message });
+        logTableError('logs', 'update log', err, req);
+        res.status(400).json({
+            error: 'Failed to update log',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -176,8 +195,14 @@ router.delete('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to delete log', details: err.message });
+        logTableError('logs', 'delete log', err, req);
+        res.status(400).json({
+            error: 'Failed to delete log',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 

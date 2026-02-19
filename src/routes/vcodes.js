@@ -6,7 +6,7 @@ const { handleVcodesBatchSync } = require('../utils/vcodes-handler');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -17,8 +17,14 @@ router.get('/', async (req, res) => {
         const records = await Vcode.findAll({ limit: 100, order: [['vcode_id', 'DESC']] });
         res.json(records);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to list vcodes', details: err.message });
+        logTableError('vcodes', 'list vcodes', err, req);
+        res.status(500).json({
+            error: 'Failed to list vcodes',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -31,8 +37,14 @@ router.get('/:id', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch vcode', details: err.message });
+        logTableError('vcodes', 'fetch vcode', err, req);
+        res.status(500).json({
+            error: 'Failed to fetch vcode',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -73,7 +85,7 @@ router.post('/', async (req, res) => {
         if (res.headersSent) {
             return;
         }
-        
+        logTableError('vcodes', 'create/update vcode (POST)', err, req);
         handleInsertUpdateError(err, req, 'Vcode', ['vcode_id', 'sucursal'], 'vcodes');
         const errorResponse = buildDatabaseErrorResponse(err, req, 'create vcode');
         
@@ -161,8 +173,14 @@ router.put('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update vcode', details: err.message });
+        logTableError('vcodes', 'update vcode', err, req);
+        res.status(400).json({
+            error: 'Failed to update vcode',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -190,8 +208,14 @@ router.delete('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to delete vcode', details: err.message });
+        logTableError('vcodes', 'delete vcode', err, req);
+        res.status(400).json({
+            error: 'Failed to delete vcode',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -319,10 +343,13 @@ router.get('/ventas_x_a_day', async (req, res) => {
         
         res.json(response);
     } catch (err) {
-        console.error('[Ventas x a Day] 오류:', err);
-        res.status(500).json({ 
-            error: 'Failed to get ventas_x_a_day', 
-            details: err.message 
+        logTableError('vcodes', 'ventas_x_a_day', err, req);
+        res.status(500).json({
+            error: 'Failed to get ventas_x_a_day',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
         });
     }
 });

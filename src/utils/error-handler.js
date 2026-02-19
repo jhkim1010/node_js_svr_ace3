@@ -595,5 +595,43 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
     return errorResponse;
 }
 
-module.exports = { handleInsertUpdateError, buildDatabaseErrorResponse };
+/**
+ * 테이블 조회/변경 오류 시 원인 파악을 위한 상세 로그 출력
+ * (logs, vcodes, vdetalle, ingresos, fventas, gastos 등에서 사용)
+ * @param {string} tableName - 테이블 이름 (예: 'logs', 'vcodes', 'ingresos')
+ * @param {string} operation - 작업 설명 (예: 'list logs', 'fetch vcode', 'update gasto')
+ * @param {Error} err - 발생한 에러
+ * @param {Object} [req] - Express request (dbConfig 등 추출용, 선택)
+ */
+function logTableError(tableName, operation, err, req) {
+    const dbConfig = req?.dbConfig || {};
+    const dbLabel = dbConfig.database ? `[${dbConfig.database}]` : '';
+
+    console.error(`\n❌ [${tableName}] ${operation} 실패 ${dbLabel}`);
+    console.error(`   에러 타입: ${err?.constructor?.name || 'Error'}`);
+    console.error(`   메시지: ${err?.message || String(err)}`);
+    if (err?.stack) {
+        const stackLines = err.stack.split('\n').slice(0, 6);
+        console.error(`   스택: ${stackLines.join('\n   ')}`);
+    }
+    if (err?.original) {
+        console.error(`   DB 원본 에러: ${err.original.message || err.original}`);
+        if (err.original.code) console.error(`   DB 에러 코드: ${err.original.code}`);
+    }
+    if (err?.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+        console.error(`   검증 오류 (${err.errors.length}건):`);
+        err.errors.slice(0, 10).forEach((e, i) => {
+            console.error(`     ${i + 1}. 필드=${e.path}, 값=${e.value}, 메시지=${e.message}`);
+        });
+        if (err.errors.length > 10) {
+            console.error(`     ... 외 ${err.errors.length - 10}건`);
+        }
+    }
+    if (dbConfig.database || dbConfig.host) {
+        console.error(`   DB: ${dbConfig.database || 'N/A'}, 호스트: ${dbConfig.host || 'N/A'}:${dbConfig.port || 'N/A'}`);
+    }
+    console.error('');
+}
+
+module.exports = { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError };
 

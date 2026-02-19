@@ -5,7 +5,7 @@ const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } =
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -183,15 +183,7 @@ router.get('/', async (req, res) => {
         
         res.json(responseData);
     } catch (err) {
-        console.error('\nERROR: Fventas fetch error:');
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        console.error('   Full error:', err);
-        if (err.original) {
-            console.error('   Original error:', err.original);
-        }
-        console.error('');
-        
+        logTableError('fventas', 'list fventas', err, req);
         const errorResponse = buildDatabaseErrorResponse(err, req, 'list fventas');
         res.status(500).json(errorResponse);
     }
@@ -211,8 +203,14 @@ router.get('/:tipofactura/:numfactura', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch fventa', details: err.message });
+        logTableError('fventas', 'fetch fventa', err, req);
+        res.status(500).json({
+            error: 'Failed to fetch fventa',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -257,6 +255,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Fventas, action === 'created' ? 'create' : 'update', data);
         res.status(action === 'created' ? 201 : 200).json(data);
     } catch (err) {
+        logTableError('fventas', 'create fventa (POST)', err, req);
         handleInsertUpdateError(err, req, 'Fventas', ['tipofactura', 'numfactura'], 'fventas');
         res.status(400).json({ 
             error: 'Failed to create fventa', 
@@ -324,8 +323,14 @@ router.put('/:tipofactura/:numfactura', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update fventa', details: err.message });
+        logTableError('fventas', 'update fventa', err, req);
+        res.status(400).json({
+            error: 'Failed to update fventa',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -365,8 +370,14 @@ router.delete('/:tipofactura/:numfactura', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to delete fventa', details: err.message });
+        logTableError('fventas', 'delete fventa', err, req);
+        res.status(400).json({
+            error: 'Failed to delete fventa',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 

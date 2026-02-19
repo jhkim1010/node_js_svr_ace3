@@ -5,7 +5,7 @@ const { handleVdetalleBatchSync } = require('../utils/vdetalle-handler');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError } = require('../utils/error-handler');
+const { handleInsertUpdateError, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -16,8 +16,14 @@ router.get('/', async (req, res) => {
         const records = await Vdetalle.findAll({ limit: 100, order: [['id_vdetalle', 'DESC']] });
         res.json(records);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to list vdetalle', details: err.message });
+        logTableError('vdetalle', 'list vdetalle', err, req);
+        res.status(500).json({
+            error: 'Failed to list vdetalle',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -30,8 +36,14 @@ router.get('/:id', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch vdetalle', details: err.message });
+        logTableError('vdetalle', 'fetch vdetalle', err, req);
+        res.status(500).json({
+            error: 'Failed to fetch vdetalle',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -58,6 +70,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Vdetalle, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
+        logTableError('vdetalle', 'create/update vdetalle (POST)', err, req);
         handleInsertUpdateError(err, req, 'Vdetalle', ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'vdetalle');
         res.status(400).json({ 
             error: 'Failed to create vdetalle', 
@@ -110,8 +123,14 @@ router.put('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update vdetalle', details: err.message });
+        logTableError('vdetalle', 'update vdetalle', err, req);
+        res.status(400).json({
+            error: 'Failed to update vdetalle',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -139,8 +158,14 @@ router.delete('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to delete vdetalle', details: err.message });
+        logTableError('vdetalle', 'delete vdetalle', err, req);
+        res.status(400).json({
+            error: 'Failed to delete vdetalle',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 

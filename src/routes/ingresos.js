@@ -4,7 +4,7 @@ const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError } = require('../utils/error-handler');
+const { handleInsertUpdateError, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -156,18 +156,13 @@ router.get('/', async (req, res) => {
         
         res.json(responseData);
     } catch (err) {
-        console.error('\nERROR: Ingresos fetch error:');
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        console.error('   Full error:', err);
-        if (err.original) {
-            console.error('   Original error:', err.original);
-        }
-        
-        res.status(500).json({ 
-            error: 'Failed to list ingresos', 
+        logTableError('ingresos', 'list ingresos', err, req);
+        res.status(500).json({
+            error: 'Failed to list ingresos',
             details: err.message,
-            errorType: err.constructor.name
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
         });
     }
 });
@@ -323,18 +318,13 @@ router.get('/summary', async (req, res) => {
         
         res.json(responseData);
     } catch (err) {
-        console.error('\nERROR: Ingresos summary fetch error:');
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        console.error('   Full error:', err);
-        if (err.original) {
-            console.error('   Original error:', err.original);
-        }
-        
-        res.status(500).json({ 
-            error: 'Failed to fetch ingresos summary', 
+        logTableError('ingresos', 'ingresos summary', err, req);
+        res.status(500).json({
+            error: 'Failed to fetch ingresos summary',
             details: err.message,
-            errorType: err.constructor.name
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
         });
     }
 });
@@ -348,8 +338,14 @@ router.get('/:id', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch ingreso', details: err.message });
+        logTableError('ingresos', 'fetch ingreso', err, req);
+        res.status(500).json({
+            error: 'Failed to fetch ingreso',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -380,6 +376,7 @@ router.post('/', async (req, res) => {
             throw new Error('Failed to process ingreso');
         }
     } catch (err) {
+        logTableError('ingresos', 'create/update ingreso (POST)', err, req);
         handleInsertUpdateError(err, req, 'Ingresos', ['ingreso_id', 'sucursal'], 'ingresos');
         
         // 더 상세한 오류 정보 추출
@@ -473,8 +470,14 @@ router.put('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update ingreso', details: err.message });
+        logTableError('ingresos', 'update ingreso', err, req);
+        res.status(400).json({
+            error: 'Failed to update ingreso',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
@@ -508,8 +511,14 @@ router.delete('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to delete ingreso', details: err.message });
+        logTableError('ingresos', 'delete ingreso', err, req);
+        res.status(400).json({
+            error: 'Failed to delete ingreso',
+            details: err.message,
+            errorType: err.constructor?.name,
+            originalMessage: err.original?.message ?? null,
+            errorCode: err.original?.code ?? err.code ?? null
+        });
     }
 });
 
