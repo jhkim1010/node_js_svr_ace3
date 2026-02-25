@@ -1,5 +1,6 @@
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
+const { isExcludedCategoryOrColorName } = require('../utils/report-condition-checker');
 
 async function getGastosReport(req) {
     const Gastos = getModelForRequest(req, 'Gastos');
@@ -133,8 +134,12 @@ async function getGastosReport(req) {
     ]);
 
     // 결과가 배열인지 확인
-    const summary = Array.isArray(summaryResults) ? summaryResults : [];
+    const summaryRaw = Array.isArray(summaryResults) ? summaryResults : [];
     const detail = Array.isArray(detailResults) ? detailResults : [];
+    // 그룹핑 시 이름(rubro/desc_gasto)이 NONE이거나 비어있는 경우 제외
+    const summary = summaryRaw.filter(
+        row => !isExcludedCategoryOrColorName(row.desc_gasto)
+    );
 
     return {
         filters: {

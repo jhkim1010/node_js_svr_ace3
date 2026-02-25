@@ -125,10 +125,22 @@ async function checkAllReportConditions(sequelize, options = {}) {
     }
 }
 
+/**
+ * 그룹핑 결과에서 제외할 이름 여부 (category/color 이름이 NONE 또는 비어있는 경우)
+ * @param {string|null|undefined} name - CategoryName 또는 ColorName
+ * @returns {boolean} true면 제외
+ */
+function isExcludedCategoryOrColorName(name) {
+    if (name == null) return true;
+    const s = String(name).trim();
+    return s === '' || s.toUpperCase() === 'NONE';
+}
+
 module.exports = {
     checkCompanyCount,
     checkCategoryCount,
     checkColorCount,
-    checkAllReportConditions
+    checkAllReportConditions,
+    isExcludedCategoryOrColorName
 };
 

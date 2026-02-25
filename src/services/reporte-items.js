@@ -1,6 +1,6 @@
 const { getModelForRequest } = require('../models/model-factory');
 const { Sequelize } = require('sequelize');
-const { checkAllReportConditions } = require('../utils/report-condition-checker');
+const { checkAllReportConditions, isExcludedCategoryOrColorName } = require('../utils/report-condition-checker');
 
 async function getItemsReport(req) {
     const Vdetalle = getModelForRequest(req, 'Vdetalle');
@@ -248,10 +248,13 @@ async function getItemsReport(req) {
     // 주의: color_id 필터가 적용되어도 resumen x tipo와 resumen x color는 항상 유지
     // 기간이 변경되지 않는 한 resumen은 항상 표시되어야 함
     const filteredCompanySummary = companySummary.length > 1 ? companySummary : [];
-    // Category와 Color resumen은 항상 반환 (color_id 필터와 무관하게 전체 데이터 기준)
-    // length > 1 조건도 제거하여 항상 반환 (빈 배열이어도 반환)
-    const filteredCategorySummary = categorySummary || []; // 항상 반환 (빈 배열도 허용)
-    const filteredColorSummary = colorSummary || []; // 항상 반환 (빈 배열도 허용)
+    // Category/Color: 이름이 NONE이거나 비어있는 그룹은 제외
+    const filteredCategorySummary = (categorySummary || []).filter(
+        c => !isExcludedCategoryOrColorName(c.CategoryName)
+    );
+    const filteredColorSummary = (colorSummary || []).filter(
+        c => !isExcludedCategoryOrColorName(c.ColorName)
+    );
 
     // 집계 정보 계산
     const totalCantidad = productDetails.reduce((sum, item) => sum + (parseFloat(item.totalCantidad || 0)), 0);
