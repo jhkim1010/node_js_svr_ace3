@@ -80,20 +80,31 @@ router.get('/', async (req, res) => {
         });
         
         // cheque 정보 조회 (sucursal도 함께 사용하여 정확한 레코드 찾기)
-        let chequeSubquery = 'SELECT vcode FROM vcodes WHERE vcode_id = :vcodeId';
-        if (!Number.isNaN(sucursal)) {
-            chequeSubquery += ' AND sucursal = :sucursal';
+        // 일부 DB에는 cheques 테이블이 없을 수 있음 → 없으면 빈 배열 반환
+        let chequeResult = [];
+        try {
+            let chequeSubquery = 'SELECT vcode FROM vcodes WHERE vcode_id = :vcodeId';
+            if (!Number.isNaN(sucursal)) {
+                chequeSubquery += ' AND sucursal = :sucursal';
+            }
+            chequeSubquery += ' LIMIT 1';
+            const chequeQuery = `
+                SELECT * FROM cheques c 
+                WHERE c.vcode = (${chequeSubquery})
+            `;
+            chequeResult = await sequelize.query(chequeQuery, {
+                replacements: vcodesReplacements,
+                type: sequelize.QueryTypes.SELECT
+            });
+        } catch (chequeErr) {
+            const code = chequeErr.original?.code || chequeErr.code;
+            const msg = (chequeErr.original?.message || chequeErr.message) || '';
+            if (code === '42P01' || /relation "cheques" does not exist/i.test(msg)) {
+                console.log(`[Vdetalles] cheques 테이블 없음 - 건너뜀 (vcode_id=${vcodeId})`);
+            } else {
+                throw chequeErr;
+            }
         }
-        chequeSubquery += ' LIMIT 1';
-        
-        const chequeQuery = `
-            SELECT * FROM cheques c 
-            WHERE c.vcode = (${chequeSubquery})
-        `;
-        const chequeResult = await sequelize.query(chequeQuery, {
-            replacements: vcodesReplacements,
-            type: sequelize.QueryTypes.SELECT
-        });
         
         // online_ventas 정보 조회
         const onlineVentasQuery = `
