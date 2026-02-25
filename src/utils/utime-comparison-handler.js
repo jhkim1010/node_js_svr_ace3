@@ -171,11 +171,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 );
                                 
                                 if (resultPk.action === 'updated') {
-                                    if (modelName === 'Ingresos') {
-                                        const identifier = extractRecordIdentifier(filteredItem, primaryKey);
-                                        const identifierStr = formatIdentifier(identifier);
-                                        logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr}`);
-                                    }
                                     results.push({ index: i, action: 'updated', data: resultPk.data });
                                     updatedCount++;
                                     // 트랜잭션이 아직 완료되지 않았는지 확인
@@ -188,8 +183,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 if (resultPk.action === 'skipped') {
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                     const identifierStr = formatIdentifier(identifier);
-                                    logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
-                                    
+                                    // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                     results.push({
                                         index: i,
                                         action: 'skipped',
@@ -302,11 +296,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 );
 
                             if (resultPk.action === 'updated') { // primary key 조회 결과 - updated
-                                if (modelName === 'Ingresos') {
-                                    const identifier = extractRecordIdentifier(filteredItem, primaryKey);
-                                    const identifierStr = formatIdentifier(identifier);
-                                    logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr}`);
-                                }
                                 results.push({ index: i, action: 'updated', data: resultPk.data });
                                 updatedCount++;
                                 
@@ -322,8 +311,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             if (resultPk.action === 'skipped') { // primary key 조회 결과 - skipped
                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                 const identifierStr = formatIdentifier(identifier);
-                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
-                                
+                                // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                 results.push({
                                     index: i,
                                     action: 'skipped',
@@ -585,11 +573,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     );
 
                                     if (resultRetry.action === 'updated') { // primary key retry 결과 - updated
-                                        if (modelName === 'Ingresos') {
-                                            const identifier = extractRecordIdentifier(filteredItem, primaryKey);
-                                            const identifierStr = formatIdentifier(identifier);
-                                            logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr}`);
-                                        }
                                         results.push({ index: i, action: 'updated', data: resultRetry.data });
                                         updatedCount++;
                                         retrySuccess = true;
@@ -605,8 +588,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     if (resultRetry.action === 'skipped') { // primary key retry 결과 - skipped
                                         const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                         const identifierStr = formatIdentifier(identifier);
-                                        logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
-                                        
+                                        // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                         results.push({
                                             index: i,
                                             action: 'skipped',
@@ -672,16 +654,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             );
 
                                             if (resultRetry.action === 'updated') { // unique key retry 결과 - updated
-                                                if (modelName === 'Ingresos') {
-                                                    const identifier = extractRecordIdentifier(filteredItem, primaryKey);
-                                                    const identifierStr = formatIdentifier(identifier);
-                                                    const utimeInfo = resultRetry.serverUtime && resultRetry.clientUtime
-                                                        ? `Client utime(${resultRetry.clientUtime}) > Server utime(${resultRetry.serverUtime})`
-                                                        : resultRetry.clientUtime
-                                                            ? `Client utime(${resultRetry.clientUtime}) exists, Server utime missing`
-                                                            : 'Both utime missing';
-                                                    logInfoWithLocation(`${dbName} ${modelName} UPDATE | ${identifierStr}`);
-                                                }
                                                 results.push({ index: i, action: 'updated', data: resultRetry.data });
                                                 updatedCount++;
                                                 retrySuccess = true;
@@ -697,8 +669,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             if (resultRetry.action === 'skipped') { // unique key retry 결과 - skipped
                                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                                 const identifierStr = formatIdentifier(identifier);
-                                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
-                                                
+                                                // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                                 results.push({
                                                     index: i,
                                                     action: 'skipped',
@@ -993,8 +964,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     Object.assign(identifier, extractRecordIdentifier(existingRecord, primaryKey));
                                 }
                                 const identifierStr = formatIdentifier(identifier);
-                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
-                                
+                                // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                 results.push({ 
                                     index: i, 
                                     action: 'skipped', 
@@ -1146,8 +1116,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         Object.assign(identifier, extractRecordIdentifier(existingRecordByPk, primaryKey));
                                     } // end if (existingRecordByPk)
                                     const identifierStr = formatIdentifier(identifier);
-                                    logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
-                                    
+                                    // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                     results.push({ 
                                         index: i, 
                                         action: 'skipped', 
@@ -1408,8 +1377,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                     Object.assign(identifier, extractRecordIdentifier(retryRecord, primaryKey));
                                                 }
                                                 const identifierStr = formatIdentifier(identifier);
-                                                logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
-                                                
+                                                // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                                 results.push({ 
                                                     index: i, 
                                                     action: 'skipped', 
@@ -1939,8 +1907,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             Object.assign(identifier, extractRecordIdentifier(retryRecord, primaryKey));
                                         }
                                         const identifierStr = formatIdentifier(identifier);
-                                        logInfoWithLocation(`${dbName} ${modelName} SKIP | ${identifierStr}`);
-                                        
+                                        // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                         results.push({ 
                                             index: i, 
                                             action: 'skipped', 
@@ -2352,6 +2319,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 failed: errors.length,
                 skipped: skippedCount
             };
+            
+            // 항목별 로그 대신 1줄 요약만 출력
+            if (totalCount > 0) {
+                logInfoWithLocation(`${dbName} ${modelName} | created: ${createdCount}, updated: ${updatedCount}, skipped: ${skippedCount}, failed: ${errors.length}`);
+            }
             
             await require('./websocket-notifier').notifyBatchSync(req, Model, result);
             return result;
