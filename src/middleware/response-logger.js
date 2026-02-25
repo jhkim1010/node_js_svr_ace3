@@ -10,8 +10,8 @@ function responseLogger(req, res, next) {
         if (path && (path.includes('/resumen_del_dia') || path.includes('resumen_del_dia'))) {
             return;
         }
-        // ingresos 테이블 POST 요청은 로그 출력하지 않음 (요청이 많아 일일 로그 불필요)
-        if (req.method === 'POST' && path && (path.includes('/ingresos') || path.includes('ingresos'))) {
+        // ingresos 테이블 POST/PUT 요청은 로그 출력하지 않음 (요청이 많아 일일 로그 불필요)
+        if (path && (path.includes('/ingresos') || path.includes('ingresos')) && (req.method === 'POST' || req.method === 'PUT')) {
             return;
         }
         
