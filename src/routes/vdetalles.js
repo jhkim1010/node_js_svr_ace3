@@ -99,8 +99,12 @@ router.get('/', async (req, res) => {
         } catch (chequeErr) {
             const code = chequeErr.original?.code || chequeErr.code;
             const msg = (chequeErr.original?.message || chequeErr.message) || '';
-            if (code === '42P01' || /relation "cheques" does not exist/i.test(msg)) {
-                console.log(`[Vdetalles] cheques 테이블 없음 - 건너뜀 (vcode_id=${vcodeId})`);
+            // 42P01: 테이블 없음, 42501: 권한 없음(permission denied for relation cheques)
+            const skipCheques = code === '42P01' || code === '42501' ||
+                /relation "cheques" does not exist/i.test(msg) ||
+                /permission denied for relation cheques/i.test(msg);
+            if (skipCheques) {
+                console.log(`[Vdetalles] cheques 조회 생략 (${code || 'error'}: ${msg.slice(0, 60)}...) (vcode_id=${vcodeId})`);
             } else {
                 throw chequeErr;
             }
