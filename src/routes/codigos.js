@@ -4,7 +4,7 @@ const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields, handleBatchSync, handleArrayData } = require('../utils/batch-sync-handler');
 const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { diagnoseConnectionRefusedError } = require('../utils/error-classifier');
@@ -183,54 +183,11 @@ router.get('/', async (req, res) => {
         
         res.json(responseData);
     } catch (err) {
-        console.error('\nERROR: Codigos fetch error:');
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        console.error('   Full error:', err);
-        if (err.original) {
-            console.error('   Original error:', err.original);
-        }
-        
-        // 연결 거부 오류 진단
-        const dbConfig = req.dbConfig || {};
-        // 기본 호스트 결정 (Docker 환경 감지)
-        const getDefaultDbHost = () => {
-            if (process.env.DB_HOST) return process.env.DB_HOST;
-            try {
-                const fs = require('fs');
-                const isDocker = process.env.DOCKER === 'true' || 
-                               process.env.IN_DOCKER === 'true' ||
-                               fs.existsSync('/.dockerenv') ||
-                               process.env.HOSTNAME?.includes('docker') ||
-                               process.cwd() === '/home/node/app';
-                return isDocker ? 'host.docker.internal' : '127.0.0.1';
-            } catch (e) {
-                return '127.0.0.1';
-            }
-        };
-        const diagnosis = diagnoseConnectionRefusedError(
-            err, 
-            dbConfig.host || getDefaultDbHost(), 
-            dbConfig.port || 5432
-        );
-        
-        if (diagnosis) {
-            console.error(`\n❌ Codigos 연결 거부 오류 발생`);
-            console.error(`   연결 정보: ${diagnosis.connectionInfo.host}:${diagnosis.connectionInfo.port}`);
-            console.error(`   환경: ${diagnosis.connectionInfo.environment}`);
-            console.error(`   진단 요약: ${diagnosis.diagnosis.summary}`);
-            console.error(`   가장 가능성 높은 원인: ${diagnosis.diagnosis.mostLikelyCause}`);
-            console.error(`\n   가능한 원인:`);
-            diagnosis.diagnosis.possibleCauses.forEach((cause, index) => {
-                console.error(`   ${index + 1}. [${cause.probability}] ${cause.cause}`);
-                console.error(`      ${cause.description}`);
-            });
-            console.error('');
-        }
-        console.error('');
-        
+        logTableError('codigos', 'list codigos', err, req);
         const errorResponse = buildDatabaseErrorResponse(err, req, 'list codigos');
-        res.status(500).json(errorResponse);
+        if (!res.headersSent) {
+            res.status(500).json(errorResponse);
+        }
     }
 });
 
@@ -243,47 +200,11 @@ router.get('/:id', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error('\nERROR: Codigos fetch by id error:');
-        console.error('   Error type:', err.constructor.name);
-        console.error('   Error message:', err.message);
-        if (err.original) {
-            console.error('   Original error:', err.original);
-        }
-        
-        // 연결 거부 오류 진단
-        const dbConfig = req.dbConfig || {};
-        // 기본 호스트 결정 (Docker 환경 감지)
-        const getDefaultDbHost = () => {
-            if (process.env.DB_HOST) return process.env.DB_HOST;
-            try {
-                const fs = require('fs');
-                const isDocker = process.env.DOCKER === 'true' || 
-                               process.env.IN_DOCKER === 'true' ||
-                               fs.existsSync('/.dockerenv') ||
-                               process.env.HOSTNAME?.includes('docker') ||
-                               process.cwd() === '/home/node/app';
-                return isDocker ? 'host.docker.internal' : '127.0.0.1';
-            } catch (e) {
-                return '127.0.0.1';
-            }
-        };
-        const diagnosis = diagnoseConnectionRefusedError(
-            err, 
-            dbConfig.host || getDefaultDbHost(), 
-            dbConfig.port || 5432
-        );
-        
-        if (diagnosis) {
-            console.error(`\n❌ Codigos 연결 거부 오류 발생`);
-            console.error(`   연결 정보: ${diagnosis.connectionInfo.host}:${diagnosis.connectionInfo.port}`);
-            console.error(`   환경: ${diagnosis.connectionInfo.environment}`);
-            console.error(`   진단 요약: ${diagnosis.diagnosis.summary}`);
-            console.error(`   가장 가능성 높은 원인: ${diagnosis.diagnosis.mostLikelyCause}`);
-        }
-        console.error('');
-        
+        logTableError('codigos', 'fetch codigo', err, req);
         const errorResponse = buildDatabaseErrorResponse(err, req, 'fetch codigo');
-        res.status(500).json(errorResponse);
+        if (!res.headersSent) {
+            res.status(500).json(errorResponse);
+        }
     }
 });
 
@@ -334,6 +255,7 @@ router.post('/', async (req, res) => {
         await notifyDbChange(req, Codigos, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
+        logTableError('codigos', 'create/update codigo (POST)', err, req);
         handleInsertUpdateError(err, req, 'Codigos', 'codigo', 'codigos');
         const errorResponse = buildDatabaseErrorResponse(err, req, 'create codigo');
         
@@ -357,7 +279,9 @@ router.post('/', async (req, res) => {
             }
         }
         
-        res.status(400).json(errorResponse);
+        if (!res.headersSent) {
+            res.status(400).json(errorResponse);
+        }
     }
 });
 
@@ -695,8 +619,10 @@ async function handlePutCodigo(req, res, id) {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update codigo', details: err.message });
+        logTableError('codigos', 'update codigo', err, req);
+        if (!res.headersSent) {
+            res.status(400).json({ error: 'Failed to update codigo', details: err.message });
+        }
     }
 }
 

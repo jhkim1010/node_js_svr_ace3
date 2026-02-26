@@ -17,6 +17,7 @@ const { initializeWebSocket, getWebSocketServer } = require('./services/websocke
 const { displayBuildInfo } = require('./utils/build-info');
 const { startMonitoring, getMonitoringStatus, startPostgresConnectionMonitoring } = require('./services/monitoring-service');
 const { startTelegramPolling } = require('./services/telegram-command-handler');
+const { logTableError } = require('./utils/error-handler');
 
 const app = express();
 // HTTP 서버를 Express 없이 생성하여 ws 라이브러리가 upgrade 이벤트를 처리할 수 있도록 함
@@ -339,12 +340,15 @@ app.use((err, req, res, next) => {
         console.error(`   Request size: ${(err.length / 1024 / 1024).toFixed(2)}MB`);
         console.error(`   Size limit: ${(err.limit / 1024 / 1024).toFixed(2)}MB`);
         console.error('');
-        return res.status(413).json({ 
+        if (!res.headersSent) {
+            return res.status(413).json({ 
             error: 'Payload Too Large', 
             message: `Request body is too large. Maximum ${(err.limit / 1024 / 1024).toFixed(2)}MB is allowed.`,
             received: `${(err.length / 1024 / 1024).toFixed(2)}MB`,
             limit: `${(err.limit / 1024 / 1024).toFixed(2)}MB`
-        });
+            });
+        }
+        return;
     }
     
     // 데이터베이스 오류인 경우 Telegram 알림 전송
@@ -375,15 +379,20 @@ app.use((err, req, res, next) => {
         });
     }
     
+    // 오류 원인 로그 기록 (테이블/경로 기준)
+    const tableFromPath = tableName || (req.path ? req.path.split('/').filter(Boolean)[0] : 'api');
+    logTableError(tableFromPath, 'request', err, req);
+
     // 연결 한계 도달 오류 메시지 간소화
     let errorDetails = err.message;
     if (errorDetails && errorDetails.includes('remaining connection slots are reserved for non-replication superuser connections')) {
         errorDetails = 'database 연결 한계도달';
-        console.error('database 연결 한계도달');
-    } else {
-        console.error('Unhandled error:', err);
     }
-    res.status(500).json({ error: 'Internal Server Error', details: errorDetails });
+
+    // 클라이언트가 멈추지 않도록 반드시 응답 전송 (이미 보냈으면 건너뜀)
+    if (!res.headersSent) {
+        res.status(500).json({ error: 'Internal Server Error', details: errorDetails });
+    }
 });
 
 async function start() {
