@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
+const { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 
@@ -105,8 +105,8 @@ router.get('/', async (req, res) => {
         
         res.json(responseData);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to list colors', details: err.message });
+        logTableError('color', 'list colors', err, req);
+        if (!res.headersSent) res.status(500).json({ error: 'Failed to list colors', details: err.message });
     }
 });
 
@@ -119,8 +119,8 @@ router.get('/:id', async (req, res) => {
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch color', details: err.message });
+        logTableError('color', 'fetch color', err, req);
+        if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch color', details: err.message });
     }
 });
 
@@ -167,6 +167,7 @@ router.post('/', async (req, res) => {
         }
         throw new Error('Failed to process color');
     } catch (err) {
+        logTableError('color', 'create color (POST)', err, req);
         handleInsertUpdateError(err, req, 'Color', 'idcolor', 'color');
         const errorResponse = buildDatabaseErrorResponse(err, req, 'create color');
         
@@ -190,7 +191,7 @@ router.post('/', async (req, res) => {
             }
         }
         
-        res.status(400).json(errorResponse);
+        if (!res.headersSent) res.status(400).json(errorResponse);
     }
 });
 
@@ -231,8 +232,8 @@ router.put('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to update color', details: err.message });
+        logTableError('color', 'update color', err, req);
+        if (!res.headersSent) res.status(400).json({ error: 'Failed to update color', details: err.message });
     }
 });
 
@@ -260,8 +261,8 @@ router.delete('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to delete color', details: err.message });
+        logTableError('color', 'delete color', err, req);
+        if (!res.headersSent) res.status(400).json({ error: 'Failed to delete color', details: err.message });
     }
 });
 

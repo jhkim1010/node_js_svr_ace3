@@ -652,8 +652,10 @@ router.delete('/:id', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: 'Failed to delete codigo', details: err.message });
+        logTableError('codigos', 'delete codigo', err, req);
+        if (!res.headersSent) {
+            res.status(400).json({ error: 'Failed to delete codigo', details: err.message });
+        }
     }
 });
 

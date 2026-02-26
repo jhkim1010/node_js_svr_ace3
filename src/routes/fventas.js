@@ -185,7 +185,7 @@ router.get('/', async (req, res) => {
     } catch (err) {
         logTableError('fventas', 'list fventas', err, req);
         const errorResponse = buildDatabaseErrorResponse(err, req, 'list fventas');
-        res.status(500).json(errorResponse);
+        if (!res.headersSent) res.status(500).json(errorResponse);
     }
 });
 
@@ -204,7 +204,7 @@ router.get('/:tipofactura/:numfactura', async (req, res) => {
         res.json(record);
     } catch (err) {
         logTableError('fventas', 'fetch fventa', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to fetch fventa',
             details: err.message,
             errorType: err.constructor?.name,
@@ -257,7 +257,7 @@ router.post('/', async (req, res) => {
     } catch (err) {
         logTableError('fventas', 'create fventa (POST)', err, req);
         handleInsertUpdateError(err, req, 'Fventas', ['tipofactura', 'numfactura'], 'fventas');
-        res.status(400).json({ 
+        if (!res.headersSent) res.status(400).json({ 
             error: 'Failed to create fventa', 
             details: err.message,
             errorType: err.constructor.name,
@@ -324,7 +324,7 @@ router.put('/:tipofactura/:numfactura', async (req, res) => {
         }
     } catch (err) {
         logTableError('fventas', 'update fventa', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to update fventa',
             details: err.message,
             errorType: err.constructor?.name,
@@ -371,7 +371,7 @@ router.delete('/:tipofactura/:numfactura', async (req, res) => {
         }
     } catch (err) {
         logTableError('fventas', 'delete fventa', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to delete fventa',
             details: err.message,
             errorType: err.constructor?.name,

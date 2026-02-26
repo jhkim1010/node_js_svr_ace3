@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
         res.json(records);
     } catch (err) {
         logTableError('vcodes', 'list vcodes', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to list vcodes',
             details: err.message,
             errorType: err.constructor?.name,
@@ -38,7 +38,7 @@ router.get('/:id', async (req, res) => {
         res.json(record);
     } catch (err) {
         logTableError('vcodes', 'fetch vcode', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to fetch vcode',
             details: err.message,
             errorType: err.constructor?.name,
@@ -132,7 +132,7 @@ router.post('/', async (req, res) => {
             }
         }
         
-        res.status(400).json(errorResponse);
+        if (!res.headersSent) res.status(400).json(errorResponse);
     }
 });
 
@@ -174,7 +174,7 @@ router.put('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('vcodes', 'update vcode', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to update vcode',
             details: err.message,
             errorType: err.constructor?.name,
@@ -209,7 +209,7 @@ router.delete('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('vcodes', 'delete vcode', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to delete vcode',
             details: err.message,
             errorType: err.constructor?.name,
@@ -344,7 +344,7 @@ router.get('/ventas_x_a_day', async (req, res) => {
         res.json(response);
     } catch (err) {
         logTableError('vcodes', 'ventas_x_a_day', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to get ventas_x_a_day',
             details: err.message,
             errorType: err.constructor?.name,

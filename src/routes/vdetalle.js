@@ -17,7 +17,7 @@ router.get('/', async (req, res) => {
         res.json(records);
     } catch (err) {
         logTableError('vdetalle', 'list vdetalle', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to list vdetalle',
             details: err.message,
             errorType: err.constructor?.name,
@@ -37,7 +37,7 @@ router.get('/:id', async (req, res) => {
         res.json(record);
     } catch (err) {
         logTableError('vdetalle', 'fetch vdetalle', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to fetch vdetalle',
             details: err.message,
             errorType: err.constructor?.name,
@@ -72,7 +72,7 @@ router.post('/', async (req, res) => {
     } catch (err) {
         logTableError('vdetalle', 'create/update vdetalle (POST)', err, req);
         handleInsertUpdateError(err, req, 'Vdetalle', ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'vdetalle');
-        res.status(400).json({ 
+        if (!res.headersSent) res.status(400).json({ 
             error: 'Failed to create vdetalle', 
             details: err.message,
             errorType: err.constructor.name,
@@ -124,7 +124,7 @@ router.put('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('vdetalle', 'update vdetalle', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to update vdetalle',
             details: err.message,
             errorType: err.constructor?.name,
@@ -159,7 +159,7 @@ router.delete('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('vdetalle', 'delete vdetalle', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to delete vdetalle',
             details: err.message,
             errorType: err.constructor?.name,

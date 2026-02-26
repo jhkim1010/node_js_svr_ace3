@@ -298,7 +298,7 @@ router.get('/', async (req, res) => {
     } catch (err) {
         logTableError('gastos', 'list gastos', err, req);
         const errorResponse = buildDatabaseErrorResponse(err, req, 'list gastos');
-        res.status(500).json(errorResponse);
+        if (!res.headersSent) res.status(500).json(errorResponse);
     }
 });
 
@@ -312,7 +312,7 @@ router.get('/:id', async (req, res) => {
         res.json(record);
     } catch (err) {
         logTableError('gastos', 'fetch gasto', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to fetch gasto',
             details: err.message,
             errorType: err.constructor?.name,
@@ -456,7 +456,7 @@ router.post('/', async (req, res) => {
         });
         
         handleInsertUpdateError(err, req, 'Gastos', 'id_ga', 'gastos');
-        res.status(400).json({ 
+        if (!res.headersSent) res.status(400).json({ 
             error: 'Failed to create gasto', 
             details: err.message,
             errorType: err.constructor.name,
@@ -508,7 +508,7 @@ router.put('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('gastos', 'update gasto', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to update gasto',
             details: err.message,
             errorType: err.constructor?.name,
@@ -543,7 +543,7 @@ router.delete('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('gastos', 'delete gasto', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to delete gasto',
             details: err.message,
             errorType: err.constructor?.name,

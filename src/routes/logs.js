@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
         res.json(records);
     } catch (err) {
         logTableError('logs', 'list logs', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to list logs',
             details: err.message,
             errorType: err.constructor?.name,
@@ -35,7 +35,7 @@ router.get('/:id', async (req, res) => {
         res.json(record);
     } catch (err) {
         logTableError('logs', 'fetch log', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to fetch log',
             details: err.message,
             errorType: err.constructor?.name,
@@ -80,7 +80,7 @@ router.post('/', async (req, res) => {
     } catch (err) {
         logTableError('logs', 'create/update log', err, req);
         handleInsertUpdateError(err, req, 'Logs', ['fecha', 'hora', 'evento', 'progname'], 'logs');
-        res.status(400).json({ 
+        if (!res.headersSent) res.status(400).json({ 
             error: 'Failed to create log', 
             details: err.message,
             errorType: err.constructor.name
@@ -147,7 +147,7 @@ router.put('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('logs', 'update log', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to update log',
             details: err.message,
             errorType: err.constructor?.name,
@@ -196,7 +196,7 @@ router.delete('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('logs', 'delete log', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to delete log',
             details: err.message,
             errorType: err.constructor?.name,

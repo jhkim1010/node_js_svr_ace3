@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { getModelForRequest } = require('../models/model-factory');
+const { logTableError } = require('../utils/error-handler');
 
 const router = Router();
 
@@ -131,11 +132,13 @@ router.get('/', async (req, res) => {
             online_ventas: onlineVentasResult.length > 0 ? onlineVentasResult : null
         });
     } catch (err) {
-        console.error('Error fetching venta details:', err);
-        res.status(500).json({ 
-            error: 'Failed to fetch venta details', 
-            details: err.message 
-        });
+        logTableError('vdetalles', 'fetch venta details', err, req);
+        if (!res.headersSent) {
+            res.status(500).json({
+                error: 'Failed to fetch venta details',
+                details: err.message
+            });
+        }
     }
 });
 

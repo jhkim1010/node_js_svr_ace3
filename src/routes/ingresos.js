@@ -157,7 +157,7 @@ router.get('/', async (req, res) => {
         res.json(responseData);
     } catch (err) {
         logTableError('ingresos', 'list ingresos', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to list ingresos',
             details: err.message,
             errorType: err.constructor?.name,
@@ -319,7 +319,7 @@ router.get('/summary', async (req, res) => {
         res.json(responseData);
     } catch (err) {
         logTableError('ingresos', 'ingresos summary', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to fetch ingresos summary',
             details: err.message,
             errorType: err.constructor?.name,
@@ -339,7 +339,7 @@ router.get('/:id', async (req, res) => {
         res.json(record);
     } catch (err) {
         logTableError('ingresos', 'fetch ingreso', err, req);
-        res.status(500).json({
+        if (!res.headersSent) res.status(500).json({
             error: 'Failed to fetch ingreso',
             details: err.message,
             errorType: err.constructor?.name,
@@ -422,7 +422,7 @@ router.post('/', async (req, res) => {
                 : 'Unique key (ingreso_id, sucursal) already exists. The system will attempt to update the existing record based on utime comparison.';
         }
         
-        res.status(400).json(errorResponse);
+        if (!res.headersSent) res.status(400).json(errorResponse);
     }
 });
 
@@ -471,7 +471,7 @@ router.put('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('ingresos', 'update ingreso', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to update ingreso',
             details: err.message,
             errorType: err.constructor?.name,
@@ -512,7 +512,7 @@ router.delete('/:id', async (req, res) => {
         }
     } catch (err) {
         logTableError('ingresos', 'delete ingreso', err, req);
-        res.status(400).json({
+        if (!res.headersSent) res.status(400).json({
             error: 'Failed to delete ingreso',
             details: err.message,
             errorType: err.constructor?.name,
