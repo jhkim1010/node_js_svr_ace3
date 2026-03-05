@@ -78,7 +78,8 @@ async function getIngresosReport(req) {
     // WHERE 조건 구성 (공통)
     let whereConditions = [
         `i.fecha BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'`,
-        'i.borrado IS FALSE'
+        'i.borrado IS FALSE',
+        'i.cant3 != 0'
     ];
 
     // movidos=1 이면 이동된 입고만 (bmovido IS TRUE)
