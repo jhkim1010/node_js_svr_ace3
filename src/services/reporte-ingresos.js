@@ -35,6 +35,10 @@ async function getIngresosReport(req) {
     // sucursal 파라미터 확인
     const sucursal = req.query.sucursal || req.body?.sucursal;
     const sucursalInt = sucursal ? parseInt(sucursal, 10) : null;
+
+    // movidos 파라미터: 1이면 bmovido IS TRUE 조건 추가 (이동된 입고만)
+    const movidos = req.query.movidos ?? req.body?.movidos;
+    const movidosFilter = movidos === '1' || movidos === 1;
     
     // 디버깅: 파라미터 로깅
     console.log('[Ingresos 보고서] 파라미터 확인:');
@@ -45,6 +49,7 @@ async function getIngresosReport(req) {
     console.log(`   tipo_id (parsed): ${tipoIdInt} ${dateChanged ? '(기간 변경으로 무시됨)' : ''}`);
     console.log(`   sucursal (raw): ${sucursal}`);
     console.log(`   sucursal (parsed): ${sucursalInt || '없음'}`);
+    console.log(`   movidos: ${movidos} → bmovido 필터: ${movidosFilter ? '적용' : '미적용'}`);
     console.log(`   필터 적용 대상: 제품 상세 내역만 (resumen 집계는 제외)`);
 
     // 날짜 범위 필터 (필수)
@@ -75,6 +80,11 @@ async function getIngresosReport(req) {
         `i.fecha BETWEEN '${escapedStartDate}' AND '${escapedEndDate}'`,
         'i.borrado IS FALSE'
     ];
+
+    // movidos=1 이면 이동된 입고만 (bmovido IS TRUE)
+    if (movidosFilter) {
+        whereConditions.push('i.bmovido IS TRUE');
+    }
 
     // filteringWord 검색 조건 추가 (대소문자 구분 없음)
     if (filteringWord && filteringWord.trim()) {
@@ -398,6 +408,7 @@ async function getIngresosReport(req) {
             color_id: colorIdInt,
             tipo_id: tipoIdInt,
             sucursal: sucursalInt,
+            movidos: movidosFilter ? 1 : null,
             date_changed: dateChanged
         },
         summary: {
