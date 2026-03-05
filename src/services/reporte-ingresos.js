@@ -387,18 +387,6 @@ async function getIngresosReport(req) {
     // 집계 정보 계산
     const totalCantidad = productDetails.reduce((sum, item) => sum + (parseFloat(item.totalCantidad || 0)), 0);
 
-    // 디버깅: 최종 응답 구조 확인
-    console.log('[Ingresos 보고서] 최종 응답 구조 확인:');
-    console.log(`   data.summary_by_category 타입: ${Array.isArray(filteredCategorySummary) ? 'Array' : typeof filteredCategorySummary}`);
-    console.log(`   data.summary_by_category 길이: ${filteredCategorySummary.length}`);
-    console.log(`   data.summary_by_color 타입: ${Array.isArray(filteredColorSummary) ? 'Array' : typeof filteredColorSummary}`);
-    console.log(`   data.summary_by_color 길이: ${filteredColorSummary.length}`);
-    console.log(`   data.products 길이: ${productDetails.length}`);
-    if (colorIdInt !== null) {
-        console.log(`   [중요] color_id=${colorIdInt}가 설정되었지만, summary_by_category와 summary_by_color는 여전히 반환됩니다.`);
-        console.log(`   [중요] 클라이언트에서 이 데이터를 사용하여 왼쪽 resumen을 유지해야 합니다.`);
-    }
-
     const responseData = {
         filters: {
             fecha_inicio: startDate,
@@ -426,16 +414,8 @@ async function getIngresosReport(req) {
             products: productDetails
         }
     };
-    
-    // 디버깅: 응답 데이터 최종 확인
-    console.log('[Ingresos 보고서] 응답 데이터 최종 확인:');
-    console.log(`   responseData.data.summary_by_category 존재: ${responseData.data.hasOwnProperty('summary_by_category')}`);
-    console.log(`   responseData.data.summary_by_color 존재: ${responseData.data.hasOwnProperty('summary_by_color')}`);
-    console.log(`   responseData.data.products 존재: ${responseData.data.hasOwnProperty('products')}`);
-    console.log(`   [최종] summary_by_category: ${responseData.data.summary_by_category.length}개 항목`);
-    console.log(`   [최종] summary_by_color: ${responseData.data.summary_by_color.length}개 항목`);
-    console.log(`   [최종] products: ${responseData.data.products.length}개 항목`);
-    
+
+    console.log(`[Ingresos 보고서] category: ${filteredCategorySummary.length}, color: ${filteredColorSummary.length}, products: ${productDetails.length}`);
     return responseData;
 }
 
