@@ -1,47 +1,64 @@
 const { Sequelize } = require('sequelize');
-const { parsePaginationParams, calculatePagination } = require('../utils/fetch-utils');
+const { calculatePagination } = require('../utils/fetch-utils');
 
 /**
  * movidos fetch 서비스
- * ingresos 테이블에서 bmovido가 true이고, sucursal이 일치하며, utime이 지정된 시간 이후인 레코드를 조회
+ * ingresos 테이블에서 bmovido가 true이고, sucursal이 일치하며, utime이 지정된 시간 이후이고,
+ * ref_vcode가 prefix로 시작하지 않는 레코드를 조회 (prefix 기준 제외)
  * ID 기반 페이지네이션 또는 utime 기반 페이지네이션 지원
- * 
+ *
  * @param {Sequelize} sequelize - Sequelize 인스턴스
  * @param {Object} params - 파라미터 객체
- * @param {string} params.utimeMovidosFetch - utime 기준 시간 (ID 기반 페이지네이션 사용 시 선택적, 예: '2026-01-01 00:00:00')
+ * @param {string} params.lastGetUtime - utime 기준 시간 (예: '2026-03-06 12:00:00'), last_get_utime 우선
+ * @param {string} params.utimeMovidosFetch - utime 기준 시간 (lastGetUtime 없을 때 사용)
+ * @param {string} params.prefix - ref_vcode NOT LIKE prefix% 로 제외할 접두사 (예: 'LOCAL2')
  * @param {number} params.idIngreso - ID 기반 페이지네이션용 ingreso_id (선택적)
  * @param {number} params.sucursal - sucursal 값
- * @param {number} params.limit - 페이지당 레코드 수 (기본값: 100)
+ * @param {number} params.limit - 페이지당 레코드 수 (기본값: 20)
  * @param {number} params.offset - 오프셋 (기본값: 0, ID 기반 페이지네이션 사용 시 무시됨)
  * @returns {Promise<Object>} { data, pagination }
  */
 async function fetchMovidos(sequelize, params) {
-    const { utimeMovidosFetch, idIngreso, sucursal, limit = 100, offset = 0 } = params;
-    
-    // 파라미터 검증
-    // ID 기반 페이지네이션을 사용하지 않는 경우에만 utimeMovidosFetch가 필수
-    if (!idIngreso && !utimeMovidosFetch) {
-        throw new Error('utime_movidos_fetch 파라미터가 필요합니다. 또는 ingreso_id를 사용한 ID 기반 페이지네이션을 사용하세요.');
+    const {
+        lastGetUtime,
+        utimeMovidosFetch,
+        prefix,
+        idIngreso,
+        sucursal,
+        limit = 20,
+        offset = 0
+    } = params;
+
+    const utimeFilter = lastGetUtime ?? utimeMovidosFetch;
+
+    // 파라미터 검증: ID 기반 페이지네이션을 쓰지 않으면 utime 필터 필수
+    if (!idIngreso && !utimeFilter) {
+        throw new Error('utime_movidos_fetch 또는 last_get_utime 파라미터가 필요합니다. 또는 ingreso_id를 사용한 ID 기반 페이지네이션을 사용하세요.');
     }
-    
+
     if (sucursal === undefined || sucursal === null) {
         throw new Error('sucursal 파라미터가 필요합니다.');
     }
-    
+
     const sucursalNum = parseInt(sucursal, 10);
     if (isNaN(sucursalNum)) {
         throw new Error('sucursal은 숫자여야 합니다.');
     }
-    
-    // ID 기반 페이지네이션 사용 여부 확인
+
     const useIdPagination = !!idIngreso;
-    
-    // WHERE 조건 구성
-    let whereConditions = ['bmovido IS TRUE', 'sucursal = $1'];
-    let bindParams = [sucursalNum];
+
+    // WHERE: bmovido IS TRUE, sucursal, (선택) ref_vcode NOT LIKE prefix%, utime > ?, (선택) ingreso_id > ?
+    const whereConditions = ['bmovido IS TRUE', 'sucursal = $1'];
+    const bindParams = [sucursalNum];
     let paramIndex = 2;
-    
-    // ID 기반 페이지네이션 사용 시
+
+    if (prefix != null && String(prefix).trim() !== '') {
+        const pattern = String(prefix).trim() + '%';
+        whereConditions.push(`ref_vcode NOT LIKE $${paramIndex}`);
+        bindParams.push(pattern);
+        paramIndex++;
+    }
+
     if (useIdPagination) {
         const idIngresoNum = parseInt(idIngreso, 10);
         if (isNaN(idIngresoNum)) {
@@ -51,16 +68,13 @@ async function fetchMovidos(sequelize, params) {
         bindParams.push(idIngresoNum);
         paramIndex++;
     }
-    
-    // utime 필터 추가 (utimeMovidosFetch가 제공된 경우)
-    if (utimeMovidosFetch) {
-        // SQL injection 방지를 위해 utime 값 이스케이프
-        const escapedUtime = utimeMovidosFetch.replace(/'/g, "''");
+
+    if (utimeFilter) {
         whereConditions.push(`utime > $${paramIndex}`);
-        bindParams.push(escapedUtime);
+        bindParams.push(String(utimeFilter).trim());
         paramIndex++;
     }
-    
+
     const whereClause = whereConditions.join(' AND ');
     
     // 정렬: ID 기반 페이지네이션 사용 시 ingreso_id로, 그 외에는 utime으로 정렬
