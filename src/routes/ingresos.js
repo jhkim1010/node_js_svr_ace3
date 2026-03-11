@@ -4,7 +4,7 @@ const { getModelForRequest } = require('../models/model-factory');
 const { removeSyncField, filterModelFields } = require('../utils/batch-sync-handler');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
-const { handleInsertUpdateError, logTableError } = require('../utils/error-handler');
+const { handleInsertUpdateError, logTableError, formatColumnMissingMessage } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -400,7 +400,10 @@ router.post('/', async (req, res) => {
 
         // 실패 사유 한 줄로 정확히 기록 (로그 + 응답용)
         let failureReason = '';
-        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+        const columnMissingLine = formatColumnMissingMessage(err);
+        if (columnMissingLine) {
+            failureReason = columnMissingLine;
+        } else if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
             const parts = err.errors.map(e => `필드 ${e.path}=${JSON.stringify(e.value)}: ${e.message}`);
             failureReason = `검증 오류: ${parts.join('; ')}`;
         } else if (constraintName) {

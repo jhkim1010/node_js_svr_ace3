@@ -6,6 +6,7 @@ const { convertUtimeToString, convertUtimeToSequelizeLiteral } = require('./utim
 const { findRecordByPrimaryKey, processRecordWithUtimeComparison, handlePrimaryKeyConflict } = require('./utime-record-operations');
 const { logErrorWithLocation, logInfoWithLocation } = require('./log-utils');
 const { getTableHandlerConfig, requiresSpecialHandling } = require('./table-handler-config');
+const { formatColumnMissingMessage } = require('./error-handler');
 
 /**
  * 레코드 식별자 정보를 추출하는 헬퍼 함수
@@ -2178,9 +2179,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             }
             const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
-            const displayError = is25P02
-                ? (errorMsg + ' (동 트랜잭션/연결 풀 이슈 가능. 동일 body로 POST 재요청 시 정상 처리될 수 있음)')
-                : errorMsg;
+            const columnMissingLine = formatColumnMissingMessage(itemErr);
+            const displayError = columnMissingLine
+                ? columnMissingLine
+                : (is25P02
+                    ? (errorMsg + ' (동 트랜잭션/연결 풀 이슈 가능. 동일 body로 POST 재요청 시 정상 처리될 수 있음)')
+                    : errorMsg);
             errors.push({
                 index: i,
                 error: displayError,

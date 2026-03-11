@@ -18,6 +18,22 @@ function simplifyConnectionLimitError(errorMsg) {
 }
 
 /**
+ * 컬럼 부족(42703) 오류일 때 부족한 컬럼명을 1줄로 반환
+ * @param {Error} err - DB 에러 (err.original.code, err.original.message)
+ * @returns {string|null} 한 줄 메시지 또는 null
+ */
+function formatColumnMissingMessage(err) {
+    const code = err?.original?.code ?? err?.code;
+    const msg = (err?.original?.message || err?.message || '');
+    if (code !== '42703' && !(msg.toLowerCase().includes('column') && msg.toLowerCase().includes('does not exist'))) {
+        return null;
+    }
+    const m = msg.match(/column\s+"([^"]+)"\s+does not exist/i) || msg.match(/column\s+(\S+)\s+does not exist/i);
+    const col = m ? m[1] : '?';
+    return `컬럼 부족: "${col}" (DB 테이블에 해당 컬럼이 없습니다)`;
+}
+
+/**
  * 에러를 처리하고 로그를 출력하는 함수
  * @param {Error} err - 발생한 에러
  * @param {Object} req - Express request 객체
@@ -537,7 +553,10 @@ function buildDatabaseErrorResponse(err, req, operation = 'database operation') 
     
     // 기본 에러 메시지 생성
     let message = errorMsg;
-    if (connectionDiagnosis) {
+    const columnMissingLine = formatColumnMissingMessage(err);
+    if (columnMissingLine) {
+        message = columnMissingLine;
+    } else if (connectionDiagnosis) {
         // 연결 거부 오류인 경우 더 명확한 메시지
         message = `Database connection refused: ${connectionDiagnosis.diagnosis.summary}`;
     } else if (isConnectionError) {
@@ -633,5 +652,5 @@ function logTableError(tableName, operation, err, req) {
     console.error('');
 }
 
-module.exports = { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError };
+module.exports = { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError, formatColumnMissingMessage };
 
