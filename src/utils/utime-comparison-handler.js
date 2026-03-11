@@ -2320,11 +2320,27 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 skipped: skippedCount
             };
             
-            // 항목별 로그 대신 1줄 요약만 출력
             if (totalCount > 0) {
                 logInfoWithLocation(`${dbName} ${modelName} | created: ${createdCount}, updated: ${updatedCount}, skipped: ${skippedCount}, failed: ${errors.length}`);
+                // 실패한 항목이 있으면 각 실패 사유를 로그에 기록
+                if (errors.length > 0) {
+                    const sortedErrors = [...errors].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+                    sortedErrors.forEach((err, pos) => {
+                        const idx = err.index;
+                        const raw = req.body.data && Array.isArray(req.body.data) && idx >= 0 && idx < req.body.data.length ? req.body.data[idx] : err.data;
+                        const idPart = raw && typeof raw === 'object'
+                            ? (modelName === 'Ingresos' && (raw.ingreso_id != null || raw.sucursal != null)
+                                ? `ingreso_id=${raw.ingreso_id}, sucursal=${raw.sucursal}`
+                                : JSON.stringify(raw).slice(0, 80))
+                            : `index=${idx}`;
+                        const reason = err.constraintName
+                            ? `constraint "${err.constraintName}": ${err.error}`
+                            : (err.errorCode ? `[${err.errorCode}] ${err.error}` : err.error);
+                        logErrorWithLocation(`${dbName} ${modelName} 실패 #${pos + 1} (${idPart}) | ${reason}`);
+                    });
+                }
             }
-            
+
             await require('./websocket-notifier').notifyBatchSync(req, Model, result);
             return result;
         } else {
