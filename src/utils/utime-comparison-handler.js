@@ -102,7 +102,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
         
     // 각 항목을 독립적인 트랜잭션으로 하나씩 처리
     for (let i = 0; i < req.body.data.length; i++) {
-        const maxAttempts = 2; // 25P02(트랜잭션 중단) 시 한 번 재시도
+        const maxAttempts = 3; // 25P02 시 최대 3회 시도 (동시 요청 등으로 연결 중단 시 성공 가능성 확대)
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const transaction = await sequelize.transaction({
                 autocommit: false,
@@ -119,8 +119,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             if (transaction && !transaction.finished) await transaction.rollback();
                         } catch (_) {}
                         if (modelName === 'Ingresos') {
-                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] 트랜잭션 검사 25P02 → rollback 후 재시도 (attempt ${attempt + 1})`);
+                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] 트랜잭션 검사 25P02 → rollback 후 100ms 대기 후 재시도`);
                         }
+                        await new Promise(r => setTimeout(r, 100));
                         continue;
                     }
                     throw probeErr;
@@ -2137,8 +2138,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             const is25P02 = errorCode === '25P02';
             if (is25P02 && attempt + 1 < maxAttempts) {
                 if (modelName === 'Ingresos') {
-                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 25P02 → 재시도 (attempt ${attempt + 1}/${maxAttempts})`);
+                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 25P02 → ${attempt + 2}/${maxAttempts}차 시도 전 100ms 대기 후 재시도`);
                 }
+                await new Promise(r => setTimeout(r, 100));
                 continue;
             }
 
