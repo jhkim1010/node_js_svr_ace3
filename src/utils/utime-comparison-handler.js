@@ -99,10 +99,26 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
         // preferredUniqueKeys를 앞에 추가
         uniqueKeys = [...tableConfig.preferredUniqueKeys, ...uniqueKeys];
     }
-        
+
+    // Ingresos: 동일 (ingreso_id, sucursal, bmovido)가 한 요청에 중복되면 마지막 항목만 처리 (중복 처리·로그 감소)
+    if (modelName === 'Ingresos' && Array.isArray(req.body.data) && req.body.data.length > 1) {
+        const keyToLastIndex = new Map();
+        req.body.data.forEach((item, idx) => {
+            const a = item.ingreso_id != null ? String(item.ingreso_id) : '';
+            const b = item.sucursal != null ? String(item.sucursal) : '';
+            const c = item.bmovido != null ? String(item.bmovido) : '';
+            keyToLastIndex.set(`${a},${b},${c}`, idx);
+        });
+        if (keyToLastIndex.size < req.body.data.length) {
+            const indices = Array.from(keyToLastIndex.values()).sort((x, y) => x - y);
+            req.body.data = indices.map(i => req.body.data[i]);
+            logInfoWithLocation(`${dbName} [Ingresos] 요청 중복 제거: ${req.body.data.length}건으로 처리 (동일 key는 마지막 항목만 사용)`);
+        }
+    }
+
     // 각 항목을 독립적인 트랜잭션으로 하나씩 처리
     for (let i = 0; i < req.body.data.length; i++) {
-        const maxAttempts = 3; // 25P02 시 최대 3회 시도 (동시 요청 등으로 연결 중단 시 성공 가능성 확대)
+        const maxAttempts = 4; // 25P02 시 최대 4회 시도 (동시 요청/연결 풀 이슈 완화)
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const transaction = await sequelize.transaction({
                 autocommit: false,
@@ -119,9 +135,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             if (transaction && !transaction.finished) await transaction.rollback();
                         } catch (_) {}
                         if (modelName === 'Ingresos') {
-                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] 트랜잭션 검사 25P02 → rollback 후 100ms 대기 후 재시도`);
+                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] 트랜잭션 검사 25P02 → rollback 후 250ms 대기 후 재시도`);
                         }
-                        await new Promise(r => setTimeout(r, 100));
+                        await new Promise(r => setTimeout(r, 250));
                         continue;
                     }
                     throw probeErr;
@@ -175,9 +191,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         }, {});
                         
                         if (canUsePreferredKey && Object.keys(preferredKeyWhere).length === preferredKeyArray.length) {
-                            // if (modelName === 'Ingresos') {
-                            //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys 조회 시도 | canUsePreferredKey=true`);
-                            // }
+                            if (modelName === 'Ingresos') {
+                                try {
+                                    await sequelize.query('SELECT 1', { transaction });
+                                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] processRecordWithUtimeComparison 호출 직전 | 동일 트랜잭션 SELECT 1 재확인 성공`);
+                                } catch (probe2Err) {
+                                    const c2 = probe2Err?.original?.code || probe2Err?.code;
+                                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] processRecordWithUtimeComparison 호출 직전 | SELECT 1 재확인 실패 code=${c2} (트랜잭션이 이미 중단됨)`);
+                                    throw probe2Err;
+                                }
+                            }
                             try {
                                 const resultPk = await processRecordWithUtimeComparison(
                                     Model,
@@ -2138,9 +2161,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             const is25P02 = errorCode === '25P02';
             if (is25P02 && attempt + 1 < maxAttempts) {
                 if (modelName === 'Ingresos') {
-                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 25P02 → ${attempt + 2}/${maxAttempts}차 시도 전 100ms 대기 후 재시도`);
+                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 25P02 → ${attempt + 2}/${maxAttempts}차 시도 전 250ms 대기 후 재시도`);
                 }
-                await new Promise(r => setTimeout(r, 100));
+                await new Promise(r => setTimeout(r, 250));
                 continue;
             }
 
@@ -2149,11 +2172,14 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 const idPart = rawItem && typeof rawItem === 'object' ? `ingreso_id=${rawItem.ingreso_id}, sucursal=${rawItem.sucursal}` : `index=${i}`;
                 const errMsg = itemErr.original ? itemErr.original.message : itemErr.message;
                 logInfoWithLocation(`${dbName} [Ingresos DEBUG] 최종 실패 (errors.push) | ${idPart} | code=${errorCode || 'N/A'} | ${(errMsg || '').slice(0, 80)}`);
+                if (is25P02) {
+                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 25P02 가능 원인: (1)풀에서 반환된 연결이 이미 aborted (2)동일 DB에 대한 다른 요청이 같은 연결 사용 중 (3)Sequelize 트랜잭션과 쿼리 연결 불일치 (4)이전 요청 rollback 실패로 연결이 풀에 나쁜 상태로 반환`);
+                }
             }
             const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const displayError = is25P02
-                ? (errorMsg + ' (실제 원인: 동 트랜잭션 내 선행 오류이거나, 동일 DB 연결을 쓰는 다른 요청에서 트랜잭션이 중단되었을 수 있음. 재요청 또는 연결 풀 확인)')
+                ? (errorMsg + ' (동 트랜잭션/연결 풀 이슈 가능. 동일 body로 POST 재요청 시 정상 처리될 수 있음)')
                 : errorMsg;
             errors.push({
                 index: i,

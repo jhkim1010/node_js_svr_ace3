@@ -87,17 +87,36 @@ async function processRecordWithUtimeComparison(
     savepointName, 
     sequelize
 ) {
-    const record = await Model.findOne({ 
-        where: whereCondition, 
-        transaction,
-        attributes: {
-            include: [
-                [Sequelize.literal(`utime::text`), 'utime_str']
-            ]
-        },
-        raw: true
-    });
-    
+    let record;
+    if (Model.name === 'Ingresos') {
+        logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | findOne 직전 | where=${JSON.stringify(whereCondition)}`);
+    }
+    try {
+        record = await Model.findOne({
+            where: whereCondition,
+            transaction,
+            attributes: {
+                include: [
+                    [Sequelize.literal(`utime::text`), 'utime_str']
+                ]
+            },
+            raw: true
+        });
+    } catch (findErr) {
+        if (Model.name === 'Ingresos') {
+            const c = findErr?.original?.code || findErr?.code;
+            const msg = (findErr?.original?.message || findErr?.message || '').slice(0, 150);
+            logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | findOne 예외 | code=${c} | message=${msg}`);
+            if (c === '25P02') {
+                logInfoWithLocation(`[Ingresos DEBUG] 25P02 가능 원인: 1)이 연결이 이미 중단된 상태로 풀에서 나옴 2)동일 연결을 다른 요청이 사용 중 3)트랜잭션과 쿼리 연결 불일치`);
+            }
+        }
+        throw findErr;
+    }
+    if (Model.name === 'Ingresos' && record != null) {
+        logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | findOne 성공 (record 있음)`);
+    }
+
     if (!record) {
         if (Model.name === 'Ingresos') {
             const idPart = filteredItem.ingreso_id != null || filteredItem.sucursal != null
