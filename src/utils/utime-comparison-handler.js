@@ -2119,9 +2119,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             const errorCode = itemErr.original ? itemErr.original.code : itemErr.code;
             const is25P02 = errorCode === '25P02';
             if (is25P02 && attempt + 1 < maxAttempts) {
+                if (modelName === 'Ingresos') {
+                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 25P02 → 재시도 (attempt ${attempt + 1}/${maxAttempts})`);
+                }
                 continue;
             }
 
+            if (modelName === 'Ingresos') {
+                const errMsg = itemErr.original ? itemErr.original.message : itemErr.message;
+                logInfoWithLocation(`${dbName} [Ingresos DEBUG] 최종 실패 (errors.push) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | code=${errorCode || 'N/A'} | ${(errMsg || '').slice(0, 80)}`);
+            }
             const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const displayError = is25P02
