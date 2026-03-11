@@ -378,14 +378,12 @@ router.post('/', async (req, res) => {
     } catch (err) {
         logTableError('ingresos', 'create/update ingreso (POST)', err, req);
         handleInsertUpdateError(err, req, 'Ingresos', ['ingreso_id', 'sucursal'], 'ingresos');
-        
-        // 더 상세한 오류 정보 추출
+
         const errorMsg = err.original ? err.original.message : err.message;
         const errorCode = err.original ? err.original.code : err.code;
         const constraintMatch = errorMsg ? errorMsg.match(/constraint "([^"]+)"/) : null;
         const constraintName = constraintMatch ? constraintMatch[1] : null;
-        
-        // 요청 데이터에서 primary key 값 추출
+
         const bodyData = req.body.new_data || req.body.data || req.body;
         let attemptedKeys = null;
         if (bodyData) {
@@ -397,10 +395,35 @@ router.post('/', async (req, res) => {
                 };
             }
         }
-        
-        // 오류 응답 구성
+
+        // 실패 사유 한 줄로 정확히 기록 (로그 + 응답용)
+        let failureReason = '';
+        if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+            const parts = err.errors.map(e => `필드 ${e.path}=${JSON.stringify(e.value)}: ${e.message}`);
+            failureReason = `검증 오류: ${parts.join('; ')}`;
+        } else if (constraintName) {
+            const keyStr = attemptedKeys
+                ? ` (ingreso_id=${attemptedKeys.ingreso_id}, sucursal=${attemptedKeys.sucursal})`
+                : '';
+            if (constraintName === 'ingreso.pr') {
+                failureReason = `Primary key 중복${keyStr}: ingreso_id가 이미 존재함`;
+            } else if (constraintName === 'ingresos_ingreso_id_sucursal_uniq') {
+                failureReason = `Unique 제약 위반${keyStr}: (ingreso_id, sucursal) 조합이 이미 존재함`;
+            } else {
+                const fkTableMatch = errorMsg && (errorMsg.match(/is not present in table "([^"]+)"/i) || errorMsg.match(/referenced by table "([^"]+)"/i));
+                const refTable = fkTableMatch ? fkTableMatch[1] : null;
+                failureReason = refTable
+                    ? `Foreign key 위반: 참조 테이블 "${refTable}"에 해당 레코드 없음 (constraint=${constraintName})${keyStr}`
+                    : `제약 위반 constraint="${constraintName}"${keyStr}: ${errorMsg}`;
+            }
+        } else {
+            failureReason = errorCode ? `[${errorCode}] ${errorMsg}` : errorMsg;
+        }
+        console.error(`[ingresos POST 실패 사유] ${failureReason}`);
+
         const errorResponse = {
             error: 'Failed to create ingreso',
+            reason: failureReason,
             details: errorMsg,
             errorType: err.constructor.name,
             errorCode: errorCode || null,
@@ -413,15 +436,14 @@ router.post('/', async (req, res) => {
                 message: e.message
             })) : undefined
         };
-        
-        // constraint 관련 추가 정보
+
         if (constraintName === 'ingreso.pr' || constraintName === 'ingresos_ingreso_id_sucursal_uniq') {
             errorResponse.constraintType = constraintName === 'ingreso.pr' ? 'primary_key' : 'unique_key';
-            errorResponse.message = constraintName === 'ingreso.pr' 
+            errorResponse.message = constraintName === 'ingreso.pr'
                 ? 'Primary key (ingreso_id) already exists. The system will attempt to update the existing record based on utime comparison.'
                 : 'Unique key (ingreso_id, sucursal) already exists. The system will attempt to update the existing record based on utime comparison.';
         }
-        
+
         if (!res.headersSent) res.status(400).json(errorResponse);
     }
 });

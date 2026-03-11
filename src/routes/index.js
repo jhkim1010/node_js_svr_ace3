@@ -23,6 +23,7 @@ const seniasVinculadosRouter = require('./senias_vinculados');
 const temporadasRouter = require('./temporadas');
 const cuentasRouter = require('./cuentas');
 const fetchMovidosRouter = require('./fetch-movidos');
+const settingsRouter = require('./settings');
 
 const router = Router();
 
@@ -53,6 +54,7 @@ router.use('/senias_vinculados', seniasVinculadosRouter);
 router.use('/temporadas', temporadasRouter);
 router.use('/cuentas', cuentasRouter);
 router.use('/movidos', fetchMovidosRouter);
+router.use('/settings', settingsRouter);
 
 module.exports = router;
 
