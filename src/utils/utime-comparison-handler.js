@@ -109,6 +109,23 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.READ_COMMITTED
             });
         try {
+                // 트랜잭션 상태 검사: 풀에서 받은 연결이 이미 중단된 상태(25P02)면 첫 쿼리에서 실패함. 조기 감지 후 재시도.
+                try {
+                    await sequelize.query('SELECT 1', { transaction });
+                } catch (probeErr) {
+                    const probeCode = probeErr?.original?.code || probeErr?.code;
+                    if (probeCode === '25P02') {
+                        try {
+                            if (transaction && !transaction.finished) await transaction.rollback();
+                        } catch (_) {}
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] 트랜잭션 검사 25P02 → rollback 후 재시도 (attempt ${attempt + 1})`);
+                        }
+                        continue;
+                    }
+                    throw probeErr;
+                }
+
                 const item = req.body.data[i];
                 const cleanedData = removeSyncField(item);
                 const filteredItem = filterModelFields(Model, cleanedData);
@@ -2134,7 +2151,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const displayError = is25P02
-                ? (errorMsg + ' (실제 원인: 동 트랜잭션 내 선행 오류일 수 있음. 위 로그 또는 선행 항목 확인)')
+                ? (errorMsg + ' (실제 원인: 동 트랜잭션 내 선행 오류이거나, 동일 DB 연결을 쓰는 다른 요청에서 트랜잭션이 중단되었을 수 있음. 재요청 또는 연결 풀 확인)')
                 : errorMsg;
             errors.push({
                 index: i,

@@ -85,6 +85,19 @@ async function extractUtimeStringFromRecord(record, Model, whereCondition, trans
 }
 
 /**
+ * utime 문자열을 비교용으로 정규화 (소수부 뒤의 불필요한 0 제거)
+ * "2026-03-16 10:17:18.839000" 과 "2026-03-16 10:17:18.839" 를 동일로 취급
+ */
+function normalizeUtimeStringForCompare(utimeStr) {
+    if (!utimeStr || typeof utimeStr !== 'string') return utimeStr;
+    const s = utimeStr.trim();
+    const dot = s.indexOf('.');
+    if (dot === -1) return s;
+    const frac = s.slice(dot + 1).replace(/0+$/, '');
+    return frac === '' ? s.slice(0, dot) : s.slice(0, dot + 1) + frac;
+}
+
+/**
  * utime 비교하여 업데이트 여부 결정
  * @param {string|null} clientUtimeStr - 클라이언트 utime 문자열
  * @param {string|null} serverUtimeStr - 서버 utime 문자열
@@ -92,16 +105,14 @@ async function extractUtimeStringFromRecord(record, Model, whereCondition, trans
  */
 function shouldUpdateBasedOnUtime(clientUtimeStr, serverUtimeStr) {
     if (!clientUtimeStr && !serverUtimeStr) {
-        // 둘 다 utime이 없으면 업데이트
         return true;
     } else if (clientUtimeStr && !serverUtimeStr) {
-        // 클라이언트에만 utime이 있으면 업데이트
         return true;
     } else if (clientUtimeStr && serverUtimeStr) {
-        // 둘 다 utime이 있으면 문자열 직접 비교 (timezone 변환 없음)
-        return clientUtimeStr > serverUtimeStr;
+        const a = normalizeUtimeStringForCompare(clientUtimeStr);
+        const b = normalizeUtimeStringForCompare(serverUtimeStr);
+        return a > b;
     } else {
-        // 서버에만 utime이 있으면 업데이트하지 않음
         return false;
     }
 }
@@ -110,6 +121,7 @@ module.exports = {
     convertUtimeToString,
     convertUtimeToSequelizeLiteral,
     extractUtimeStringFromRecord,
+    normalizeUtimeStringForCompare,
     shouldUpdateBasedOnUtime
 };
 
