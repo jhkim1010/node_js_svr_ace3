@@ -37,7 +37,7 @@ router.get('/', async (req, res) => {
             'ingreso_id', 'codigo', 'desc3', 'cant3', 'pre1', 'pre2', 'pre3', 'pre4', 'pre5', 'preorg',
             'fecha', 'hora', 'sucursal', 'codigoproducto', 'utime', 'borrado', 'fotonombre',
             'refemp', 'refcolor', 'totpre', 'pubip', 'ip', 'mac', 'ref1', 'ref_vcode',
-            'bfallado', 'bmovido', 'ref_sucursal', 'auto_agregado', 'b_autoagregado',
+            'bfallado', 'bmovido', 'ref_sucursal', 'b_autoagregado',
             'ref_id_codigo', 'num_corte', 'casoesp', 'ref_id_todocodigo', 'utime_modificado',
             'id_ingreso_centralizado'
         ];
@@ -123,8 +123,8 @@ router.get('/', async (req, res) => {
         const hasMore = records.length > limit;
         const allRecords = hasMore ? records.slice(0, limit) : records;
         
-        // 응답 데이터 구성 (ingreso_id 포함)
-        const data = allRecords;
+        // auto_agregado는 전송하지 않음 (일부 DB에 없을 수 있음)
+        const data = allRecords.map(({ auto_agregado: _removed, ...rest }) => rest);
         
         // 다음 요청을 위한 ingreso_id 계산 (마지막 레코드의 ingreso_id)
         let nextIdIngreso = null;
@@ -336,7 +336,9 @@ router.get('/:id', async (req, res) => {
         const Ingresos = getModelForRequest(req, 'Ingresos');
         const record = await Ingresos.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Not found' });
-        res.json(record);
+        const out = record.toJSON ? record.toJSON() : record;
+        delete out.auto_agregado;
+        res.json(out);
     } catch (err) {
         logTableError('ingresos', 'fetch ingreso', err, req);
         if (!res.headersSent) res.status(500).json({
@@ -484,7 +486,9 @@ router.put('/:id', async (req, res) => {
                 await transaction.commit();
             }
             await notifyDbChange(req, Ingresos, 'update', updated);
-            res.json(updated);
+            const out = updated.toJSON ? updated.toJSON() : updated;
+            delete out.auto_agregado;
+            res.json(out);
         } catch (err) {
             if (transaction && !transaction.finished) {
                 await transaction.rollback();

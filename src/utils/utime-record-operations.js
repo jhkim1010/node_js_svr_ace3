@@ -4,6 +4,14 @@ const { buildWhereCondition } = require('./batch-sync-handler');
 const { convertUtimeToString, convertUtimeToSequelizeLiteral, extractUtimeStringFromRecord, shouldUpdateBasedOnUtime } = require('./utime-helpers');
 const { logInfoWithLocation } = require('./log-utils');
 
+/** utime 비교용 최소 attributes: PK + utime_str (일부 DB에 없는 컬럼 선택 방지) */
+function getMinimalUtimeAttributes(Model) {
+    const pk = Model.primaryKeyAttributes && Model.primaryKeyAttributes.length
+        ? Model.primaryKeyAttributes
+        : (Model.primaryKeyAttribute ? [Model.primaryKeyAttribute] : []);
+    return [...pk, [Sequelize.literal('utime::text'), 'utime_str']];
+}
+
 /**
  * Primary key로 레코드 조회
  * @param {Object} Model - Sequelize 모델
@@ -33,11 +41,7 @@ async function findRecordByPrimaryKey(Model, filteredItem, primaryKey, transacti
     return await Model.findOne({ 
         where: primaryKeyWhere, 
         transaction,
-        attributes: {
-            include: [
-                [Sequelize.literal(`utime::text`), 'utime_str']
-            ]
-        },
+        attributes: getMinimalUtimeAttributes(Model),
         raw: true
     });
 }
@@ -62,7 +66,12 @@ async function updateRecord(Model, filteredItem, whereCondition, keysToRemove, t
     }
     
     await Model.update(updateData, { where: whereCondition, transaction });
-    return await Model.findOne({ where: whereCondition, transaction });
+    return await Model.findOne({
+        where: whereCondition,
+        transaction,
+        attributes: getMinimalUtimeAttributes(Model),
+        raw: true
+    });
 }
 
 /**
@@ -95,11 +104,7 @@ async function processRecordWithUtimeComparison(
         record = await Model.findOne({
             where: whereCondition,
             transaction,
-            attributes: {
-                include: [
-                    [Sequelize.literal(`utime::text`), 'utime_str']
-                ]
-            },
+            attributes: getMinimalUtimeAttributes(Model),
             raw: true
         });
     } catch (findErr) {
@@ -214,23 +219,15 @@ async function handlePrimaryKeyConflict(
     } else if (availableUniqueKey) {
         // Primary key로 찾지 못했으면 availableUniqueKey로 시도
         retryRecord = Array.isArray(availableUniqueKey)
-            ? await Model.findOne({ 
-                where: whereCondition, 
+            ? await Model.findOne({
+                where: whereCondition,
                 transaction,
-                attributes: {
-                    include: [
-                        [Sequelize.literal(`utime::text`), 'utime_str']
-                    ]
-                },
+                attributes: getMinimalUtimeAttributes(Model),
                 raw: true
             })
-            : await Model.findByPk(filteredItem[availableUniqueKey], { 
+            : await Model.findByPk(filteredItem[availableUniqueKey], {
                 transaction,
-                attributes: {
-                    include: [
-                        [Sequelize.literal(`utime::text`), 'utime_str']
-                    ]
-                },
+                attributes: getMinimalUtimeAttributes(Model),
                 raw: true
             });
         

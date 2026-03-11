@@ -11,17 +11,25 @@ function removeSyncField(data) {
     return cleaned;
 }
 
-// 모델에 정의된 필드만 남기는 함수
+// Ingresos 등 일부 모델에서 전송/수신에서 제외할 필드 (DB 스키마 차이 대응)
+const MODEL_EXCLUDE_FIELDS = {
+    Ingresos: ['auto_agregado'],
+};
+
+// 모델에 정의된 필드만 남기는 함수 (MODEL_EXCLUDE_FIELDS에 있는 필드는 제외)
 function filterModelFields(Model, data) {
     if (!data || typeof data !== 'object') return data;
     if (!Model || !Model.rawAttributes) return data;
     
+    const exclude = (Model.name && MODEL_EXCLUDE_FIELDS[Model.name]) || [];
+    
     // 모델에 정의된 필드명 목록 가져오기
     const definedFields = Object.keys(Model.rawAttributes);
     
-    // 정의된 필드만 필터링
+    // 정의된 필드만 필터링 (제외 목록에 있으면 건너뜀)
     const filtered = {};
     for (const key of definedFields) {
+        if (exclude.includes(key)) continue;
         if (key in data) {
             filtered[key] = data[key];
         }
