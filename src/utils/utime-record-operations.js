@@ -2,6 +2,7 @@
 const { Sequelize } = require('sequelize');
 const { buildWhereCondition } = require('./batch-sync-handler');
 const { convertUtimeToString, convertUtimeToSequelizeLiteral, extractUtimeStringFromRecord, shouldUpdateBasedOnUtime } = require('./utime-helpers');
+const { logInfoWithLocation } = require('./log-utils');
 
 /**
  * Primary key로 레코드 조회
@@ -98,20 +99,27 @@ async function processRecordWithUtimeComparison(
     });
     
     if (!record) {
+        if (Model.name === 'Ingresos') {
+            const idPart = filteredItem.ingreso_id != null || filteredItem.sucursal != null
+                ? `ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`
+                : JSON.stringify(whereCondition);
+            logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | not_found | where=${idPart} | client_utime=${clientUtimeStr || 'null'}`);
+        }
         return { action: 'not_found', data: null };
     }
-    
-    // 서버 utime 추출
+
     const serverUtimeStr = await extractUtimeStringFromRecord(record, Model, whereCondition, transaction);
-    
-    // utime 비교
     const shouldUpdate = shouldUpdateBasedOnUtime(clientUtimeStr, serverUtimeStr);
-    
+
+    if (Model.name === 'Ingresos') {
+        const idPart = filteredItem.ingreso_id != null || filteredItem.sucursal != null
+            ? `ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`
+            : JSON.stringify(whereCondition);
+        logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | record found | ${idPart} | client_utime=${clientUtimeStr || 'null'} | server_utime=${serverUtimeStr || 'null'} | shouldUpdate=${shouldUpdate} → action=${shouldUpdate ? 'updated' : 'skipped'}`);
+    }
+
     if (shouldUpdate) {
-        // 업데이트 수행
         const updated = await updateRecord(Model, filteredItem, whereCondition, keysToRemove, transaction);
-        
-        // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
         if (savepointName) {
             try {
                 await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
@@ -119,7 +127,6 @@ async function processRecordWithUtimeComparison(
                 // 무시
             }
         }
-        
         return {
             action: 'updated',
             data: updated,
@@ -127,8 +134,6 @@ async function processRecordWithUtimeComparison(
             clientUtime: clientUtimeStr
         };
     } else {
-        // 서버 utime이 더 높거나 같으면 스킵
-        // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
         if (savepointName) {
             try {
                 await sequelize.query(`RELEASE SAVEPOINT ${savepointName}`, { transaction });
@@ -136,7 +141,6 @@ async function processRecordWithUtimeComparison(
                 // 무시
             }
         }
-        
         return {
             action: 'skipped',
             reason: 'server_utime_newer',

@@ -101,15 +101,13 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
     }
         
     // 각 항목을 독립적인 트랜잭션으로 하나씩 처리
-    // 연결 풀 고갈 방지를 위해 순차 처리 (동시 처리 제한)
     for (let i = 0; i < req.body.data.length; i++) {
-        // 각 항목마다 새로운 트랜잭션 생성
-        // 트랜잭션은 연결 풀에서 연결을 가져오므로, 완료 후 즉시 커밋/롤백하여 연결 해제
-        const transaction = await sequelize.transaction({
-            autocommit: false,  // 명시적 커밋/롤백 사용
-            isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.READ_COMMITTED
-        });
-        
+        const maxAttempts = 2; // 25P02(트랜잭션 중단) 시 한 번 재시도
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const transaction = await sequelize.transaction({
+                autocommit: false,
+                isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.READ_COMMITTED
+            });
         try {
                 const item = req.body.data[i];
                 const cleanedData = removeSyncField(item);
@@ -117,6 +115,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 
                 // 클라이언트에서 온 utime 값 (문자열로 직접 비교, timezone 변환 없음)
                 const clientUtimeStr = convertUtimeToString(filteredItem.utime);
+
+                if (modelName === 'Ingresos') {
+                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 항목 시작 | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}, bmovido=${filteredItem.bmovido} | client_utime=${clientUtimeStr || 'null'}`);
+                }
 
                 // 테이블별 설정 가져오기
                 const tableConfig = getTableHandlerConfig(modelName);
@@ -171,19 +173,23 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 );
                                 
                                 if (resultPk.action === 'updated') {
+                                    if (modelName === 'Ingresos') {
+                                        logInfoWithLocation(`${dbName} [Ingresos DEBUG] preferredKey 결과 → updated | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | client_utime=${resultPk.clientUtime || 'null'} | server_utime=${resultPk.serverUtime || 'null'}`);
+                                    }
                                     results.push({ index: i, action: 'updated', data: resultPk.data });
                                     updatedCount++;
-                                    // 트랜잭션이 아직 완료되지 않았는지 확인
                                     if (transaction && !transaction.finished) {
                                         await transaction.commit();
                                     }
                                     continue;
-                                } // end if (resultPk.action === 'updated') - preferredUniqueKeys 조회 결과
+                                }
                                 
                                 if (resultPk.action === 'skipped') {
+                                    if (modelName === 'Ingresos') {
+                                        logInfoWithLocation(`${dbName} [Ingresos DEBUG] preferredKey 결과 → skipped (server_utime >= client) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | client_utime=${resultPk.clientUtime || 'null'} | server_utime=${resultPk.serverUtime || 'null'}`);
+                                    }
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                     const identifierStr = formatIdentifier(identifier);
-                                    // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
                                     results.push({
                                         index: i,
                                         action: 'skipped',
@@ -202,15 +208,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     continue;
                                 } // end if (resultPk.action === 'skipped') - preferredUniqueKeys 조회 결과
                                 
-                                // preferredUniqueKeys로 찾지 못한 경우 (not_found) INSERT 시도로 진행
                                 if (resultPk.action === 'not_found') {
-                                    // preferredUniqueKeys로 찾지 못했으므로 INSERT 시도
-                                    // shouldTryPrimaryKey를 false로 설정하여 primary key 조회를 건너뛰고 INSERT로 진행
-                                    // if (modelName === 'Ingresos') {
-                                    //     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
-                                    //     const identifierStr = formatIdentifier(identifier);
-                                    //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] preferredUniqueKeys로 찾지 못함 (not_found) | ${identifierStr} | shouldTryPrimaryKey를 false로 설정하고 INSERT로 진행`);
-                                    // }
+                                    if (modelName === 'Ingresos') {
+                                        logInfoWithLocation(`${dbName} [Ingresos DEBUG] preferredKey 결과 → not_found → INSERT 시도로 진행 | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`);
+                                    }
                                     shouldTryPrimaryKey = false;
                                     // if (modelName === 'Ingresos') {
                                     //     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
@@ -453,19 +454,15 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 시작 | ${identifierStr} | 이유: 레코드 없음 (${usedKey}로 조회 실패) | ${clientUtimeInfo}`);
                         // }
                         
-                        // if (modelName === 'Ingresos') {
-                        //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
-                        //     const identifierStr = formatIdentifier(identifierObj);
-                        //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [A] Model.create 호출 직전 | ${identifierStr} | createData keys: ${Object.keys(createData).join(', ')}`);
-                        // }
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] INSERT 시도 (Model.create 호출) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | client_utime=${clientUtimeStr || 'null'}`);
+                        }
                         
                         const created = await Model.create(createData, { transaction });
                         
-                        // if (modelName === 'Ingresos') {
-                        //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
-                        //     const identifierStr = formatIdentifier(identifierObj);
-                        //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [B] Model.create 완료 | ${identifierStr} | created 객체: ${created ? '존재' : 'null'} | created.ingreso_id: ${created ? created.ingreso_id : 'N/A'}`);
-                        // }
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] INSERT 성공 (created) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`);
+                        }
                         // Extract identifier from filteredItem for logging
                         const identifier = {
                             vcode_id: filteredItem.vcode_id,
@@ -510,32 +507,29 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         } catch (releaseErr) {
                             // 무시
                         }
-                    } catch (createErr) { // catch of INSERT try 블록 - requiresSpecialHandling 블록 내부
+                    } catch (createErr) {
                         const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
-                        // if (modelName === 'Ingresos') {
-                        //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
-                        //     const identifierStr = formatIdentifier(identifierObj);
-                        //     const errorName = createErr.name || '';
-                        //     const errorStack = createErr.stack || '';
-                        //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [F] INSERT 실패 (catch 블록 진입) | ${identifierStr} | 에러명: ${errorName} | 에러메시지: ${errorMsg}`);
-                        //     if (createErr.original) {
-                        //         logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [F-1] 에러 원본: ${JSON.stringify(createErr.original).substring(0, 300)}`);
-                        //     }
-                        //     if (errorStack) {
-                        //         logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [F-2] 에러 스택 (처음 500자): ${errorStack.substring(0, 500)}`);
-                        //     }
-                        // }
                         const lowerMsg = errorMsg.toLowerCase();
+                        if (modelName === 'Ingresos') {
+                            const code = createErr.original ? createErr.original.code : createErr.code;
+                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] INSERT 실패 (catch) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | code=${code || 'N/A'} | message=${(errorMsg || '').slice(0, 120)}`);
+                        }
 
                         // 3단계: UNIQUE 제약 조건 에러 → 어떤 unique key 인지 출력 후 SKIP
                         // isUniqueConstraintError 함수와 직접 메시지 체크 모두 수행
-                        const isUniqueError = isUniqueConstraintError(createErr) || 
+                        const isUniqueError = isUniqueConstraintError(createErr) ||
                                              lowerMsg.includes('duplicate key') ||
                                              lowerMsg.includes('unique constraint') ||
                                              lowerMsg.includes('violates unique constraint');
-                        if (isUniqueError) { // if (isUniqueError) - unique constraint 에러 처리
+                        if (modelName === 'Ingresos') {
+                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] INSERT 실패 후 분기 | isUniqueError=${isUniqueError} | FK/기타 시 스킵 또는 재throw`);
+                        }
+                        if (isUniqueError) {
                             const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
+                            if (modelName === 'Ingresos') {
+                                logInfoWithLocation(`${dbName} [Ingresos DEBUG] unique 제약 → SAVEPOINT 롤백 후 unique key로 재조회 시도 | constraint=${constraintName}`);
+                            }
 
                             try {
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
@@ -1713,10 +1707,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             try {
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
-                                // 롤백 실패 시 트랜잭션은 중단 상태 → 이후 쿼리 시 25P02 발생. 원래 에러만 전파
                                 throw createErr;
                             }
 
+                            try {
                             // 모든 unique key (primary key + 복합 unique key 포함)로 레코드 조회 시도
                             let retryRecord = null;
                             let retryWhereCondition = null;
@@ -1918,12 +1912,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         // 독립 트랜잭션 사용 중이므로 SAVEPOINT 해제 불필요
                                     }
                                 } else {
-                                    // 레코드를 찾을 수 없으면 원래 에러를 다시 던짐
-                                    // 독립 트랜잭션 사용 중이므로 SAVEPOINT 롤백 불필요
                                     throw createErr;
                                 }
+                            } catch (retryErr) {
+                                const code = retryErr?.original?.code || retryErr?.code;
+                                if (code === '25P02') {
+                                    throw createErr;
+                                }
+                                throw retryErr;
+                            }
                         } else {
-                            // unique constraint 에러가 아니거나 primary key가 없으면 SAVEPOINT 롤백 후 원래 에러를 다시 던짐
                             try {
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
@@ -2105,37 +2103,27 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
         // }
         
         // 항목 처리 성공 시 해당 트랜잭션 커밋
-        // 트랜잭션이 아직 완료되지 않았는지 확인
         if (transaction && !transaction.finished) {
             await transaction.commit();
         }
+        break;
         } catch (itemErr) {
-            // if (modelName === 'Ingresos') {
-            //     const identifierObj = extractRecordIdentifier(filteredItem, primaryKey);
-            //     const identifierStr = formatIdentifier(identifierObj);
-            //     const errorMsg = itemErr.message || itemErr.toString();
-            //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [2] catch 블록 진입 | ${identifierStr} | 에러: ${errorMsg}`);
-            // }
-            // 항목 처리 실패 시 해당 트랜잭션만 롤백
-            // 트랜잭션이 아직 완료되지 않았는지 확인하고 롤백
-            // 이렇게 하면 "idle in transaction" 상태를 방지할 수 있음
                 try {
                     if (transaction && !transaction.finished) {
                         await transaction.rollback();
                     }
                 } catch (rollbackErr) {
-                    // 롤백 에러는 무시하지만 로그는 남김
                     console.error(`[Transaction Rollback Error] Item ${i + 1}: ${rollbackErr.message}`);
                 }
-            
-            // 디버깅: Ingresos 에러 상세 로그
-            if (modelName === 'Ingresos') {
-            }
-            
-            const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
-            const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
+
             const errorCode = itemErr.original ? itemErr.original.code : itemErr.code;
             const is25P02 = errorCode === '25P02';
+            if (is25P02 && attempt + 1 < maxAttempts) {
+                continue;
+            }
+
+            const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
+            const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const displayError = is25P02
                 ? (errorMsg + ' (실제 원인: 동 트랜잭션 내 선행 오류일 수 있음. 위 로그 또는 선행 항목 확인)')
                 : errorMsg;
@@ -2147,9 +2135,8 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 constraintName: itemErrorMsg ? (itemErrorMsg.match(/constraint "([^"]+)"/) ? itemErrorMsg.match(/constraint "([^"]+)"/)[1] : null) : null,
                 data: req.body.data[i]
             });
-            
-            // 다음 항목 계속 처리 (각 항목은 독립적인 트랜잭션이므로)
-            continue;
+            break;
+        }
         }
     }
     
