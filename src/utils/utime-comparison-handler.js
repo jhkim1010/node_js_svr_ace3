@@ -2126,8 +2126,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             }
 
             if (modelName === 'Ingresos') {
+                const rawItem = req.body.data && req.body.data[i];
+                const idPart = rawItem && typeof rawItem === 'object' ? `ingreso_id=${rawItem.ingreso_id}, sucursal=${rawItem.sucursal}` : `index=${i}`;
                 const errMsg = itemErr.original ? itemErr.original.message : itemErr.message;
-                logInfoWithLocation(`${dbName} [Ingresos DEBUG] 최종 실패 (errors.push) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | code=${errorCode || 'N/A'} | ${(errMsg || '').slice(0, 80)}`);
+                logInfoWithLocation(`${dbName} [Ingresos DEBUG] 최종 실패 (errors.push) | ${idPart} | code=${errorCode || 'N/A'} | ${(errMsg || '').slice(0, 80)}`);
             }
             const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
