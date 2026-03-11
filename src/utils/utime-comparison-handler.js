@@ -537,11 +537,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
 
-                            // 실패한 INSERT로 인해 트랜잭션이 abort 상태가 되지 않도록 SAVEPOINT로 롤백
                             try {
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
-                                // 무시
+                                throw createErr;
                             }
 
                             // 모든 unique key (primary key + 복합 unique key 포함)로 레코드를 다시 조회하여 utime 비교 시도
@@ -1164,13 +1163,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         // 무시
                                     } // end catch (releaseErr)
                                 } catch (createErr) { // catch of INSERT try 블록 - availableUniqueKey로 찾지 못한 경우
-                                    // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 primary key로 레코드를 조회하여 utime 비교 수행
-                                    if (isUniqueConstraintError(createErr) && primaryKey) { // if (isUniqueConstraintError(createErr) && primaryKey) - unique constraint 에러 처리
+                                    if (isUniqueConstraintError(createErr) && primaryKey) {
                                         try {
-                                            // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
                                             await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                                         } catch (rollbackErr) {
-                                            // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
+                                            throw createErr;
                                         }
                                         
                                         // 모든 unique key (primary key + 복합 unique key 포함)로 레코드 조회 시도
@@ -1463,13 +1460,11 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 // 무시
                             }
                         } catch (createErr) {
-                            // unique constraint 에러인 경우 SAVEPOINT로 롤백 후 모든 unique key로 레코드를 조회하여 utime 비교 수행
                             if (isUniqueConstraintError(createErr) && primaryKey) {
                                 try {
-                                    // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
                                     await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                                 } catch (rollbackErr) {
-                                    // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
+                                    throw createErr;
                                 }
                                 
                                 // 모든 unique key (primary key + 복합 unique key 포함)로 레코드 조회 시도
@@ -1716,12 +1711,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             const constraintName = constraintMatch ? constraintMatch[1] : null;
                             
                             try {
-                                // SAVEPOINT로 롤백하여 트랜잭션 상태 복구
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
-                                // 롤백 실패는 무시 (이미 롤백되었을 수 있음)
+                                // 롤백 실패 시 트랜잭션은 중단 상태 → 이후 쿼리 시 25P02 발생. 원래 에러만 전파
+                                throw createErr;
                             }
-                            
+
                             // 모든 unique key (primary key + 복합 unique key 포함)로 레코드 조회 시도
                             let retryRecord = null;
                             let retryWhereCondition = null;
@@ -2137,17 +2132,21 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             if (modelName === 'Ingresos') {
             }
             
-            // 에러를 errors 배열에 추가하고 다음 항목 계속 처리
             const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
-                errors.push({ 
-                    index: i, 
-                error: errorMsg,
-                    errorType: itemErr.constructor.name,
-                errorCode: itemErr.original ? itemErr.original.code : itemErr.code,
+            const errorCode = itemErr.original ? itemErr.original.code : itemErr.code;
+            const is25P02 = errorCode === '25P02';
+            const displayError = is25P02
+                ? (errorMsg + ' (실제 원인: 동 트랜잭션 내 선행 오류일 수 있음. 위 로그 또는 선행 항목 확인)')
+                : errorMsg;
+            errors.push({
+                index: i,
+                error: displayError,
+                errorType: itemErr.constructor.name,
+                errorCode: errorCode || null,
                 constraintName: itemErrorMsg ? (itemErrorMsg.match(/constraint "([^"]+)"/) ? itemErrorMsg.match(/constraint "([^"]+)"/)[1] : null) : null,
-                    data: req.body.data[i] 
-                });
+                data: req.body.data[i]
+            });
             
             // 다음 항목 계속 처리 (각 항목은 독립적인 트랜잭션이므로)
             continue;
