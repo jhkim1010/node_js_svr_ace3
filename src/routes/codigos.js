@@ -8,6 +8,7 @@ const { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError } = r
 const { processBatchedArray } = require('../utils/batch-processor');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { diagnoseConnectionRefusedError } = require('../utils/error-classifier');
+const { logPoolAfterResponse } = require('../utils/pool-debug');
 
 const router = Router();
 
@@ -182,6 +183,7 @@ router.get('/', async (req, res) => {
         req._responseDataCount = data.length;
         
         res.json(responseData);
+        logPoolAfterResponse(sequelize, 'codigos');
     } catch (err) {
         logTableError('codigos', 'list codigos', err, req);
         const errorResponse = buildDatabaseErrorResponse(err, req, 'list codigos');
@@ -199,6 +201,7 @@ router.get('/:id', async (req, res) => {
         const record = await Codigos.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
+        logPoolAfterResponse(Codigos.sequelize, 'codigos/:id');
     } catch (err) {
         logTableError('codigos', 'fetch codigo', err, req);
         const errorResponse = buildDatabaseErrorResponse(err, req, 'fetch codigo');

@@ -6,6 +6,7 @@ const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier
 const { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
+const { logPoolAfterResponse } = require('../utils/pool-debug');
 
 const router = Router();
 
@@ -104,6 +105,7 @@ router.get('/', async (req, res) => {
         req._responseDataCount = data.length;
         
         res.json(responseData);
+        logPoolAfterResponse(Color.sequelize, 'color');
     } catch (err) {
         logTableError('color', 'list colors', err, req);
         if (!res.headersSent) res.status(500).json({ error: 'Failed to list colors', details: err.message });
@@ -118,6 +120,7 @@ router.get('/:id', async (req, res) => {
         const record = await Color.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
+        logPoolAfterResponse(Color.sequelize, 'color/:id');
     } catch (err) {
         logTableError('color', 'fetch color', err, req);
         if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch color', details: err.message });

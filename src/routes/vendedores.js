@@ -5,6 +5,7 @@ const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
+const { logPoolAfterResponse } = require('../utils/pool-debug');
 
 const router = Router();
 
@@ -13,6 +14,7 @@ router.get('/', async (req, res) => {
         const Vendedores = getModelForRequest(req, 'Vendedores');
         const records = await Vendedores.findAll({ limit: 100, order: [['vnombre', 'ASC']] });
         res.json(records);
+        logPoolAfterResponse(Vendedores.sequelize, 'vendedores');
     } catch (err) {
         console.error('\nERROR: Vendedores fetch error:');
         console.error('   Error type:', err.constructor.name);
@@ -40,6 +42,7 @@ router.get('/:id', async (req, res) => {
         const record = await Vendedores.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
+        logPoolAfterResponse(Vendedores.sequelize, 'vendedores/:id');
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to fetch vendedor', details: err.message });

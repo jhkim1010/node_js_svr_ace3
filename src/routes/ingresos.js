@@ -5,6 +5,7 @@ const { removeSyncField, filterModelFields } = require('../utils/batch-sync-hand
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError, logTableError, formatColumnMissingMessage } = require('../utils/error-handler');
+const { logPoolAfterResponse } = require('../utils/pool-debug');
 const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
@@ -155,6 +156,7 @@ router.get('/', async (req, res) => {
         req._responseDataCount = data.length;
         
         res.json(responseData);
+        logPoolAfterResponse(sequelize, 'ingresos');
     } catch (err) {
         logTableError('ingresos', 'list ingresos', err, req);
         if (!res.headersSent) res.status(500).json({
@@ -317,6 +319,7 @@ router.get('/summary', async (req, res) => {
         req._responseDataCount = allRecords.length;
         
         res.json(responseData);
+        logPoolAfterResponse(Ingresos.sequelize, 'ingresos/summary');
     } catch (err) {
         logTableError('ingresos', 'ingresos summary', err, req);
         if (!res.headersSent) res.status(500).json({
@@ -339,6 +342,7 @@ router.get('/:id', async (req, res) => {
         const out = record.toJSON ? record.toJSON() : record;
         delete out.auto_agregado;
         res.json(out);
+        logPoolAfterResponse(Ingresos.sequelize, 'ingresos/:id');
     } catch (err) {
         logTableError('ingresos', 'fetch ingreso', err, req);
         if (!res.headersSent) res.status(500).json({

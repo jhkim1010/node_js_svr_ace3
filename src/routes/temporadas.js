@@ -6,6 +6,7 @@ const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier
 const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
+const { logPoolAfterResponse } = require('../utils/pool-debug');
 
 const router = Router();
 
@@ -101,6 +102,7 @@ router.get('/', async (req, res) => {
                 data: records,
                 total: records.length
             });
+            logPoolAfterResponse(Temporadas.sequelize, 'temporadas');
             return;
         }
         
@@ -183,6 +185,7 @@ router.get('/', async (req, res) => {
         logCombinedTiposTemporadas(dbName, null, data.length);
         
         res.json(responseData);
+        logPoolAfterResponse(Temporadas.sequelize, 'temporadas');
     } catch (err) {
         console.error('[Temporadas GET] 오류:', err);
         console.error('[Temporadas GET] 요청 정보:', {
@@ -208,6 +211,7 @@ router.get('/:id', async (req, res) => {
         const record = await Temporadas.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
+        logPoolAfterResponse(Temporadas.sequelize, 'temporadas/:id');
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to fetch temporada', details: err.message });

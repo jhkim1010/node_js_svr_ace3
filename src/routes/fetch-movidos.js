@@ -3,6 +3,7 @@ const { getModelForRequest } = require('../models/model-factory');
 const { fetchMovidos } = require('../services/fetch-movidos');
 const { parsePaginationParams } = require('../utils/fetch-utils');
 const { buildDatabaseErrorResponse } = require('../utils/error-handler');
+const { logPoolAfterResponse } = require('../utils/pool-debug');
 
 const router = Router();
 
@@ -66,6 +67,7 @@ async function handleMovidos(req, res) {
             data: result.data,
             pagination: result.pagination
         });
+        logPoolAfterResponse(sequelize, 'movidos');
     } catch (err) {
         console.error('\nERROR: Fetch Movidos error:');
         console.error('   Error type:', err.constructor.name);

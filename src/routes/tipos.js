@@ -6,6 +6,7 @@ const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier
 const { handleInsertUpdateError, buildDatabaseErrorResponse } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
 const { handleUtimeComparisonArrayData } = require('../utils/utime-comparison-handler');
+const { logPoolAfterResponse } = require('../utils/pool-debug');
 
 const router = Router();
 
@@ -98,6 +99,7 @@ router.get('/', async (req, res) => {
                 data: records,
                 total: records.length
             });
+            logPoolAfterResponse(Tipos.sequelize, 'tipos');
             return;
         }
         
@@ -178,6 +180,7 @@ router.get('/', async (req, res) => {
         logCombinedTiposTemporadas(dbName, data.length, null);
         
         res.json(responseData);
+        logPoolAfterResponse(Tipos.sequelize, 'tipos');
     } catch (err) {
         console.error('[Tipos GET] 오류:', err);
         console.error('[Tipos GET] 요청 정보:', {
@@ -203,6 +206,7 @@ router.get('/:id', async (req, res) => {
         const record = await Tipos.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Not found' });
         res.json(record);
+        logPoolAfterResponse(Tipos.sequelize, 'tipos/:id');
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to fetch tipo', details: err.message });

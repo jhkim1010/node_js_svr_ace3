@@ -7,6 +7,8 @@ const { calculatePagination } = require('../utils/fetch-utils');
  * ref_vcode가 prefix로 시작하지 않는 레코드를 조회 (prefix 기준 제외)
  * ID 기반 페이지네이션 또는 utime 기반 페이지네이션 지원
  *
+ * 풀 사용: 트랜잭션 미사용. sequelize.query()만 사용하므로 쿼리 완료 시 연결이 즉시 풀에 반환됨.
+ *
  * @param {Sequelize} sequelize - Sequelize 인스턴스
  * @param {Object} params - 파라미터 객체
  * @param {string} params.lastGetUtime - utime 기준 시간 (예: '2026-03-06 12:00:00'), last_get_utime 우선
