@@ -2,8 +2,6 @@
 const { Sequelize } = require('sequelize');
 const { buildWhereCondition } = require('./batch-sync-handler');
 const { convertUtimeToString, convertUtimeToSequelizeLiteral, extractUtimeStringFromRecord, shouldUpdateBasedOnUtime } = require('./utime-helpers');
-const { logInfoWithLocation } = require('./log-utils');
-
 /** utime 비교용 최소 attributes: PK + utime_str (일부 DB에 없는 컬럼 선택 방지) */
 function getMinimalUtimeAttributes(Model) {
     const pk = Model.primaryKeyAttributes && Model.primaryKeyAttributes.length
@@ -97,9 +95,6 @@ async function processRecordWithUtimeComparison(
     sequelize
 ) {
     let record;
-    if (Model.name === 'Ingresos') {
-        logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | findOne 직전 | where=${JSON.stringify(whereCondition)}`);
-    }
     try {
         record = await Model.findOne({
             where: whereCondition,
@@ -108,39 +103,15 @@ async function processRecordWithUtimeComparison(
             raw: true
         });
     } catch (findErr) {
-        if (Model.name === 'Ingresos') {
-            const c = findErr?.original?.code || findErr?.code;
-            const msg = (findErr?.original?.message || findErr?.message || '').slice(0, 150);
-            logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | findOne 예외 | code=${c} | message=${msg}`);
-            if (c === '25P02') {
-                logInfoWithLocation(`[Ingresos DEBUG] 25P02 가능 원인: 1)이 연결이 이미 중단된 상태로 풀에서 나옴 2)동일 연결을 다른 요청이 사용 중 3)트랜잭션과 쿼리 연결 불일치`);
-            }
-        }
         throw findErr;
-    }
-    if (Model.name === 'Ingresos' && record != null) {
-        logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | findOne 성공 (record 있음)`);
     }
 
     if (!record) {
-        if (Model.name === 'Ingresos') {
-            const idPart = filteredItem.ingreso_id != null || filteredItem.sucursal != null
-                ? `ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`
-                : JSON.stringify(whereCondition);
-            logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | not_found | where=${idPart} | client_utime=${clientUtimeStr || 'null'}`);
-        }
         return { action: 'not_found', data: null };
     }
 
     const serverUtimeStr = await extractUtimeStringFromRecord(record, Model, whereCondition, transaction);
     const shouldUpdate = shouldUpdateBasedOnUtime(clientUtimeStr, serverUtimeStr);
-
-    if (Model.name === 'Ingresos') {
-        const idPart = filteredItem.ingreso_id != null || filteredItem.sucursal != null
-            ? `ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`
-            : JSON.stringify(whereCondition);
-        logInfoWithLocation(`[Ingresos DEBUG] processRecordWithUtimeComparison | record found | ${idPart} | client_utime=${clientUtimeStr || 'null'} | server_utime=${serverUtimeStr || 'null'} | shouldUpdate=${shouldUpdate} → action=${shouldUpdate ? 'updated' : 'skipped'}`);
-    }
 
     if (shouldUpdate) {
         const updated = await updateRecord(Model, filteredItem, whereCondition, keysToRemove, transaction);

@@ -135,9 +135,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         try {
                             if (transaction && !transaction.finished) await transaction.rollback();
                         } catch (_) {}
-                        if (modelName === 'Ingresos') {
-                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] 트랜잭션 검사 25P02 → rollback 후 250ms 대기 후 재시도`);
-                        }
                         await new Promise(r => setTimeout(r, 250));
                         continue;
                     }
@@ -151,9 +148,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                 // 클라이언트에서 온 utime 값 (문자열로 직접 비교, timezone 변환 없음)
                 const clientUtimeStr = convertUtimeToString(filteredItem.utime);
 
-                if (modelName === 'Ingresos') {
-                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 항목 시작 | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}, bmovido=${filteredItem.bmovido} | client_utime=${clientUtimeStr || 'null'}`);
-                }
 
                 // 테이블별 설정 가져오기
                 const tableConfig = getTableHandlerConfig(modelName);
@@ -192,16 +186,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         }, {});
                         
                         if (canUsePreferredKey && Object.keys(preferredKeyWhere).length === preferredKeyArray.length) {
-                            if (modelName === 'Ingresos') {
-                                try {
-                                    await sequelize.query('SELECT 1', { transaction });
-                                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] processRecordWithUtimeComparison 호출 직전 | 동일 트랜잭션 SELECT 1 재확인 성공`);
-                                } catch (probe2Err) {
-                                    const c2 = probe2Err?.original?.code || probe2Err?.code;
-                                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] processRecordWithUtimeComparison 호출 직전 | SELECT 1 재확인 실패 code=${c2} (트랜잭션이 이미 중단됨)`);
-                                    throw probe2Err;
-                                }
-                            }
                             try {
                                 const resultPk = await processRecordWithUtimeComparison(
                                     Model,
@@ -215,9 +199,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 );
                                 
                                 if (resultPk.action === 'updated') {
-                                    if (modelName === 'Ingresos') {
-                                        logInfoWithLocation(`${dbName} [Ingresos DEBUG] preferredKey 결과 → updated | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | client_utime=${resultPk.clientUtime || 'null'} | server_utime=${resultPk.serverUtime || 'null'}`);
-                                    }
                                     results.push({ index: i, action: 'updated', data: resultPk.data });
                                     updatedCount++;
                                     if (transaction && !transaction.finished) {
@@ -227,9 +208,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                                 
                                 if (resultPk.action === 'skipped') {
-                                    if (modelName === 'Ingresos') {
-                                        logInfoWithLocation(`${dbName} [Ingresos DEBUG] preferredKey 결과 → skipped (server_utime >= client) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | client_utime=${resultPk.clientUtime || 'null'} | server_utime=${resultPk.serverUtime || 'null'}`);
-                                    }
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                     const identifierStr = formatIdentifier(identifier);
                                     results.push({
@@ -251,9 +229,6 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 } // end if (resultPk.action === 'skipped') - preferredUniqueKeys 조회 결과
                                 
                                 if (resultPk.action === 'not_found') {
-                                    if (modelName === 'Ingresos') {
-                                        logInfoWithLocation(`${dbName} [Ingresos DEBUG] preferredKey 결과 → not_found → INSERT 시도로 진행 | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`);
-                                    }
                                     shouldTryPrimaryKey = false;
                                     // if (modelName === 'Ingresos') {
                                     //     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
@@ -496,15 +471,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] INSERT 시도 시작 | ${identifierStr} | 이유: 레코드 없음 (${usedKey}로 조회 실패) | ${clientUtimeInfo}`);
                         // }
                         
-                        if (modelName === 'Ingresos') {
-                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] INSERT 시도 (Model.create 호출) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | client_utime=${clientUtimeStr || 'null'}`);
-                        }
-                        
                         const created = await Model.create(createData, { transaction });
-                        
-                        if (modelName === 'Ingresos') {
-                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] INSERT 성공 (created) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal}`);
-                        }
                         // Extract identifier from filteredItem for logging
                         const identifier = {
                             vcode_id: filteredItem.vcode_id,
@@ -552,27 +519,15 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     } catch (createErr) {
                         const errorMsg = createErr.original ? createErr.original.message : createErr.message || '';
                         const lowerMsg = errorMsg.toLowerCase();
-                        if (modelName === 'Ingresos') {
-                            const code = createErr.original ? createErr.original.code : createErr.code;
-                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] INSERT 실패 (catch) | ingreso_id=${filteredItem.ingreso_id}, sucursal=${filteredItem.sucursal} | code=${code || 'N/A'} | message=${(errorMsg || '').slice(0, 120)}`);
-                        }
-
                         // 3단계: UNIQUE 제약 조건 에러 → 어떤 unique key 인지 출력 후 SKIP
                         // isUniqueConstraintError 함수와 직접 메시지 체크 모두 수행
                         const isUniqueError = isUniqueConstraintError(createErr) ||
                                              lowerMsg.includes('duplicate key') ||
                                              lowerMsg.includes('unique constraint') ||
                                              lowerMsg.includes('violates unique constraint');
-                        if (modelName === 'Ingresos') {
-                            logInfoWithLocation(`${dbName} [Ingresos DEBUG] INSERT 실패 후 분기 | isUniqueError=${isUniqueError} | FK/기타 시 스킵 또는 재throw`);
-                        }
                         if (isUniqueError) {
                             const constraintMatch = errorMsg.match(/constraint "([^"]+)"/i);
                             const constraintName = constraintMatch ? constraintMatch[1] : '알 수 없는 제약 조건';
-                            if (modelName === 'Ingresos') {
-                                logInfoWithLocation(`${dbName} [Ingresos DEBUG] unique 제약 → SAVEPOINT 롤백 후 unique key로 재조회 시도 | constraint=${constraintName}`);
-                            }
-
                             try {
                                 await sequelize.query(`ROLLBACK TO SAVEPOINT ${savepointName}`, { transaction });
                             } catch (rollbackErr) {
@@ -2161,22 +2116,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             const errorCode = itemErr.original ? itemErr.original.code : itemErr.code;
             const is25P02 = errorCode === '25P02';
             if (is25P02 && attempt + 1 < maxAttempts) {
-                if (modelName === 'Ingresos') {
-                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 25P02 → ${attempt + 2}/${maxAttempts}차 시도 전 250ms 대기 후 재시도`);
-                }
                 await new Promise(r => setTimeout(r, 250));
                 continue;
             }
 
-            if (modelName === 'Ingresos') {
-                const rawItem = req.body.data && req.body.data[i];
-                const idPart = rawItem && typeof rawItem === 'object' ? `ingreso_id=${rawItem.ingreso_id}, sucursal=${rawItem.sucursal}` : `index=${i}`;
-                const errMsg = itemErr.original ? itemErr.original.message : itemErr.message;
-                logInfoWithLocation(`${dbName} [Ingresos DEBUG] 최종 실패 (errors.push) | ${idPart} | code=${errorCode || 'N/A'} | ${(errMsg || '').slice(0, 80)}`);
-                if (is25P02) {
-                    logInfoWithLocation(`${dbName} [Ingresos DEBUG] 25P02 가능 원인: (1)풀에서 반환된 연결이 이미 aborted (2)동일 DB에 대한 다른 요청이 같은 연결 사용 중 (3)Sequelize 트랜잭션과 쿼리 연결 불일치 (4)이전 요청 rollback 실패로 연결이 풀에 나쁜 상태로 반환`);
-                }
-            }
             const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const columnMissingLine = formatColumnMissingMessage(itemErr);
