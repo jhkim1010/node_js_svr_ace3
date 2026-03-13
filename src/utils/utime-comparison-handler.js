@@ -901,10 +901,12 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
                                 keysToRemove.forEach(key => delete updateData[key]);
                                 
-                                // utime을 문자열로 보장하여 timezone 변환 방지 (Sequelize.literal 사용)
-                                if (updateData.utime) {
+                                // Codigos는 항상 utime = now() (Argentina 시간대); 그 외는 클라이언트 utime 사용
+                                if (modelName === 'Codigos') {
+                                    updateData.utime = Sequelize.literal('now()');
+                                } else if (updateData.utime) {
                                     updateData.utime = convertUtimeToSequelizeLiteral(updateData.utime);
-                                } // end if (updateData.utime)
+                                }
                                 
                                 await Model.update(updateData, { where: whereCondition, transaction });
                                 const updated = Array.isArray(availableUniqueKey)
@@ -1061,8 +1063,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     const keysToRemove = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
                                     keysToRemove.forEach(key => delete updateData[key]);
                                     
-                                    // utime을 문자열로 보장하여 timezone 변환 방지
-                                    if (updateData.utime) {
+                                    if (modelName === 'Codigos') {
+                                        updateData.utime = Sequelize.literal('now()');
+                                    } else if (updateData.utime) {
                                         let utimeStr = null;
                                         if (updateData.utime instanceof Date) {
                                             const year = updateData.utime.getFullYear();
@@ -1325,9 +1328,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                 const keysToRemove = Array.isArray(retryKeysToRemove) ? retryKeysToRemove : [retryKeysToRemove];
                                                     keysToRemove.forEach(key => delete updateData[key]);
                                                 
-                                                // utime을 문자열로 보장하여 timezone 변환 방지
-                                                if (updateData.utime) {
-                                    let utimeStr = null;
+                                                if (modelName === 'Codigos') {
+                                                    updateData.utime = Sequelize.literal('now()');
+                                                } else if (updateData.utime) {
+                                                    let utimeStr = null;
                                                     if (updateData.utime instanceof Date) {
                                                         const year = updateData.utime.getFullYear();
                                                         const month = String(updateData.utime.getMonth() + 1).padStart(2, '0');
@@ -1336,7 +1340,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                         const minutes = String(updateData.utime.getMinutes()).padStart(2, '0');
                                                         const seconds = String(updateData.utime.getSeconds()).padStart(2, '0');
                                                         const ms = String(updateData.utime.getMilliseconds()).padStart(3, '0');
-                                        utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+                                                        utimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
                                                     } else {
                                                         utimeStr = String(updateData.utime);
                                                     }
@@ -1584,8 +1588,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             const keysToRemove = Array.isArray(retryKeysToRemove) ? retryKeysToRemove : [retryKeysToRemove];
                                             keysToRemove.forEach(key => delete updateData[key]);
                                             
-                                            // utime을 문자열로 보장하여 timezone 변환 방지
-                                            if (updateData.utime) {
+                                            if (modelName === 'Codigos') {
+                                                updateData.utime = Sequelize.literal('now()');
+                                            } else if (updateData.utime) {
                                                 let utimeStr = null;
                                                 if (updateData.utime instanceof Date) {
                                                     const year = updateData.utime.getFullYear();
@@ -1858,8 +1863,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         const keysToRemove = Array.isArray(retryKeysToRemove) ? retryKeysToRemove : [retryKeysToRemove];
                                         keysToRemove.forEach(key => delete updateData[key]);
                                         
-                                        // utime을 문자열로 보장하여 timezone 변환 방지
-                                        if (updateData.utime) {
+                                        if (modelName === 'Codigos') {
+                                            updateData.utime = Sequelize.literal('now()');
+                                        } else if (updateData.utime) {
                                             let utimeStr = null;
                                             if (updateData.utime instanceof Date) {
                                                 const year = updateData.utime.getFullYear();

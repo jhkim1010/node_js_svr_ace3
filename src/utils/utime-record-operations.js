@@ -58,8 +58,11 @@ async function updateRecord(Model, filteredItem, whereCondition, keysToRemove, t
     const keysToRemoveArray = Array.isArray(keysToRemove) ? keysToRemove : [keysToRemove];
     keysToRemoveArray.forEach(key => delete updateData[key]);
     
-    // utime을 문자열로 보장하여 timezone 변환 방지
-    if (updateData.utime) {
+    // Codigos 업데이트 시 항상 utime = now() (연결 timezone = America/Argentina/Buenos_Aires)
+    if (Model.name === 'Codigos') {
+        updateData.utime = Sequelize.literal('now()');
+    } else if (updateData.utime) {
+        // 그 외 모델: utime을 문자열로 보장하여 timezone 변환 방지
         updateData.utime = convertUtimeToSequelizeLiteral(updateData.utime);
     }
     

@@ -692,6 +692,9 @@ router.put('/by-todocodigo/:idTodocodigo', async (req, res) => {
             });
         }
 
+        // codigos 업데이트 시 항상 utime = now() (연결 timezone = America/Argentina/Buenos_Aires)
+        updateData.utime = Sequelize.literal('now()');
+
         const [affectedCount] = await Codigos.update(updateData, {
             where: { ref_id_todocodigo: idTodocodigo }
         });
