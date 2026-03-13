@@ -662,5 +662,58 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
+/**
+ * PUT /api/codigos/by-todocodigo/:idTodocodigo
+ * codigo madre(id_todocodigo)에 연결된 모든 codigo hijo를 body에 넘긴 필드만으로 일괄 업데이트
+ * Body: { pre1?, pre2?, pre3?, pre4?, pre5?, borrado? } (선택 필드만 넘겨도 됨)
+ */
+const BY_TODOCODIGO_ALLOWED_FIELDS = ['pre1', 'pre2', 'pre3', 'pre4', 'pre5', 'borrado'];
+
+router.put('/by-todocodigo/:idTodocodigo', async (req, res) => {
+    try {
+        const idTodocodigo = parseInt(req.params.idTodocodigo, 10);
+        if (Number.isNaN(idTodocodigo)) {
+            return res.status(400).json({ error: 'Invalid idTodocodigo', message: 'idTodocodigo must be a number' });
+        }
+
+        const Codigos = getModelForRequest(req, 'Codigos');
+        const body = req.body || {};
+        const updateData = {};
+        for (const key of BY_TODOCODIGO_ALLOWED_FIELDS) {
+            if (key in body) {
+                updateData[key] = body[key];
+            }
+        }
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({
+                error: 'No updatable fields',
+                message: 'Provide at least one of: pre1, pre2, pre3, pre4, pre5, borrado',
+                allowed: BY_TODOCODIGO_ALLOWED_FIELDS
+            });
+        }
+
+        const [affectedCount] = await Codigos.update(updateData, {
+            where: { ref_id_todocodigo: idTodocodigo }
+        });
+
+        res.json({
+            ok: true,
+            ref_id_todocodigo: idTodocodigo,
+            updated: affectedCount,
+            fields: Object.keys(updateData)
+        });
+    } catch (err) {
+        logTableError('codigos', 'update by-todocodigo', err, req);
+        if (!res.headersSent) {
+            res.status(500).json({
+                error: 'Failed to update codigos by todocodigo',
+                details: err.message,
+                errorType: err.constructor?.name,
+                errorCode: err.original?.code ?? err.code ?? null
+            });
+        }
+    }
+});
+
 module.exports = router;
 
