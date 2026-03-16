@@ -62,11 +62,12 @@ function generateClientId() {
     return `client_${Date.now()}_${++clientIdCounter}`;
 }
 
-// 테이블 목록
+// 테이블 목록 (구독 허용 + LISTEN 채널용). 클라이언트 config enabled 테이블과 맞춤.
 const tables = [
-    'vcodes', 'vdetalle', 'ingresos', 'codigos', 'todocodigos', 
+    'vcodes', 'vdetalle', 'ingresos', 'codigos', 'todocodigos',
     'parametros', 'gasto_info', 'gastos', 'color', 'creditoventas',
-    'clientes', 'tipos', 'vtags', 'online_ventas', 'logs', 'temporadas', 'cuentas'
+    'clientes', 'tipos', 'vtags', 'online_ventas', 'logs', 'temporadas', 'cuentas',
+    'vendedores', 'fventas', 'senias_vinculados'
 ];
 
 // 각 테이블별 INSERT, UPDATE, DELETE 채널 생성
@@ -163,7 +164,8 @@ function initializeWebSocket(server) {
         clientInfo.set(ws.id, {
             clientId: null,
             dbKey: null,
-            sucursal: null
+            sucursal: null,
+            subscribedTables: null  // null = 모든 테이블 구독, array = 해당 테이블만
         });
 
         // 메시지 수신 처리
@@ -179,7 +181,11 @@ function initializeWebSocket(server) {
                 // fetch-more 메시지 처리 (페이지네이션)
                 else if (data.type === 'fetch-more' || data.action === 'fetch-more') {
                     handleFetchMore(ws, data);
-                } 
+                }
+                // 구독 테이블 목록 갱신 (activar/desactivar)
+                else if (data.type === 'update-subscription') {
+                    handleUpdateSubscription(ws, data);
+                }
                 else {
                     // 기타 메시지 처리 (필요시 확장)
                     console.log(`[WebSocket] 알 수 없는 메시지 타입: ${data.type || 'unknown'}`);
@@ -294,11 +300,21 @@ function handleRegisterClient(ws, data) {
     }
     
     if (dbKey) {
+        // 구독 테이블 목록 정규화 (배열이면 소문자, 허용 테이블만; 없으면 null = 전체)
+        const rawTables = data.subscribedTables;
+        let subscribedTables = null;
+        if (Array.isArray(rawTables) && rawTables.length > 0) {
+            const allowed = new Set(tables);
+            subscribedTables = rawTables
+                .map(t => (typeof t === 'string' ? t.toLowerCase().trim() : ''))
+                .filter(t => t && allowed.has(t));
+        }
         // 클라이언트 정보 업데이트
         const info = {
             clientId: clientId,
             dbKey: dbKey,
-            sucursal: data.sucursal !== undefined && data.sucursal !== null ? parseInt(data.sucursal, 10) : null
+            sucursal: data.sucursal !== undefined && data.sucursal !== null ? parseInt(data.sucursal, 10) : null,
+            subscribedTables: subscribedTables
         };
         clientInfo.set(ws.id, info);
         
@@ -315,12 +331,36 @@ function handleRegisterClient(ws, data) {
             type: 'registered',
             clientId: clientId,
             dbKey: dbKey,
-            sucursal: info.sucursal
+            sucursal: info.sucursal,
+            subscribedTables: info.subscribedTables
         });
     } else {
         console.log(`[WebSocket] ❌ 클라이언트 등록 실패: dbKey 생성 불가. data:`, data);
         sendError(ws, 'Failed to register client: dbKey generation failed');
     }
+}
+
+// 구독 테이블 목록 갱신 (update-subscription)
+function handleUpdateSubscription(ws, data) {
+    const info = clientInfo.get(ws.id);
+    if (!info || !info.dbKey) {
+        sendError(ws, 'Register first before updating subscription');
+        return;
+    }
+    const rawTables = data.subscribedTables;
+    let subscribedTables = null;
+    if (Array.isArray(rawTables) && rawTables.length > 0) {
+        const allowed = new Set(tables);
+        subscribedTables = rawTables
+            .map(t => (typeof t === 'string' ? t.toLowerCase().trim() : ''))
+            .filter(t => t && allowed.has(t));
+    }
+    info.subscribedTables = subscribedTables;
+    clientInfo.set(ws.id, info);
+    sendMessage(ws, {
+        type: 'subscription-updated',
+        subscribedTables: subscribedTables
+    });
 }
 
 // 페이지네이션된 데이터 전송 (20개씩)
@@ -844,6 +884,13 @@ function broadcastToDbClients(dbKey, excludeClientId, data) {
         if (excludeWsId && wsId === excludeWsId) {
             filteredCount++;
             return; // 제외
+        }
+        // 구독 테이블 필터: subscribedTables가 배열이면 해당 테이블만 수신
+        if (tableName && Array.isArray(info.subscribedTables) && info.subscribedTables.length > 0) {
+            if (!info.subscribedTables.includes(tableName)) {
+                filteredCount++;
+                return;
+            }
         }
         
         let shouldSend = false;

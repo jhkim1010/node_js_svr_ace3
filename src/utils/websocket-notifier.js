@@ -25,7 +25,12 @@ const routeToTableMap = {
     'tipos': 'tipos',
     'vtags': 'vtags',
     'online_ventas': 'online_ventas',
-    'logs': 'logs'
+    'logs': 'logs',
+    'temporadas': 'temporadas',
+    'cuentas': 'cuentas',
+    'vendedores': 'vendedores',
+    'fventas': 'fventas',
+    'senias_vinculados': 'senias_vinculados'
 };
 
 // HTTP 요청에서 클라이언트 ID 추출
