@@ -43,6 +43,34 @@ HTTPS 환경에서는 `wss://` 로 연결하세요.
 - `clientId`: 서버가 부여한 소켓 식별자. 등록 전에는 이 값이 임시 ID로 쓰일 수 있음.
 - **DB 변경 알림을 받으려면 반드시 아래 “클라이언트 등록”을 해야 합니다.** 등록 전에는 어떤 테이블 알림도 오지 않습니다.
 
+### 2.3 접속 순서 (클라이언트가 할 일)
+
+아래 순서대로 하면 서버 로그에 성공 메시지가 찍힙니다.
+
+| 순서 | 클라이언트 동작 | 서버 로그 (성공 시) |
+|------|-----------------|---------------------|
+| 1 | `wss://sync.coolsistema.com/api/ws` 로 **연결** (쿼리 없이/있어도 됨) | `[WebSocket] upgrade 요청 수신: url=/api/ws, Upgrade=websocket, Connection=upgrade` |
+| 2 | (연결 수립) | `[WebSocket] ✅ 클라이언트 연결됨: id=client_..., url=/api/ws` |
+| 3 | (서버가 먼저 보냄) **첫 메시지** 수신 → `type` 이 `connected` 인지 확인 | `[WebSocket] 메시지 전송됨: type=connected, clientId=...` |
+| 4 | **즉시** `register-client` 전송 (database, user 필수) | - |
+| 5 | (서버 응답) `type: registered` 수신 | `[WebSocket] ✅ 클라이언트 등록됨: id=..., dbKey=..., tables=[...], group size=...` |
+
+**접속 URL**: `wss://sync.coolsistema.com/api/ws`
+
+**등록 메시지 예시** (`connected` 를 받은 뒤 한 번만 보내기):
+
+```json
+{"type": "register-client", "database": "kimah14", "user": "kimah"}
+```
+
+필요 시 `clientId`, `sucursal`, `subscribedTables` 추가.
+
+### 2.4 연결이 안 될 때
+
+- **`upgrade 요청 수신` 로그가 없음** → 요청이 Node까지 안 옴. Nginx/방화벽 확인. [NGINX_WEBSOCKET_SETUP.md](../NGINX_WEBSOCKET_SETUP.md) 참고.
+- **`upgrade 요청 수신` 은 있는데 `클라이언트 연결됨` 없음** → `verifyClient` 거절. 로그에 `지원하지 않는 경로` / `유효하지 않은 Upgrade 헤더` 확인.
+- **`클라이언트 연결됨` 까지 있는데 `클라이언트 등록됨` 없음** → 클라이언트가 `connected` 수신 후 `register-client` 를 안 보냄. 또는 `database`/`user` 오류. 서버는 `type: error` 로 응답.
+
 ---
 
 ## 3. 클라이언트 등록 (필수)

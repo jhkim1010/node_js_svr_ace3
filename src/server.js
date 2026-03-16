@@ -23,20 +23,28 @@ const app = express();
 // HTTP 서버를 Express 없이 생성하여 ws 라이브러리가 upgrade 이벤트를 처리할 수 있도록 함
 const server = http.createServer();
 
-// upgrade 요청 로깅 (WebSocket 연결이 Node에 도달하는지 확인용)
+// upgrade 요청 로깅 (디버깅: 연결 실패 시 여기까지 오는지 확인)
 server.on('upgrade', (request, socket, head) => {
     const url = request.url || '';
+    const method = request.method || '';
     const upgrade = request.headers.upgrade || '';
     const connection = request.headers.connection || '';
-    console.log(`[WebSocket] upgrade 요청 수신: url=${url}, Upgrade=${upgrade}, Connection=${connection}`);
+    const host = request.headers.host || '';
+    const secKey = request.headers['sec-websocket-key'] ? '(있음)' : '(없음)';
+    const remote = socket.remoteAddress || 'unknown';
+    const pathOnly = url.split('?')[0].split('#')[0];
+    const pathOk = pathOnly === '/ws' || pathOnly === '/api/ws';
+    console.log(`[WebSocket 디버그] upgrade 이벤트 발생:`);
+    console.log(`   url=${url} | pathOnly=${pathOnly} | path허용=${pathOk}`);
+    console.log(`   method=${method} | Upgrade=${upgrade} | Connection=${connection}`);
+    console.log(`   Host=${host} | Sec-WebSocket-Key=${secKey} | remote=${remote}`);
 });
 
 // 일반 HTTP 요청만 Express가 처리하도록 설정
 server.on('request', (req, res) => {
     // WebSocket upgrade 요청은 Express가 처리하지 않음
-    // ws 라이브러리가 upgrade 이벤트에서 처리함
     if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-        // Express가 처리하지 않도록 함 (ws 라이브러리가 처리함)
+        console.log(`[WebSocket 디버그] request 이벤트: WebSocket으로 보이는 요청이 들어옴 → Express로 넘기지 않음 (url=${req.url})`);
         return;
     }
     
@@ -100,6 +108,28 @@ app.get('/api/health', (req, res) => {
             error: 'Internal server error',
             message: err.message
         });
+    }
+});
+
+// WebSocket 연결 점검용 디버그 (브라우저/curl로 호출 가능)
+app.get('/api/ws-debug', (req, res) => {
+    try {
+        const wss = getWebSocketServer();
+        const clientCount = wss && wss.clients ? wss.clients.size : 0;
+        res.json({
+            ok: true,
+            serverTime: new Date().toISOString(),
+            websocket: {
+                path: '/api/ws',
+                pathAlt: '/ws',
+                urlExample: `wss://${req.headers.host || 'HOST'}/api/ws`,
+                note: '연결 후 첫 메시지(type=connected) 수신 시 register-client 전송',
+                currentConnections: clientCount
+            },
+            debug: '서버 로그에서 [WebSocket 디버그] 로 연결 단계별 로그 확인'
+        });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
     }
 });
 
