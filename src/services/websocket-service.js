@@ -324,7 +324,10 @@ function handleRegisterClient(ws, data) {
         }
         dbClientGroups.get(dbKey).set(ws.id, ws);
         
-        console.log(`[WebSocket] ✅ 클라이언트 등록됨: id=${ws.id}, clientId=${clientId}, dbKey=${dbKey}, sucursal=${info.sucursal !== null ? info.sucursal : 'all'}, group size=${dbClientGroups.get(dbKey).size}`);
+        const tablesLabel = info.subscribedTables && info.subscribedTables.length > 0
+            ? info.subscribedTables.join(', ')
+            : 'all';
+        console.log(`[WebSocket] ✅ 클라이언트 등록됨: id=${ws.id}, clientId=${clientId}, dbKey=${dbKey}, sucursal=${info.sucursal !== null ? info.sucursal : 'all'}, tables=[${tablesLabel}], group size=${dbClientGroups.get(dbKey).size}`);
         
         // 등록 확인 메시지 전송
         sendMessage(ws, {
@@ -357,6 +360,8 @@ function handleUpdateSubscription(ws, data) {
     }
     info.subscribedTables = subscribedTables;
     clientInfo.set(ws.id, info);
+    const tablesLabel = subscribedTables && subscribedTables.length > 0 ? subscribedTables.join(', ') : 'all';
+    console.log(`[WebSocket] 구독 갱신: id=${ws.id}, clientId=${info.clientId}, tables=[${tablesLabel}]`);
     sendMessage(ws, {
         type: 'subscription-updated',
         subscribedTables: subscribedTables
