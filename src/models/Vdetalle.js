@@ -44,7 +44,7 @@ function defineVdetalleModel(sequelize) {
     schema: 'public',
     timestamps: false,
     indexes: [
-        { unique: true, name: 'vdetalle_id.uniq', fields: ['id_vdetalle', 'sucursal', 'ref_id_vcode'] },
+        { unique: true, name: 'vdetalle_unique', fields: ['sucursal', 'id_vdetalle'] },
         { name: 'item_id_codigo_ventas', fields: ['ref_id_codigo'] },
         { name: 'item_ventas', fields: ['codigo1'] },
         { name: 'item_ventas_borrado', fields: ['codigo1', 'borrado'] },

@@ -52,26 +52,26 @@ router.post('/', async (req, res) => {
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
         
         // BATCH_SYNC 작업 처리 (Vdetalle 전용 핸들러 사용)
-        // vdetalle는 id_vdetalle, sucursal, ref_id_vcode의 복합 unique key를 사용
+        // vdetalle는 (sucursal, id_vdetalle) unique 제약 사용. skip/update는 utime 기준.
         if (req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data)) {
-            const result = await handleVdetalleBatchSync(req, res, Vdetalle, ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'Vdetalle');
+            const result = await handleVdetalleBatchSync(req, res, Vdetalle, ['sucursal', 'id_vdetalle'], 'Vdetalle');
             await notifyBatchSync(req, Vdetalle, result);
             return res.status(200).json(result);
         }
         
         // data가 배열인 경우 처리 (UPDATE, CREATE 등 다른 operation에서도) (utime 비교를 통한 개별 처리)
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
-            const result = await handleUtimeComparisonArrayData(req, res, Vdetalle, ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'Vdetalle');
+            const result = await handleUtimeComparisonArrayData(req, res, Vdetalle, ['sucursal', 'id_vdetalle'], 'Vdetalle');
             return res.status(200).json(result);
         }
         
         // 일반 단일 생성 요청 처리 (복합 unique key 기반으로 UPDATE/CREATE 결정)
-        const result = await handleSingleItem(req, res, Vdetalle, ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'Vdetalle');
+        const result = await handleSingleItem(req, res, Vdetalle, ['sucursal', 'id_vdetalle'], 'Vdetalle');
         await notifyDbChange(req, Vdetalle, result.action === 'created' ? 'create' : 'update', result.data);
         res.status(result.action === 'created' ? 201 : 200).json(result.data);
     } catch (err) {
         logTableError('vdetalle', 'create/update vdetalle (POST)', err, req);
-        handleInsertUpdateError(err, req, 'Vdetalle', ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'vdetalle');
+        handleInsertUpdateError(err, req, 'Vdetalle', ['sucursal', 'id_vdetalle'], 'vdetalle');
         if (!res.headersSent) res.status(400).json({ 
             error: 'Failed to create vdetalle', 
             details: err.message,
@@ -96,7 +96,7 @@ router.put('/:id', async (req, res) => {
         if (Array.isArray(req.body.data) && req.body.data.length > 0) {
             req.body.operation = req.body.operation || 'UPDATE';
             // 50개를 넘으면 배치로 나눠서 처리
-            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Vdetalle, ['id_vdetalle', 'sucursal', 'ref_id_vcode'], 'Vdetalle');
+            const result = await processBatchedArray(req, res, handleUtimeComparisonArrayData, Vdetalle, ['sucursal', 'id_vdetalle'], 'Vdetalle');
             await notifyBatchSync(req, Vdetalle, result);
             return res.status(200).json(result);
         }
