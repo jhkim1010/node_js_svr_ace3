@@ -728,14 +728,10 @@ async function setupDbListener(host, port, database, user, password, ssl = false
         }
     });
 
-    // 연결 오류 처리
-    client.on('error', async (err) => {
-        console.error(`❌ DB LISTEN connection error (${key}):`, err.message);
-        
-        // 리스너에서 제거
+    // client 해제 및 pool 종료 후 선택적으로 재연결하는 공통 정리 함수
+    const cleanupListener = async (shouldReconnect) => {
         dbListeners.delete(key);
-        
-        // 클라이언트 해제
+
         try {
             if (client && !client._ending) {
                 client.release();
@@ -743,16 +739,33 @@ async function setupDbListener(host, port, database, user, password, ssl = false
         } catch (releaseErr) {
             console.error(`[WebSocket] Client release error:`, releaseErr.message);
         }
-        
-        // Pool 정리 (더 이상 사용하지 않을 경우)
-        // 주의: 다른 연결이 pool을 사용할 수 있으므로 신중하게 처리
-        // 현재는 pool을 유지하되, client만 해제
+
+        try {
+            await pool.end();
+        } catch (poolErr) {
+            // pool 종료 오류는 무시
+        }
+
+        if (shouldReconnect) {
+            console.log(`[WebSocket] DB LISTEN 재연결 시도 예정 (5초 후): ${key}`);
+            setTimeout(() => {
+                setupDbListener(host, port, database, user, password, ssl).catch((err) => {
+                    console.error(`[WebSocket] DB LISTEN 재연결 실패 (${key}):`, err.message);
+                });
+            }, 5000);
+        }
+    };
+
+    // 연결 오류 처리
+    client.on('error', async (err) => {
+        console.error(`❌ DB LISTEN connection error (${key}):`, err.message);
+        await cleanupListener(true);
     });
 
     // 연결 종료 처리
     client.on('end', () => {
         console.log(`[WebSocket] DB LISTEN connection ended (${key})`);
-        dbListeners.delete(key);
+        cleanupListener(false);
     });
 
     dbListeners.set(key, { client, pool });
