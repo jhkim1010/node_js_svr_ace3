@@ -400,9 +400,71 @@ ws.send(JSON.stringify({
 
 ---
 
-## 10. 참고 문서
+## 10. Python 클라이언트 예제
+
+클라이언트가 Python인 경우 `websocket-client` 또는 `websockets` 라이브러리를 사용할 수 있습니다.
+
+**의존성**: `pip install websocket-client`
+
+```python
+import json
+import websocket
+
+WS_URL = "wss://sync.coolsistema.com/api/ws"
+
+def on_message(ws, message):
+    data = json.loads(message)
+    msg_type = data.get("type")
+    if msg_type == "connected":
+        # 연결 직후: 등록 메시지 전송
+        ws.send(json.dumps({
+            "type": "register-client",
+            "database": "ace17",
+            "user": "ace",
+            "clientId": "my_python_client",
+            "sucursal": 1,
+            "subscribedTables": ["codigos", "todocodigos", "ingresos"]
+        }))
+    elif msg_type == "registered":
+        print("등록 완료:", data.get("clientId"), "tables:", data.get("subscribedTables"))
+    elif msg_type == "db-change":
+        table = data.get("table")
+        operation = data.get("operation")
+        items = data.get("data") or ([] if not data.get("payload") else [json.loads(data["payload"])])
+        for item in (items if isinstance(items, list) else [items]):
+            print(f"[{table}] {operation}:", item.get("codigo") or item.get("tcodigo") or item)
+    elif msg_type == "error":
+        print("에러:", data.get("message"))
+
+def on_error(ws, error):
+    print("WebSocket 오류:", error)
+
+def on_close(ws, close_status_code, close_msg):
+    print("연결 종료:", close_status_code, close_msg)
+
+def on_open(ws):
+    print("연결됨. connected 메시지 대기 중...")
+
+if __name__ == "__main__":
+    ws = websocket.WebSocketApp(
+        WS_URL,
+        on_open=on_open,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
+    )
+    ws.run_forever()
+```
+
+- 서버가 **30초마다 ping**을 보내므로, `websocket-client`는 기본적으로 pong을 응답합니다.
+- **재연결** 시에는 다시 `connected` → `register-client` 순서로 보내면 됩니다.
+- **config에서 enabled인 테이블만** `subscribedTables`에 넣어서 보내면 됩니다 (§5.2).
+
+---
+
+## 11. 참고 문서
 
 - **[WEBSOCKET_MESSAGE_FORMAT.md](./WEBSOCKET_MESSAGE_FORMAT.md)**  
   수신/발신 메시지의 상세 필드, codigos 예시, Flutter/JavaScript 예제 코드 등.
 
-- API에서 “이 요청을 한 클라이언트에게는 알림을 보내지 않으려면” 해당 API 요청에 **헤더 `X-Client-ID`** 를 넣고, 그 값을 WebSocket 등록 시 보낸 `clientId`와 동일하게 맞추면 됩니다. (서버는 해당 clientId를 가진 소켓에는 그 변경 알림을 보내지 않습니다.)
+- API에서 “이 요청을 한 클라이언트에게는 알림을 보내지 않으려면” 해당 API 요청에 **헤더 `X-Client-ID`** 를 넣고, 그 값을 WebSocket 등록 시 보낸 `clientId`와 동일하게 맞추면 됩니다. (서버는 해당 clientId를 가진 소켓에는 그 변경 알림을 보내지 않습니다.) **Python** 클라이언트 예제는 §10 참고.

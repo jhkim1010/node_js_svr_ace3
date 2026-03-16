@@ -23,11 +23,13 @@ const app = express();
 // HTTP 서버를 Express 없이 생성하여 ws 라이브러리가 upgrade 이벤트를 처리할 수 있도록 함
 const server = http.createServer();
 
-// upgrade 이벤트는 ws 라이브러리가 자동으로 처리함
-// 여기서는 로깅만 수행 (필요시 디버깅용으로 활성화)
-// server.on('upgrade', (request, socket, head) => {
-//     // 디버깅이 필요한 경우에만 활성화
-// });
+// upgrade 요청 로깅 (WebSocket 연결이 Node에 도달하는지 확인용)
+server.on('upgrade', (request, socket, head) => {
+    const url = request.url || '';
+    const upgrade = request.headers.upgrade || '';
+    const connection = request.headers.connection || '';
+    console.log(`[WebSocket] upgrade 요청 수신: url=${url}, Upgrade=${upgrade}, Connection=${connection}`);
+});
 
 // 일반 HTTP 요청만 Express가 처리하도록 설정
 server.on('request', (req, res) => {
