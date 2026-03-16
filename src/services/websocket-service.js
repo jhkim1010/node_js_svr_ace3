@@ -107,23 +107,12 @@ function initializeWebSocket(server) {
                 const pathOnly = rawUrl.split('?')[0].split('#')[0];
                 const upgrade = info.req.headers.upgrade;
                 
-                console.log(`[WebSocket 디버그] verifyClient 호출: rawUrl=${rawUrl} pathOnly=${pathOnly} upgrade=${upgrade || '(없음)'}`);
-                
                 // 경로 확인 (쿼리/해시 제외). /ws 또는 /api/ws 허용
                 const isWebSocketPath = pathOnly === '/ws' || pathOnly === '/api/ws';
                 
-                if (!isWebSocketPath) {
-                    console.log(`[WebSocket] ⚠️ verifyClient 거절: 지원하지 않는 경로 (허용: /ws, /api/ws)`);
-                    return false;
-                }
+                if (!isWebSocketPath) return false;
+                if (!upgrade || upgrade.toLowerCase() !== 'websocket') return false;
                 
-                // Upgrade 헤더 확인
-                if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
-                    console.log(`[WebSocket] ⚠️ verifyClient 거절: Upgrade 헤더 없음 또는 websocket 아님`);
-                    return false;
-                }
-                
-                console.log(`[WebSocket 디버그] verifyClient 통과 → connection 이벤트로 진행`);
                 return true;
             }
         });
@@ -150,7 +139,6 @@ function initializeWebSocket(server) {
     console.log(`[WebSocket] connection 이벤트 리스너 등록 완료`);
 
     wss.on('connection', (ws, req) => {
-        console.log(`[WebSocket 디버그] connection 이벤트 발생 (verifyClient 통과 직후)`);
         // 고유 ID 할당
         ws.id = generateClientId();
         const remoteAddress = req.socket.remoteAddress || 'unknown';
@@ -164,8 +152,6 @@ function initializeWebSocket(server) {
             return;
         }
         
-        console.log(`[WebSocket] ✅ 클라이언트 연결됨: id=${ws.id}, remoteAddress=${remoteAddress}, url=${requestUrl}`);
-        
         // 클라이언트 정보 초기화
         clientInfo.set(ws.id, {
             clientId: null,
@@ -174,17 +160,10 @@ function initializeWebSocket(server) {
             subscribedTables: null  // null = 모든 테이블 구독, array = 해당 테이블만
         });
 
-        // 메시지 수신 처리 (디버깅: 첫 메시지 로그)
-        let firstMessageLogged = false;
+        // 메시지 수신 처리
         ws.on('message', (message) => {
-            const raw = message.toString();
-            if (!firstMessageLogged) {
-                firstMessageLogged = true;
-                const preview = raw.length > 120 ? raw.substring(0, 120) + '...' : raw;
-                console.log(`[WebSocket 디버그] 클라이언트 첫 메시지 수신 (id=${ws.id}) length=${raw.length} preview=${preview}`);
-            }
             try {
-                const data = JSON.parse(raw);
+                const data = JSON.parse(message.toString());
                 const msgType = data.type || data.action || 'unknown';
                 
                 // register-client 또는 register 메시지 처리 (register는 register-client의 별칭)
@@ -205,7 +184,6 @@ function initializeWebSocket(server) {
                     console.log(`[WebSocket] 알 수 없는 메시지 타입: ${msgType}`);
                 }
             } catch (err) {
-                console.error(`[WebSocket 디버그] 메시지 파싱 오류: ${err.message} | raw(앞80자)=${raw.substring(0, 80)}`);
                 sendError(ws, 'Invalid message format');
             }
         });
@@ -298,7 +276,6 @@ function initializeWebSocket(server) {
 function handleRegisterClient(ws, data) {
     const database = data.database || data.dbName || data.db_name;
     const user = data.user || data.dbUser || data.db_user;
-    console.log(`[WebSocket 디버그] handleRegisterClient 호출: database=${database || '(없음)'}, user=${user || '(없음)'}, dbKey=${data.dbKey ? '(있음)' : '(없음)'}`);
     
     let clientId = data.clientId || ws.id;
     let dbKey = data.dbKey;
@@ -352,7 +329,6 @@ function handleRegisterClient(ws, data) {
             subscribedTables: info.subscribedTables
         });
     } else {
-        console.log(`[WebSocket 디버그] ❌ 클라이언트 등록 실패: dbKey 생성 불가. database/user 또는 dbKey 필요. 받은 키:`, Object.keys(data || {}));
         sendError(ws, 'Failed to register client: dbKey generation failed');
     }
 }
@@ -374,8 +350,6 @@ function handleUpdateSubscription(ws, data) {
     }
     info.subscribedTables = subscribedTables;
     clientInfo.set(ws.id, info);
-    const tablesLabel = subscribedTables && subscribedTables.length > 0 ? subscribedTables.join(', ') : 'all';
-    console.log(`[WebSocket] 구독 갱신: id=${ws.id}, clientId=${info.clientId}, tables=[${tablesLabel}]`);
     sendMessage(ws, {
         type: 'subscription-updated',
         subscribedTables: subscribedTables
@@ -535,7 +509,7 @@ function sendMessage(ws, data) {
         try {
             ws.send(JSON.stringify(data));
             // 연결 확인 메시지는 로그 출력 (디버깅용)
-            if (data.type === 'connected' || data.type === 'registered') {
+            if (data.type === 'registered') {
                 console.log(`[WebSocket] 메시지 전송됨: type=${data.type}, clientId=${data.clientId || 'unknown'}`);
             }
         } catch (err) {
