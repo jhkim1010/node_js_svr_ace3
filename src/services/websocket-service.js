@@ -103,14 +103,15 @@ function initializeWebSocket(server) {
             // ping은 60초마다 보내므로, clientTimeout을 120초로 설정하여 충분한 여유 확보
             clientTimeout: 120000, // 120초 (2분) - ping 간격(60초)의 2배로 설정
             verifyClient: (info) => {
-                const path = info.req.url;
+                const rawUrl = info.req.url || '';
+                const pathOnly = rawUrl.split('?')[0].split('#')[0];
                 const upgrade = info.req.headers.upgrade;
                 
-                // 경로 확인
-                const isWebSocketPath = path === '/ws' || path === '/api/ws';
+                // 경로 확인 (쿼리/해시 제외). /ws 또는 /api/ws 허용
+                const isWebSocketPath = pathOnly === '/ws' || pathOnly === '/api/ws';
                 
                 if (!isWebSocketPath) {
-                    console.log(`[WebSocket] ⚠️ 지원하지 않는 경로로 연결 시도: ${path}`);
+                    console.log(`[WebSocket] ⚠️ 지원하지 않는 경로로 연결 시도: ${rawUrl}`);
                     return false;
                 }
                 
@@ -150,9 +151,10 @@ function initializeWebSocket(server) {
         ws.id = generateClientId();
         const remoteAddress = req.socket.remoteAddress || 'unknown';
         const requestUrl = req.url || req.originalUrl || 'unknown';
+        const pathOnly = String(requestUrl).split('?')[0].split('#')[0];
         
-        // 경로 확인: /ws 또는 /api/ws만 허용
-        if (requestUrl !== '/ws' && requestUrl !== '/api/ws') {
+        // 경로 확인: /ws 또는 /api/ws만 허용 (쿼리/해시 무시)
+        if (pathOnly !== '/ws' && pathOnly !== '/api/ws') {
             console.log(`[WebSocket] ⚠️ 지원하지 않는 경로로 연결 시도: ${requestUrl}`);
             ws.close(1008, 'Unsupported path');
             return;
