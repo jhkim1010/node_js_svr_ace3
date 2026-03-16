@@ -210,6 +210,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 if (resultPk.action === 'skipped') {
                                     const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                     const identifierStr = formatIdentifier(identifier);
+                                    const utimeInfo = `server=${resultPk.serverUtime ?? 'null'}, client=${resultPk.clientUtime ?? 'null'}`;
                                     results.push({
                                         index: i,
                                         action: 'skipped',
@@ -329,7 +330,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             if (resultPk.action === 'skipped') { // primary key 조회 결과 - skipped
                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                 const identifierStr = formatIdentifier(identifier);
-                                // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
+                                const utimeInfo = `server=${resultPk.serverUtime ?? 'null'}, client=${resultPk.clientUtime ?? 'null'}`;
                                 results.push({
                                     index: i,
                                     action: 'skipped',
@@ -578,7 +579,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     if (resultRetry.action === 'skipped') { // primary key retry 결과 - skipped
                                         const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                         const identifierStr = formatIdentifier(identifier);
-                                        // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
+                                        const utimeInfo = `server=${resultRetry.serverUtime ?? 'null'}, client=${resultRetry.clientUtime ?? 'null'}`;
                                         results.push({
                                             index: i,
                                             action: 'skipped',
@@ -659,7 +660,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             if (resultRetry.action === 'skipped') { // unique key retry 결과 - skipped
                                                 const identifier = extractRecordIdentifier(filteredItem, primaryKey);
                                                 const identifierStr = formatIdentifier(identifier);
-                                                // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
+                                                const utimeInfo = `server=${resultRetry.serverUtime ?? 'null'}, client=${resultRetry.clientUtime ?? 'null'}`;
                                                 results.push({
                                                     index: i,
                                                     action: 'skipped',
@@ -956,16 +957,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     Object.assign(identifier, extractRecordIdentifier(existingRecord, primaryKey));
                                 }
                                 const identifierStr = formatIdentifier(identifier);
-                                // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
-                                results.push({ 
-                                    index: i, 
-                                    action: 'skipped', 
+                                const utimeInfo = `server=${serverUtimeStr ?? 'null'}, client=${clientUtimeStr ?? 'null'}`;
+                                results.push({
+                                    index: i,
+                                    action: 'skipped',
                                     reason: 'server_utime_newer',
                                     reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                     serverUtime: serverUtimeStr,
                                     clientUtime: clientUtimeStr,
                                     identifier: identifier,
-                                    data: existingRecord 
+                                    data: existingRecord
                                 });
                                 skippedCount++;
                                 
@@ -1109,10 +1110,10 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                         Object.assign(identifier, extractRecordIdentifier(existingRecordByPk, primaryKey));
                                     } // end if (existingRecordByPk)
                                     const identifierStr = formatIdentifier(identifier);
-                                    // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
-                                    results.push({ 
-                                        index: i, 
-                                        action: 'skipped', 
+                                    const utimeInfo = `server=${serverUtimeStr ?? 'null'}, client=${clientUtimeStr ?? 'null'}`;
+                                    results.push({
+                                        index: i,
+                                        action: 'skipped',
                                         reason: 'server_utime_newer',
                                         reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                         serverUtime: serverUtimeStr,
@@ -1369,16 +1370,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                                     Object.assign(identifier, extractRecordIdentifier(retryRecord, primaryKey));
                                                 }
                                                 const identifierStr = formatIdentifier(identifier);
-                                                // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
-                                                results.push({ 
-                                                    index: i, 
-                                                    action: 'skipped', 
+                                                const utimeInfo = `server=${serverUtimeStr ?? 'null'}, client=${clientUtimeStr ?? 'null'}`;
+                                                results.push({
+                                                    index: i,
+                                                    action: 'skipped',
                                                     reason: 'server_utime_newer',
                                                     reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                                     serverUtime: serverUtimeStr,
                                                     clientUtime: clientUtimeStr,
                                                     identifier: identifier,
-                                                    data: retryRecord 
+                                                    data: retryRecord
                                                 });
                                                 skippedCount++;
                                                 
@@ -1899,16 +1900,16 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             Object.assign(identifier, extractRecordIdentifier(retryRecord, primaryKey));
                                         }
                                         const identifierStr = formatIdentifier(identifier);
-                                        // 항목별 SKIP 로그 제거 (마지막 1줄 요약으로 대체)
-                                        results.push({ 
-                                            index: i, 
-                                            action: 'skipped', 
+                                        const utimeInfo = `server=${serverUtimeStr ?? 'null'}, client=${clientUtimeStr ?? 'null'}`;
+                                        results.push({
+                                            index: i,
+                                            action: 'skipped',
                                             reason: 'server_utime_newer',
                                             reason_en: `Skipped because server utime is newer or equal: ${utimeInfo}`,
                                             serverUtime: serverUtimeStr,
                                             clientUtime: clientUtimeStr,
                                             identifier: identifier,
-                                            data: retryRecord 
+                                            data: retryRecord
                                         });
                                         skippedCount++;
                                         
