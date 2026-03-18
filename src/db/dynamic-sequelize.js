@@ -7,6 +7,19 @@ const connectionPool = new Map();
 // 전체 연결 풀의 총 최대값 (환경 변수로 설정 가능, 기본값: 500)
 const TOTAL_POOL_MAX = parseInt(process.env.DB_POOL_TOTAL_MAX) || parseInt(process.env.MAX_CONNECTIONS) || 500;
 
+// connectionPool Map의 최대 항목 수 (LRU 퇴출 기준, 기본값: 50)
+const MAX_POOL_ENTRIES = parseInt(process.env.DB_POOL_MAX_ENTRIES) || 50;
+
+// LRU 퇴출: Map 삽입 순서 기준으로 가장 오래된 항목 제거 후 sequelize.close()
+function evictLRU() {
+    const [oldestKey, oldestSequelize] = connectionPool.entries().next().value;
+    connectionPool.delete(oldestKey);
+    oldestSequelize.close().catch(err => {
+        console.warn(`[Connection Pool] ⚠️ LRU 퇴출 연결 종료 실패 (${oldestKey}): ${err.message}`);
+    });
+    console.log(`[Connection Pool] 🗑️ LRU 퇴출: ${oldestKey} (풀 항목 한계: ${MAX_POOL_ENTRIES})`);
+}
+
 // 각 데이터베이스당 최대 연결 수 (환경 변수로 설정 가능, 기본값: 50)
 const DB_POOL_MAX_DEFAULT = 50;
 
@@ -116,11 +129,19 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     host = host || getDefaultDbHost();
     const key = getConnectionKey(host, port, database, user);
     
-    // 이미 존재하는 연결이 있으면 재사용
+    // 이미 존재하는 연결이 있으면 LRU 갱신 후 재사용 (Map 맨 뒤로 이동)
     if (connectionPool.has(key)) {
-        return connectionPool.get(key);
+        const existing = connectionPool.get(key);
+        connectionPool.delete(key);
+        connectionPool.set(key, existing);
+        return existing;
     }
-    
+
+    // 최대 항목 수 초과 시 가장 오래된 항목 LRU 퇴출
+    if (connectionPool.size >= MAX_POOL_ENTRIES) {
+        evictLRU();
+    }
+
     // 전체 연결 풀 사용량 확인
     const { totalUsed } = getTotalPoolUsage();
     

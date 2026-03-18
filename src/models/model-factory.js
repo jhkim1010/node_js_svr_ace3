@@ -50,28 +50,20 @@ function getModelForRequest(req, modelName) {
     if (!req.dbConfig) {
         throw new Error('DB configuration not found in request. Ensure db-header middleware is applied.');
     }
-    
+
     const { host, port, database, user, password, ssl } = req.dbConfig;
     const sequelize = getDynamicSequelize(host, port, database, user, password, ssl);
-    
+
     if (!modelDefinitions[modelName]) {
         throw new Error(`Model definition not found: ${modelName}`);
     }
-    
-    // 동적 모델 인스턴스 생성 (요청별 캐싱)
-    const cacheKey = `${modelName}_${host}_${port}_${database}_${user}`;
-    
-    if (!req._modelCache) {
-        req._modelCache = new Map();
+
+    // Sequelize 인스턴스가 sequelize.models[name]에 모델을 캐싱하므로 재사용
+    if (sequelize.models[modelName]) {
+        return sequelize.models[modelName];
     }
-    
-    if (req._modelCache.has(cacheKey)) {
-        return req._modelCache.get(cacheKey);
-    }
-    
-    const Model = modelDefinitions[modelName](sequelize);
-    req._modelCache.set(cacheKey, Model);
-    return Model;
+
+    return modelDefinitions[modelName](sequelize);
 }
 
 module.exports = { getModelForRequest };
