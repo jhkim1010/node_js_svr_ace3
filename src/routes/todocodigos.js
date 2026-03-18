@@ -49,10 +49,18 @@ router.get('/', async (req, res) => {
         const defaultSortColumn = 'tcodigo';
         const validSortBy = sortColumn && allowedSortColumns.includes(sortColumn) ? sortColumn : defaultSortColumn;
         
+        // borrado 파라미터 확인 (없거나 0이면 borrado = false 만 조회)
+        const borradoParam = req.body?.borrado ?? req.query?.borrado;
+        const filterBorradoFalse = borradoParam === undefined || borradoParam === null || borradoParam === 0 || borradoParam === '0' || borradoParam === false || borradoParam === 'false';
+
         // WHERE 조건 구성
         let whereConditions = [];
         let replacements = {};
-        
+
+        if (filterBorradoFalse) {
+            whereConditions.push('borrado = false');
+        }
+
         if (idTodocodigo) {
             // id_todocodigo 파라미터로 페이지네이션 (다음 페이지 요청 시 사용)
             const maxIdTodocodigo = parseInt(idTodocodigo, 10);
