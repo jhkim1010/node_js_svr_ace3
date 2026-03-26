@@ -122,19 +122,19 @@ router.get('/', async (req, res) => {
         
         // JOIN 쿼리 실행 (사용자가 요청한 필드 + 페이지네이션을 위한 id_codigo)
         const query = `
-            SELECT 
-                c.codigo, 
-                c.descripcion, 
-                c.pre1, 
-                c.pre2, 
-                c.pre3, 
-                c.pre4, 
-                c.pre5, 
-                c.preorg, 
-                t.tcodigo, 
-                c.borrado, 
-                c.b_sincronizar_x_web, 
-                c.id_woocommerce, 
+            SELECT
+                c.codigo,
+                c.descripcion,
+                c.pre1,
+                c.pre2,
+                c.pre3,
+                c.pre4,
+                c.pre5,
+                c.preorg,
+                t.tcodigo,
+                c.borrado,
+                c.b_sincronizar_x_web,
+                c.id_woocommerce,
                 c.id_woocommerce_producto,
                 c.id_codigo
             FROM codigos c
@@ -170,6 +170,13 @@ router.get('/', async (req, res) => {
             }
         }
         
+        // 참조 테이블 데이터 조회 (tipos, temporadas, color)
+        const [tipos, temporadas, colores] = await Promise.all([
+            sequelize.query('SELECT id_tipo, tpdesc FROM tipos WHERE borrado = false ORDER BY tpdesc', { type: Sequelize.QueryTypes.SELECT }),
+            sequelize.query('SELECT id_temporada, temporada_nombre FROM temporadas WHERE borrado = false ORDER BY temporada_nombre', { type: Sequelize.QueryTypes.SELECT }),
+            sequelize.query('SELECT id_color, descripcioncolor FROM color WHERE borrado = false ORDER BY descripcioncolor', { type: Sequelize.QueryTypes.SELECT }),
+        ]);
+
         // 페이지네이션 정보와 함께 응답
         const responseData = {
             data: data,
@@ -184,12 +191,15 @@ router.get('/', async (req, res) => {
                 sort_column: validSortBy,
                 sort_ascending: sortAscending,
                 color_id: colorIdInt
-            }
+            },
+            tipos,
+            temporadas,
+            colores
         };
-        
+
         // 응답 로거에서 사용할 데이터 개수 저장
         req._responseDataCount = data.length;
-        
+
         res.json(responseData);
         logPoolAfterResponse(sequelize, 'codigos');
     } catch (err) {

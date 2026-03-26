@@ -71,7 +71,7 @@ router.get('/', async (req, res) => {
                 replacements.idTodocodigo = maxIdTodocodigo;
             }
         }
-        
+
         // last_get_utime이 있으면 utime 필터 추가
         if (lastGetUtime) {
             // ISO 8601 형식의 'T'를 공백으로 변환하고 시간대 정보 제거
@@ -80,12 +80,12 @@ router.get('/', async (req, res) => {
             whereConditions.push(`utime::text > :lastGetUtime`);
             replacements.lastGetUtime = utimeStr;
         }
-        
+
         // FilteringWord 검색 조건 추가 (tcodigo 또는 tdesc에서만 검색)
         if (filteringWord && filteringWord.trim()) {
             const searchTerm = `%${filteringWord.trim()}%`;
             whereConditions.push(`(
-                tcodigo ILIKE :filteringWord OR 
+                tcodigo ILIKE :filteringWord OR
                 tdesc ILIKE :filteringWord
             )`);
             replacements.filteringWord = searchTerm;
@@ -112,40 +112,40 @@ router.get('/', async (req, res) => {
         
         // 쿼리 실행 (사용자가 요청한 필드 + 페이지네이션을 위한 id_todocodigo)
         const query = `
-            SELECT 
-                id_todocodigo, 
-                tcodigo, 
-                tdesc, 
-                tpre1, 
-                tpre2, 
-                tpre3, 
+            SELECT
+                id_todocodigo,
+                tcodigo,
+                tdesc,
+                tpre1,
+                tpre2,
+                tpre3,
                 torgpre,
-                ttelacodigo, 
-                ttelakg, 
-                tinfo1, 
-                tinfo2, 
-                tinfo3, 
-                utime, 
+                ttelacodigo,
+                ttelakg,
+                tinfo1,
+                tinfo2,
+                tinfo3,
+                utime,
                 borrado,
-                fotonombre, 
-                tpre4, 
-                tpre5, 
-                pubip, 
-                ip, 
-                mac, 
+                fotonombre,
+                tpre4,
+                tpre5,
+                pubip,
+                ip,
+                mac,
                 bmobile,
-                ref_id_temporada, 
-                ref_id_tipo, 
-                ref_id_origen, 
-                ref_id_empresa, 
+                ref_id_temporada,
+                ref_id_tipo,
+                ref_id_origen,
+                ref_id_empresa,
                 memo,
-                estatus_precios, 
-                tprecio_dolar, 
-                utime_modificado, 
+                estatus_precios,
+                tprecio_dolar,
+                utime_modificado,
                 id_todocodigo_centralizado,
-                b_mostrar_vcontrol, 
-                d_oferta_mode, 
-                id_serial, 
+                b_mostrar_vcontrol,
+                d_oferta_mode,
+                id_serial,
                 str_prefijo
             FROM todocodigos
             ${whereClause}
@@ -179,6 +179,13 @@ router.get('/', async (req, res) => {
             }
         }
         
+        // 참조 테이블 데이터 조회 (tipos, temporadas, color)
+        const [tipos, temporadas, colores] = await Promise.all([
+            sequelize.query('SELECT id_tipo, tpdesc FROM tipos WHERE borrado = false ORDER BY tpdesc', { type: Sequelize.QueryTypes.SELECT }),
+            sequelize.query('SELECT id_temporada, temporada_nombre FROM temporadas WHERE borrado = false ORDER BY temporada_nombre', { type: Sequelize.QueryTypes.SELECT }),
+            sequelize.query('SELECT id_color, descripcioncolor FROM color WHERE borrado = false ORDER BY descripcioncolor', { type: Sequelize.QueryTypes.SELECT }),
+        ]);
+
         // 페이지네이션 정보와 함께 응답
         const responseData = {
             data: data,
@@ -192,12 +199,15 @@ router.get('/', async (req, res) => {
                 filtering_word: filteringWord || null,
                 sort_column: validSortBy,
                 sort_ascending: sortAscending
-            }
+            },
+            tipos,
+            temporadas,
+            colores
         };
-        
+
         // 응답 로거에서 사용할 데이터 개수 저장
         req._responseDataCount = data.length;
-        
+
         res.json(responseData);
     } catch (err) {
         logTableError('todocodigos', 'list todocodigos', err, req);

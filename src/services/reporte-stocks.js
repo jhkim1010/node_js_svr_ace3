@@ -400,6 +400,13 @@ async function getStocksReport(req) {
      *   ref_id_todocodigo: number            // Todocodigo 참조 ID
      * }
      */
+    // 참조 테이블 데이터 조회 (tipos, temporadas, color)
+    const [tipos, temporadas, colores] = await Promise.all([
+        sequelize.query('SELECT id_tipo, tpdesc FROM tipos WHERE borrado = false ORDER BY tpdesc', { type: Sequelize.QueryTypes.SELECT }),
+        sequelize.query('SELECT id_temporada, temporada_nombre FROM temporadas WHERE borrado = false ORDER BY temporada_nombre', { type: Sequelize.QueryTypes.SELECT }),
+        sequelize.query('SELECT id_color, descripcioncolor FROM color WHERE borrado = false ORDER BY descripcioncolor', { type: Sequelize.QueryTypes.SELECT }),
+    ]);
+
     return {
         filters: {
             sucursal: sucursal || 'all',
@@ -423,7 +430,10 @@ async function getStocksReport(req) {
             hasMore: hasMore,
             nextMaxUtime: nextMaxUtime
         },
-        resumen_del_dia: resumenDelDia || []
+        resumen_del_dia: resumenDelDia || [],
+        tipos,
+        temporadas,
+        colores
     };
 }
 
