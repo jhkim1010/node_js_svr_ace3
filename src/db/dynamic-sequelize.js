@@ -226,10 +226,12 @@ function getDynamicSequelize(host, port, database, user, password, ssl = false) 
     return sequelize;
 }
 
-module.exports = { 
-    getDynamicSequelize, 
-    connectionPool, 
-    getTotalPoolUsage, 
-    TOTAL_POOL_MAX 
+module.exports = {
+    getDynamicSequelize,
+    connectionPool,
+    getTotalPoolUsage,
+    TOTAL_POOL_MAX,
+    isDockerEnvironment,
+    getDefaultDbHost
 };
 

@@ -17,6 +17,7 @@ function defineVendedoresModel(sequelize) {
         bpresente: { type: DataTypes.BOOLEAN, allowNull: true },
         utime: { type: DataTypes.DATE, allowNull: true },
         borrado: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
+        uuid_vendedore: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
     }, {
         tableName: 'vendedores',
         schema: 'public',

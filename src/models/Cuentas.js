@@ -27,6 +27,8 @@ function defineCuentasModel(sequelize) {
             allowNull: true,
             defaultValue: false,
         },
+        uuid_cuenta: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+        uuid_cuentas: { type: DataTypes.UUID, allowNull: true },
     }, {
         tableName: 'cuentas',
         schema: 'public',

@@ -48,10 +48,12 @@ function defineClientesModel(sequelize) {
         allowNull: true,
         defaultValue: 0,
     },
+    ref_uuid_vendedore: { type: DataTypes.UUID, allowNull: true },
     direccion_transp: { type: DataTypes.STRING(500), allowNull: true },
     localidad_transp: { type: DataTypes.STRING(100), allowNull: true },
     prov_transp: { type: DataTypes.STRING(50), allowNull: true },
     codigo_postal: { type: DataTypes.STRING(10), allowNull: true },
+    uuid_cliente: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
 }, {
     tableName: 'clientes',
     schema: 'public',

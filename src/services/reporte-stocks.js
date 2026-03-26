@@ -23,7 +23,15 @@ async function getStocksReport(req) {
     // color_id 파라미터 확인 (ref_id_color 필터링용)
     const colorId = req.body?.color_id || req.query?.color_id;
     const colorIdInt = colorId ? parseInt(colorId, 10) : null;
-    
+
+    // tipo_id 파라미터 확인 (categoria 필터링용 - todocodigos.ref_id_tipo)
+    const tipoId = req.body?.tipo_id || req.query?.tipo_id;
+    const tipoIdInt = tipoId ? parseInt(tipoId, 10) : null;
+
+    // temporada_id 파라미터 확인 (temporada 필터링용)
+    const temporadaId = req.body?.temporada_id || req.query?.temporada_id;
+    const temporadaIdInt = temporadaId ? parseInt(temporadaId, 10) : null;
+
     const sortColumn = req.body?.sort_column || req.query?.sort_column || req.body?.sortBy || req.query?.sortBy;
     const sortAscending = req.body?.sort_ascending !== undefined 
         ? (req.body?.sort_ascending === 'true' || req.body?.sort_ascending === true)
@@ -44,60 +52,67 @@ async function getStocksReport(req) {
     let orderByField;
     let idField;
 
+    // tipo_id 또는 temporada_id 필터 시 todocodigos JOIN 필요 여부
+    const needTodocodigosJoinForBcolorview = (tipoIdInt !== null && !isNaN(tipoIdInt)) || (temporadaIdInt !== null && !isNaN(temporadaIdInt));
+    // bcolorview=false에서 tipo_id 필터 시 codigos → todocodigos 2단계 참조 필요
+    const needCodigosJoin = !!(colorIdInt !== null || tipoIdInt !== null || temporadaIdInt !== null);
+
     if (bcolorview) {
         // valor1이 1인 경우: screendetails2_total_id 조회
         orderByField = 'ref_id_todocodigo';
         idField = 'ref_id_todocodigo';
         query = `
-            SELECT 
-                s.tcode, 
-                s.tdesc, 
-                s.fecha1 as first_date, 
-                s.fecha2 as last_date, 
-                s.pre1, 
-                s.pre2, 
-                s.pre3, 
-                s.pre4, 
+            SELECT
+                s.tcode,
+                s.tdesc,
+                s.fecha1 as first_date,
+                s.fecha2 as last_date,
+                s.pre1,
+                s.pre2,
+                s.pre3,
+                s.pre4,
                 s.pre5,
-                s.totaling3, 
-                s.totalventa3, 
-                s.todaying3, 
-                s.todayvnt3, 
-                s.totalreservado3, 
-                s.cntoffset3, 
-                s.stockreal3, 
-                s.porcentaje, 
-                s.sucursal, 
+                s.totaling3,
+                s.totalventa3,
+                s.todaying3,
+                s.todayvnt3,
+                s.totalreservado3,
+                s.cntoffset3,
+                s.stockreal3,
+                s.porcentaje,
+                s.sucursal,
                 s.ref_id_todocodigo
             FROM public.screendetails2_total_id s
+            ${needTodocodigosJoinForBcolorview ? 'LEFT JOIN todocodigos tc ON s.ref_id_todocodigo = tc.id_todocodigo' : ''}
         `;
     } else {
         // valor1이 0이거나 없는 경우: screendetails2_id 조회
         orderByField = 'id_codigo1';
         idField = 'id_codigo1';
         query = `
-            SELECT 
-                s.codigo, 
-                s.descripcion, 
-                s.fecha1 as first_date, 
-                s.fecha2 as last_date, 
-                s.pre1, 
-                s.pre2, 
-                s.pre3, 
-                s.pre4, 
-                s.pre5, 
-                s.totaling, 
-                s.totalventa, 
-                s.todayingreso, 
-                s.todayventa, 
-                s.totalreservado, 
-                s.cntoffset, 
-                s.stockreal, 
-                s.porcentaje, 
-                s.sucursal, 
-                s.id_codigo1 
+            SELECT
+                s.codigo,
+                s.descripcion,
+                s.fecha1 as first_date,
+                s.fecha2 as last_date,
+                s.pre1,
+                s.pre2,
+                s.pre3,
+                s.pre4,
+                s.pre5,
+                s.totaling,
+                s.totalventa,
+                s.todayingreso,
+                s.todayventa,
+                s.totalreservado,
+                s.cntoffset,
+                s.stockreal,
+                s.porcentaje,
+                s.sucursal,
+                s.id_codigo1
             FROM public.screendetails2_id s
-            ${colorIdInt !== null ? 'LEFT JOIN codigos c ON s.id_codigo1 = c.id_codigo' : ''}
+            ${needCodigosJoin ? 'LEFT JOIN codigos c ON s.id_codigo1 = c.id_codigo' : ''}
+            ${(tipoIdInt !== null && !isNaN(tipoIdInt)) ? 'LEFT JOIN todocodigos tc ON c.ref_id_todocodigo = tc.id_todocodigo' : ''}
         `;
     }
 
@@ -118,6 +133,32 @@ async function getStocksReport(req) {
             whereConditions.push(`c.ref_id_color = $${paramIndex}`);
         }
         queryParams.push(colorIdInt);
+        paramIndex++;
+    }
+
+    // tipo_id 필터 추가 (categoria - todocodigos.ref_id_tipo)
+    if (tipoIdInt !== null && !isNaN(tipoIdInt)) {
+        if (bcolorview) {
+            // screendetails2_total_id: todocodigos JOIN으로 직접 필터
+            whereConditions.push(`tc.ref_id_tipo = $${paramIndex}`);
+        } else {
+            // screendetails2_id: codigos → todocodigos 2단계 JOIN으로 필터
+            whereConditions.push(`tc.ref_id_tipo = $${paramIndex}`);
+        }
+        queryParams.push(tipoIdInt);
+        paramIndex++;
+    }
+
+    // temporada_id 필터 추가
+    if (temporadaIdInt !== null && !isNaN(temporadaIdInt)) {
+        if (bcolorview) {
+            // screendetails2_total_id: todocodigos.ref_id_temporada로 필터
+            whereConditions.push(`tc.ref_id_temporada = $${paramIndex}`);
+        } else {
+            // screendetails2_id: codigos.ref_id_temporada로 직접 필터
+            whereConditions.push(`c.ref_id_temporada = $${paramIndex}`);
+        }
+        queryParams.push(temporadaIdInt);
         paramIndex++;
     }
 
@@ -199,13 +240,15 @@ async function getStocksReport(req) {
         countQuery = `
             SELECT COUNT(*) as total
             FROM public.screendetails2_total_id s
+            ${needTodocodigosJoinForBcolorview ? 'LEFT JOIN todocodigos tc ON s.ref_id_todocodigo = tc.id_todocodigo' : ''}
             ${whereClause}
         `;
     } else {
         countQuery = `
             SELECT COUNT(*) as total
             FROM public.screendetails2_id s
-            ${colorIdInt !== null ? 'LEFT JOIN codigos c ON s.id_codigo1 = c.id_codigo' : ''}
+            ${needCodigosJoin ? 'LEFT JOIN codigos c ON s.id_codigo1 = c.id_codigo' : ''}
+            ${(tipoIdInt !== null && !isNaN(tipoIdInt)) ? 'LEFT JOIN todocodigos tc ON c.ref_id_todocodigo = tc.id_todocodigo' : ''}
             ${whereClause}
         `;
     }
@@ -365,7 +408,9 @@ async function getStocksReport(req) {
             filtering_word: filteringWord || null,
             sort_column: validSortBy,
             sort_ascending: sortAscending,
-            color_id: colorIdInt
+            color_id: colorIdInt,
+            tipo_id: tipoIdInt,
+            temporada_id: temporadaIdInt
         },
         summary: {
             total_items: stocks.length,

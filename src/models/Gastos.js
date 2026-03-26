@@ -21,6 +21,7 @@ function defineGastosModel(sequelize) {
         codigo: { type: DataTypes.STRING(30), allowNull: true },
         utime_modificado: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('now()') },
         d_num_caja: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 1 },
+        uuid_gasto: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
     }, {
         tableName: 'gastos',
         schema: 'public',

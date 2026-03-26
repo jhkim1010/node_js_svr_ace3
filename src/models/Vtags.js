@@ -10,6 +10,8 @@ function defineVtagsModel(sequelize) {
     },
     ref_id_vcode: { type: DataTypes.INTEGER, allowNull: true },
     ref_id_cuenta: { type: DataTypes.INTEGER, allowNull: true },
+    ref_uuid_vcode: { type: DataTypes.UUID, allowNull: true },
+    ref_uuid_cuenta: { type: DataTypes.UUID, allowNull: true },
     num_autorizacion: { type: DataTypes.STRING(50), allowNull: true },
     fmonto: { type: DataTypes.DOUBLE, allowNull: true },
     b_por_cobranza: {
@@ -37,6 +39,7 @@ function defineVtagsModel(sequelize) {
         allowNull: true,
         defaultValue: Sequelize.literal('now()'),
     },
+    uuid_vtag: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
 }, {
     tableName: 'vtags',
     schema: 'public',

@@ -60,6 +60,8 @@ function defineCreditoventasModel(sequelize) {
     },
     ref_id_cliente: { type: DataTypes.INTEGER, allowNull: true },
     ref_id_vcode: { type: DataTypes.INTEGER, allowNull: true },
+    ref_uuid_cliente: { type: DataTypes.UUID, allowNull: true },
+    ref_uuid_vcode: { type: DataTypes.UUID, allowNull: true },
     b_utilizado_x_descuento: {
         type: DataTypes.BOOLEAN,
         allowNull: true,
@@ -70,6 +72,7 @@ function defineCreditoventasModel(sequelize) {
         allowNull: true,
         defaultValue: Sequelize.literal('now()'),
     },
+    uuid_creditoventa: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
 }, {
     tableName: 'creditoventas',
     schema: 'public',

@@ -32,6 +32,8 @@ function defineTodocodigosModel(sequelize) {
     ref_id_tipo: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
     ref_id_origen: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
     ref_id_empresa: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
+    ref_uuid_temporada: { type: DataTypes.UUID, allowNull: true },
+    ref_uuid_tipo: { type: DataTypes.UUID, allowNull: true },
     memo: { type: DataTypes.STRING(1000), allowNull: true },
     estatus_precios: { type: DataTypes.STRING(20), allowNull: true, defaultValue: 'NO' },
     tprecio_dolar: { type: DataTypes.DOUBLE, allowNull: true, defaultValue: 0 },
@@ -41,6 +43,8 @@ function defineTodocodigosModel(sequelize) {
     d_oferta_mode: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
     id_serial: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
     str_prefijo: { type: DataTypes.STRING(5), allowNull: true },
+    uuid_todocodigo: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_todocodigos: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'todocodigos',
     schema: 'public',

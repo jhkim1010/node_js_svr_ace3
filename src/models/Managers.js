@@ -1,4 +1,4 @@
-const { DataTypes } = require('sequelize');
+const { DataTypes, Sequelize } = require('sequelize');
 
 function defineManagersModel(sequelize) {
     return sequelize.define('Managers', {
@@ -30,6 +30,7 @@ function defineManagersModel(sequelize) {
             type: DataTypes.DATE,
             allowNull: true,
         },
+        uuid_manager: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
     }, {
         tableName: 'managers',
         schema: 'public',

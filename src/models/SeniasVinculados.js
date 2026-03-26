@@ -14,8 +14,11 @@ function defineSeniasVinculadosModel(sequelize) {
         utime: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('now()') },
         ref_id_vcode: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
         ref_id_cliente: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
+        ref_uuid_vcode: { type: DataTypes.UUID, allowNull: true },
+        ref_uuid_cliente: { type: DataTypes.UUID, allowNull: true },
         borrado: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
         sucursal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 2 },
+        uuid_senias_vinculado: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
     }, {
         tableName: 'senias_vinculados',
         schema: 'public',

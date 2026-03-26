@@ -42,12 +42,15 @@ function defineCodigosModel(sequelize) {
     },
     ref_id_todocodigo: { type: DataTypes.INTEGER, allowNull: true },
     ref_id_color: { type: DataTypes.INTEGER, allowNull: true },
-    str_talle: { type: DataTypes.STRING(10), allowNull: true },
     ref_id_temporada: {
         type: DataTypes.INTEGER,
         allowNull: true,
         defaultValue: 0,
     },
+    ref_uuid_todocodigo: { type: DataTypes.UUID, allowNull: true },
+    ref_uuid_color: { type: DataTypes.UUID, allowNull: true },
+    ref_uuid_temporada: { type: DataTypes.UUID, allowNull: true },
+    str_talle: { type: DataTypes.STRING(10), allowNull: true },
     ref_id_talle: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -76,6 +79,8 @@ function defineCodigosModel(sequelize) {
         allowNull: true,
         defaultValue: 0,
     },
+    uuid_codigo: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_codigos: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'codigos',
     schema: 'public',

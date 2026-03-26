@@ -1,32 +1,8 @@
 const WebSocket = require('ws');
 const { Pool } = require('pg');
 
-// 기본 DB 호스트 결정 (Docker 환경이면 host.docker.internal, 아니면 127.0.0.1)
-function isDockerEnvironment() {
-    try {
-        const fs = require('fs');
-        return process.env.DOCKER === 'true' || 
-               process.env.IN_DOCKER === 'true' ||
-               fs.existsSync('/.dockerenv') ||
-               process.env.HOSTNAME?.includes('docker') ||
-               process.cwd() === '/home/node/app';
-    } catch (e) {
-        return false;
-    }
-}
-
-function getDefaultDbHost() {
-    // 환경 변수 DB_HOST가 있으면 우선 사용
-    if (process.env.DB_HOST) {
-        return process.env.DB_HOST;
-    }
-    // Docker 환경이면 host.docker.internal 사용
-    if (isDockerEnvironment()) {
-        return 'host.docker.internal';
-    }
-    // 로컬 환경이면 127.0.0.1 사용
-    return '127.0.0.1';
-}
+// isDockerEnvironment, getDefaultDbHost는 dynamic-sequelize.js에서 가져옴 (중복 제거)
+const { getDefaultDbHost } = require('../db/dynamic-sequelize');
 
 function getDefaultDbPort() {
     return process.env.DB_PORT || '5432';

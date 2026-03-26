@@ -48,9 +48,12 @@ function defineVcodeModel(sequelize) {
     ref_id_media: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 1 },
     ref_id_provincia: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
     ref_id_deposito: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
+    ref_uuid_cliente: { type: DataTypes.UUID, allowNull: true },
+    ref_uuid_vendedore: { type: DataTypes.UUID, allowNull: true },
     d_num_caja: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 1 },
     d_num_terminal: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 1 },
     b_cancelado: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
+    uuid_vcode: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
 }, {
     tableName: 'vcodes',
     schema: 'public',

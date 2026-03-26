@@ -11,6 +11,8 @@ function defineOnlineVentasModel(sequelize) {
     ref_id_vcode: { type: DataTypes.INTEGER, allowNull: true },
     ref_id_vcode_pagado: { type: DataTypes.INTEGER, allowNull: true },
     ref_id_encargado_envio: { type: DataTypes.INTEGER, allowNull: true },
+    ref_uuid_vcode: { type: DataTypes.UUID, allowNull: true },
+    ref_uuid_vcode_pagado: { type: DataTypes.UUID, allowNull: true },
     utime_registrado: {
         type: DataTypes.DATE,
         allowNull: true,
@@ -47,6 +49,7 @@ function defineOnlineVentasModel(sequelize) {
         allowNull: true,
         defaultValue: false,
     },
+    uuid_online_venta: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
 }, {
     tableName: 'online_ventas',
     schema: 'public',

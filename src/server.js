@@ -18,6 +18,7 @@ const { displayBuildInfo } = require('./utils/build-info');
 const { startMonitoring, getMonitoringStatus, startPostgresConnectionMonitoring } = require('./services/monitoring-service');
 const { startTelegramPolling } = require('./services/telegram-command-handler');
 const { logTableError } = require('./utils/error-handler');
+const { getDefaultDbHost: getDefaultHost } = require('./db/dynamic-sequelize');
 
 const app = express();
 // HTTP 서버를 Express 없이 생성하여 ws 라이브러리가 upgrade 이벤트를 처리할 수 있도록 함
@@ -170,22 +171,8 @@ app.post('/api/health', async (req, res) => {
         
         // Sequelize를 사용하여 연결 테스트
         const { Sequelize } = require('sequelize');
-        // host가 없으면 기본값 결정 (Docker 환경 감지)
-        const getDefaultDbHost = () => {
-            if (process.env.DB_HOST) return process.env.DB_HOST;
-            try {
-                const fs = require('fs');
-                const isDocker = process.env.DOCKER === 'true' || 
-                               process.env.IN_DOCKER === 'true' ||
-                               fs.existsSync('/.dockerenv') ||
-                               process.env.HOSTNAME?.includes('docker') ||
-                               process.cwd() === '/home/node/app';
-                return isDocker ? 'host.docker.internal' : '127.0.0.1';
-            } catch (e) {
-                return '127.0.0.1';
-            }
-        };
-        dbHost = (host || process.env.DB_HOST || getDefaultDbHost()).toString().trim();
+        // host가 없으면 기본값 결정 (dynamic-sequelize.js의 getDefaultDbHost 사용)
+        dbHost = (host || process.env.DB_HOST || getDefaultHost()).toString().trim();
         // port가 없거나 빈 값이면 기본값 5432 사용 (PostgreSQL 기본 포트, 오류 없이)
         if (port && port.toString().trim() !== '') {
             const parsedPort = parseInt(port.toString().trim(), 10);

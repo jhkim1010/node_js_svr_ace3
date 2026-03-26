@@ -36,6 +36,7 @@ function defineLogsModel(sequelize) {
         allowNull: true,
         defaultValue: Sequelize.literal("nextval('log_seq'::regclass)"),
     },
+    uuid_log: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
 }, {
     tableName: 'logs',
     schema: 'public',

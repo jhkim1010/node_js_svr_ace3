@@ -19,6 +19,7 @@ function defineColorModel(sequelize) {
         allowNull: true,
         defaultValue: Sequelize.literal("nextval('color_seq'::regclass)"),
     },
+    uuid_color: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
 }, {
     tableName: 'color',
     schema: 'public',

@@ -25,6 +25,7 @@ function defineTiposModel(sequelize) {
         unique: true,
         defaultValue: Sequelize.literal("nextval('tipo_seq'::regclass)"),
     },
+    uuid_tipo: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
 }, {
     tableName: 'tipos',
     schema: 'public',
