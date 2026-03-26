@@ -53,7 +53,7 @@ function defineVcodeModel(sequelize) {
     d_num_caja: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 1 },
     d_num_terminal: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 1 },
     b_cancelado: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
-    uuid_vcode: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_vcode: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'vcodes',
     schema: 'public',

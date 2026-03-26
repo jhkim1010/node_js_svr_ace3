@@ -72,7 +72,7 @@ function defineCreditoventasModel(sequelize) {
         allowNull: true,
         defaultValue: Sequelize.literal('now()'),
     },
-    uuid_creditoventa: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_creditoventa: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'creditoventas',
     schema: 'public',

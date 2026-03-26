@@ -49,7 +49,7 @@ function defineOnlineVentasModel(sequelize) {
         allowNull: true,
         defaultValue: false,
     },
-    uuid_online_venta: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_online_venta: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'online_ventas',
     schema: 'public',

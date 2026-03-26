@@ -40,7 +40,7 @@ function defineFventasModel(sequelize) {
         ref_id_vcode: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
         ref_uuid_vcode: { type: DataTypes.UUID, allowNull: true },
         b_sincronizado_node_svr: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
-        uuid_fventa: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+        uuid_fventa: { type: DataTypes.UUID, allowNull: true },
     }, {
         tableName: 'fventas',
         schema: 'public',

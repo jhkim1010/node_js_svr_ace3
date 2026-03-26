@@ -43,7 +43,7 @@ function defineTodocodigosModel(sequelize) {
     d_oferta_mode: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
     id_serial: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
     str_prefijo: { type: DataTypes.STRING(5), allowNull: true },
-    uuid_todocodigo: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_todocodigo: { type: DataTypes.UUID, allowNull: true },
     uuid_todocodigos: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'todocodigos',

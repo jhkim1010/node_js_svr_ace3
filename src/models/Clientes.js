@@ -53,7 +53,7 @@ function defineClientesModel(sequelize) {
     localidad_transp: { type: DataTypes.STRING(100), allowNull: true },
     prov_transp: { type: DataTypes.STRING(50), allowNull: true },
     codigo_postal: { type: DataTypes.STRING(10), allowNull: true },
-    uuid_cliente: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_cliente: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'clientes',
     schema: 'public',

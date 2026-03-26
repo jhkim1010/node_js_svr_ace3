@@ -18,7 +18,7 @@ function defineSeniasVinculadosModel(sequelize) {
         ref_uuid_cliente: { type: DataTypes.UUID, allowNull: true },
         borrado: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
         sucursal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 2 },
-        uuid_senias_vinculado: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+        uuid_senias_vinculado: { type: DataTypes.UUID, allowNull: true },
     }, {
         tableName: 'senias_vinculados',
         schema: 'public',

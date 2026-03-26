@@ -30,7 +30,7 @@ function defineManagersModel(sequelize) {
             type: DataTypes.DATE,
             allowNull: true,
         },
-        uuid_manager: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+        uuid_manager: { type: DataTypes.UUID, allowNull: true },
     }, {
         tableName: 'managers',
         schema: 'public',

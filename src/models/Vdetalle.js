@@ -44,7 +44,7 @@ function defineVdetalleModel(sequelize) {
     utime_modificado: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('now()') },
     is_oferta: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
     d_oferta_mode: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
-    uuid_vdetalle: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_vdetalle: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'vdetalle',
     schema: 'public',

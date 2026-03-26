@@ -39,7 +39,7 @@ function defineVtagsModel(sequelize) {
         allowNull: true,
         defaultValue: Sequelize.literal('now()'),
     },
-    uuid_vtag: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_vtag: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'vtags',
     schema: 'public',

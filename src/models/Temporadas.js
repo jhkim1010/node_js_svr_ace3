@@ -21,7 +21,7 @@ function defineTemporadasModel(sequelize) {
             allowNull: true,
             defaultValue: false,
         },
-        uuid_temporada: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+        uuid_temporada: { type: DataTypes.UUID, allowNull: true },
         uuid_temporadas: { type: DataTypes.UUID, allowNull: true },
     }, {
         tableName: 'temporadas',

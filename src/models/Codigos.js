@@ -79,7 +79,7 @@ function defineCodigosModel(sequelize) {
         allowNull: true,
         defaultValue: 0,
     },
-    uuid_codigo: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_codigo: { type: DataTypes.UUID, allowNull: true },
     uuid_codigos: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'codigos',

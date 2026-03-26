@@ -10,7 +10,7 @@ function defineGastoInfoModel(sequelize) {
         },
         codigo: { type: DataTypes.STRING(20), allowNull: false, primaryKey: true },
         desc_gasto: { type: DataTypes.STRING(40), allowNull: true },
-        uuid_gasto_info: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+        uuid_gasto_info: { type: DataTypes.UUID, allowNull: true },
     }, {
         tableName: 'gasto_info',
         schema: 'public',

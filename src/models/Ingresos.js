@@ -50,7 +50,7 @@ function defineIngresosModel(sequelize) {
     casoesp: { type: DataTypes.STRING(20), allowNull: true },
     utime_modificado: { type: DataTypes.DATE, allowNull: true, defaultValue: Sequelize.literal('now()') },
     id_ingreso_centralizado: { type: DataTypes.INTEGER, allowNull: true },
-    uuid_ingreso: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_ingreso: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'ingresos',
     schema: 'public',

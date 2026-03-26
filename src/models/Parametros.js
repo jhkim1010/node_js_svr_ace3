@@ -8,7 +8,7 @@ function defineParametrosModel(sequelize) {
     valor2: { type: DataTypes.STRING(100), allowNull: true },
     valor3: { type: DataTypes.STRING(100), allowNull: true },
     opcion: { type: DataTypes.STRING(30), allowNull: false, defaultValue: '1', primaryKey: true },
-    uuid_parametro: { type: DataTypes.UUID, allowNull: true, defaultValue: Sequelize.literal('gen_random_uuid()') },
+    uuid_parametro: { type: DataTypes.UUID, allowNull: true },
 }, {
     tableName: 'parametros',
     schema: 'public',
