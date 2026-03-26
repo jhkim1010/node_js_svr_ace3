@@ -1,4 +1,4 @@
-const { getModelForRequest } = require('../models/model-factory');
+const { getValidatedModelForRequest } = require('../models/model-factory');
 
 /**
  * bcolorview와 b4mayor 값을 데이터베이스에서 조회하여 req 객체에 저장하는 미들웨어
@@ -20,8 +20,8 @@ async function loadBcolorview(req, res, next) {
             return next();
         }
 
-        // Parametros 모델 가져오기
-        const Parametros = getModelForRequest(req, 'Parametros');
+        // Parametros 모델 가져오기 (스키마 검증 완료 후 반환)
+        const Parametros = await getValidatedModelForRequest(req, 'Parametros');
 
         // 두 파라미터를 병렬로 조회
         const [bcolorviewParam, b4mayorParam] = await Promise.all([
