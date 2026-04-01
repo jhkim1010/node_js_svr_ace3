@@ -42,7 +42,22 @@ async function loadBcolorview(req, res, next) {
             })
         ]);
 
-        // bcolorview 처리
+        // 클라이언트에서 bcolorview=0 파라메터가 오면 DB 값 무시하고 false로 설정
+        const queryBcolorview = req.query.bcolorview;
+        if (queryBcolorview === '0' || queryBcolorview === 0) {
+            req.bcolorview = false;
+            req.bcolorviewValor1 = '0';
+
+            // b4mayor 처리 (is_mayorista)
+            const is_mayoristaValor1 = b4mayorParam ? b4mayorParam.valor1 : null;
+            const is_mayorista = is_mayoristaValor1 === '1' || is_mayoristaValor1 === 1;
+            req.is_mayorista = is_mayorista;
+            req.is_mayoristaValor1 = is_mayoristaValor1;
+
+            return next();
+        }
+
+        // bcolorview 처리 (DB에서 가져온 값 사용)
         const bcolorviewValor1 = bcolorviewParam ? bcolorviewParam.valor1 : null;
         const bcolorview = bcolorviewValor1 === '1' || bcolorviewValor1 === 1;
 
