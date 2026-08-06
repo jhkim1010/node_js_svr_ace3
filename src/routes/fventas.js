@@ -27,6 +27,51 @@ const COMPROBANTE_MAP = {
     52: { grupo: 'notas_debito',  letra: 'M' },
 };
 
+// 문자 코드(tipofactura) → 보고서 구분
+//
+// 이 DB 가 실제로 쓰는 형식이다. fventas.tipofactura 에 들어 있는 값은
+// 'A', 'B', 'NCA', 'NCB' 처럼 문자이지 AFIP 숫자 코드가 아니다.
+// 숫자 코드만 보면 전부 otros 로 빠지고 total 이 0 이 된다.
+//
+// 'C' 는 Factura C 다 — 발행자가 monotributista 인 경우에만 발행되며 판매다.
+// (resumen_del_dia 쪽 notaCreditoTypes 는 'C' 를 Nota de Crédito 로 넣어두었는데
+//  그건 잘못된 목록이다. 여기서 따라가지 않는다.)
+const LETRA_MAP = {
+    'A':   { grupo: 'facturas',      letra: 'A' },
+    'B':   { grupo: 'facturas',      letra: 'B' },
+    'C':   { grupo: 'facturas',      letra: 'C' },
+    'M':   { grupo: 'facturas',      letra: 'M' },
+    'NCA': { grupo: 'notas_credito', letra: 'A' },
+    'NCB': { grupo: 'notas_credito', letra: 'B' },
+    'NCC': { grupo: 'notas_credito', letra: 'C' },
+    'NCM': { grupo: 'notas_credito', letra: 'M' },
+    'NDA': { grupo: 'notas_debito',  letra: 'A' },
+    'NDB': { grupo: 'notas_debito',  letra: 'B' },
+    'NDC': { grupo: 'notas_debito',  letra: 'C' },
+    'NDM': { grupo: 'notas_debito',  letra: 'M' },
+};
+
+/**
+ * tipofactura 값을 그룹/letra 로 해석한다. 문자 코드를 먼저 보고, 아니면 숫자 코드로 본다.
+ *
+ * 순서가 중요하다: 'NCA' 에 replace(/\D/g,'') 를 먼저 걸면 빈 문자열이 되어
+ * parseInt 가 NaN 을 내고 매핑을 놓친다.
+ *
+ * @param {string|number|null|undefined} tipofactura
+ * @returns {{grupo: string, letra: string}|undefined} 모르는 코드면 undefined
+ */
+function resolveComprobante(tipofactura) {
+    const raw = String(tipofactura ?? '').trim().toUpperCase();
+    if (!raw) return undefined;
+
+    const porLetra = LETRA_MAP[raw];
+    if (porLetra) return porLetra;
+
+    // '01', '1', '001' 모두 같은 코드로 취급
+    const codigo = parseInt(raw.replace(/\D/g, ''), 10);
+    return COMPROBANTE_MAP[codigo];
+}
+
 // 총합계에서의 부호: 팩투라와 노타 데 데비토는 가산, 노타 데 크레디토는 차감
 const GRUPO_SIGNO = { facturas: 1, notas_debito: 1, notas_credito: -1 };
 
@@ -72,9 +117,7 @@ function buildFventasSummary(rows) {
     for (const row of rows) {
         const count = parseInt(row.count, 10) || 0;
         const monto = parseFloat(row.sum_monto) || 0;
-        // '01', '1', '001' 모두 같은 코드로 취급
-        const codigo = parseInt(String(row.tipofactura ?? '').replace(/\D/g, ''), 10);
-        const info = COMPROBANTE_MAP[codigo];
+        const info = resolveComprobante(row.tipofactura);
 
         if (!info) {
             // 매핑되지 않은 코드는 부호를 알 수 없으므로 total에 넣지 않고 별도로 노출한다
