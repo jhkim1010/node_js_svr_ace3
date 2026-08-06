@@ -310,7 +310,23 @@ router.get('/', async (req, res) => {
             },
             limit: limit + 1, // 다음 배치 존재 여부 확인을 위해 1개 더 조회
             offset: offset,
-            order: [['fecha', 'ASC']] // fecha 오름차순 정렬
+            // fecha 오름차순. 뒤의 세 칼럼은 동점을 가르기 위한 것이다.
+            //
+            // fecha 는 DATEONLY 라 같은 날 행이 수십~수백 건씩 겹치는데, 그것만으로
+            // 정렬하면 같은 날 행들 사이의 순서가 보장되지 않는다. OFFSET 이 커지면
+            // PostgreSQL 이 top-N heapsort 에서 full sort 로 실행 계획을 바꾸고,
+            // 그때 동점 행의 순서가 달라진다. 그러면 페이지 경계에서 같은 행이 두 번
+            // 오거나 아예 건너뛰어진다.
+            //
+            // borrado=false 로 걸러진 집합에서 (numfactura, tipofactura, sucursal) 은
+            // 유일하다(인덱스 fventa2.pr). 이 셋을 붙이면 정렬이 전순서가 되어
+            // 같은 조건이면 항상 같은 순서가 나온다.
+            order: [
+                ['fecha', 'ASC'],
+                ['sucursal', 'ASC'],
+                ['tipofactura', 'ASC'],
+                ['numfactura', 'ASC']
+            ]
         });
         
         // 다음 배치가 있는지 확인
