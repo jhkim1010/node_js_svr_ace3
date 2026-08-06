@@ -1,0 +1,216 @@
+{
+  "_nota": "예시 파일입니다. 실제 응답의 data[]에는 limit(100)만큼 들어오지만 여기서는 8건만 발췌했습니다. summary/pagination 숫자는 498건 전체 기준입니다.",
+  "_request": "GET /fventas?fecha_inicio=2025-12-01&fecha_fin=2025-12-31&sucursal=2",
+  "data": [
+    {
+      "fecha": "2025-12-01",
+      "hora": "09:14:22",
+      "dni": "20304050",
+      "clientenombre": "Consumidor Final",
+      "monto": 45000,
+      "numfactura": "00012345",
+      "tipofactura": "06",
+      "cae": "75012345678901",
+      "tipo_pago": "EFECTIVO",
+      "sucursal": 2
+    },
+    {
+      "fecha": "2025-12-01",
+      "hora": "11:02:47",
+      "dni": "30712345678",
+      "clientenombre": "DISTRIBUIDORA SUR SRL",
+      "monto": 484000,
+      "numfactura": "00000876",
+      "tipofactura": "01",
+      "cae": "75012345678902",
+      "tipo_pago": "TRANSFERENCIA",
+      "sucursal": 2
+    },
+    {
+      "fecha": "2025-12-02",
+      "hora": "16:38:05",
+      "dni": "27889011",
+      "clientenombre": "Lucía Fernández",
+      "monto": 121000,
+      "numfactura": "00012346",
+      "tipofactura": "06",
+      "cae": "75012345678903",
+      "tipo_pago": "TARJETA",
+      "sucursal": 2
+    },
+    {
+      "fecha": "2025-12-03",
+      "hora": "10:21:33",
+      "dni": "30712345678",
+      "clientenombre": "DISTRIBUIDORA SUR SRL",
+      "monto": 96800,
+      "numfactura": "00000112",
+      "tipofactura": "03",
+      "cae": "75012345678904",
+      "tipo_pago": "CTA CTE",
+      "sucursal": 2
+    },
+    {
+      "fecha": "2025-12-03",
+      "hora": "18:55:10",
+      "dni": "24556677",
+      "clientenombre": "Consumidor Final",
+      "monto": 78650,
+      "numfactura": "00012347",
+      "tipofactura": "06",
+      "cae": "75012345678905",
+      "tipo_pago": "EFECTIVO",
+      "sucursal": 2
+    },
+    {
+      "fecha": "2025-12-04",
+      "hora": "12:07:59",
+      "dni": "33445566",
+      "clientenombre": "MAYORISTA NORTE SA",
+      "monto": 60500,
+      "numfactura": "00000045",
+      "tipofactura": "02",
+      "cae": "75012345678906",
+      "tipo_pago": "TRANSFERENCIA",
+      "sucursal": 2
+    },
+    {
+      "fecha": "2025-12-05",
+      "hora": "15:44:18",
+      "dni": "29001122",
+      "clientenombre": "Consumidor Final",
+      "monto": 33880,
+      "numfactura": "00012348",
+      "tipofactura": "06",
+      "cae": "75012345678907",
+      "tipo_pago": "TARJETA",
+      "sucursal": 2
+    },
+    {
+      "fecha": "2025-12-06",
+      "hora": "09:58:41",
+      "dni": "30998877",
+      "clientenombre": "TEXTIL ANDINA SRL",
+      "monto": 302500,
+      "numfactura": "00000877",
+      "tipofactura": "01",
+      "cae": "75012345678908",
+      "tipo_pago": "CHEQUE",
+      "sucursal": 2
+    }
+  ],
+  "summary": {
+    "iva_rate": 0.21,
+    "monto_incluye_iva": true,
+    "facturas": {
+      "subtotal": {
+        "count": 463,
+        "monto": 71450500,
+        "neto": 59050000,
+        "iva": 12400500
+      },
+      "A": {
+        "count": 48,
+        "monto": 18150000,
+        "neto": 15000000,
+        "iva": 3150000
+      },
+      "B": {
+        "count": 412,
+        "monto": 52393000,
+        "neto": 43300000,
+        "iva": 9093000
+      },
+      "C": {
+        "count": 0,
+        "monto": 0,
+        "neto": 0,
+        "iva": 0
+      },
+      "M": {
+        "count": 3,
+        "monto": 907500,
+        "neto": 750000,
+        "iva": 157500
+      }
+    },
+    "notas_debito": {
+      "subtotal": {
+        "count": 14,
+        "monto": 762300,
+        "neto": 630000,
+        "iva": 132300
+      },
+      "A": {
+        "count": 5,
+        "monto": 423500,
+        "neto": 350000,
+        "iva": 73500
+      },
+      "B": {
+        "count": 9,
+        "monto": 338800,
+        "neto": 280000,
+        "iva": 58800
+      },
+      "C": {
+        "count": 0,
+        "monto": 0,
+        "neto": 0,
+        "iva": 0
+      },
+      "M": {
+        "count": 0,
+        "monto": 0,
+        "neto": 0,
+        "iva": 0
+      }
+    },
+    "notas_credito": {
+      "subtotal": {
+        "count": 21,
+        "monto": 3509000,
+        "neto": 2900000,
+        "iva": 609000
+      },
+      "A": {
+        "count": 4,
+        "monto": 1210000,
+        "neto": 1000000,
+        "iva": 210000
+      },
+      "B": {
+        "count": 17,
+        "monto": 2299000,
+        "neto": 1900000,
+        "iva": 399000
+      },
+      "C": {
+        "count": 0,
+        "monto": 0,
+        "neto": 0,
+        "iva": 0
+      },
+      "M": {
+        "count": 0,
+        "monto": 0,
+        "neto": 0,
+        "iva": 0
+      }
+    },
+    "otros": [],
+    "total": {
+      "count": 498,
+      "monto": 68703800,
+      "neto": 56780000,
+      "iva": 11923800
+    }
+  },
+  "pagination": {
+    "count": 100,
+    "total": 498,
+    "hasMore": true,
+    "offset": 0,
+    "limit": 100
+  }
+}

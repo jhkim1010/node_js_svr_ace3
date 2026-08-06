@@ -10,6 +10,99 @@ const { processBatchedArray } = require('../utils/batch-processor');
 
 const router = Router();
 
+// AFIP comprobante 코드(tipofactura) → 보고서 구분
+// 01/06/11/51 = Factura A/B/C/M, 03/08/13/53 = Nota de Crédito, 02/07/12/52 = Nota de Débito
+const COMPROBANTE_MAP = {
+    1:  { grupo: 'facturas',      letra: 'A' },
+    6:  { grupo: 'facturas',      letra: 'B' },
+    11: { grupo: 'facturas',      letra: 'C' },
+    51: { grupo: 'facturas',      letra: 'M' },
+    3:  { grupo: 'notas_credito', letra: 'A' },
+    8:  { grupo: 'notas_credito', letra: 'B' },
+    13: { grupo: 'notas_credito', letra: 'C' },
+    53: { grupo: 'notas_credito', letra: 'M' },
+    2:  { grupo: 'notas_debito',  letra: 'A' },
+    7:  { grupo: 'notas_debito',  letra: 'B' },
+    12: { grupo: 'notas_debito',  letra: 'C' },
+    52: { grupo: 'notas_debito',  letra: 'M' },
+};
+
+// 총합계에서의 부호: 팩투라와 노타 데 데비토는 가산, 노타 데 크레디토는 차감
+const GRUPO_SIGNO = { facturas: 1, notas_debito: 1, notas_credito: -1 };
+
+const LETRAS = ['A', 'B', 'C', 'M'];
+
+// monto는 IVA 21% 포함 금액이므로 역산: iva = monto * 21/121, neto = monto - iva
+const IVA_RATE = 0.21;
+
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+const emptyBucket = () => ({ count: 0, monto: 0, neto: 0, iva: 0 });
+
+// 부호(1 또는 -1)를 적용해 버킷에 누적. 반올림은 마지막에 한 번만 수행한다
+function addToBucket(bucket, count, monto, signo = 1) {
+    const iva = monto * IVA_RATE / (1 + IVA_RATE);
+    bucket.count += count;
+    bucket.monto += monto * signo;
+    bucket.neto += (monto - iva) * signo;
+    bucket.iva += iva * signo;
+}
+
+const roundBucket = (b) => ({
+    count: b.count,
+    monto: round2(b.monto),
+    neto: round2(b.neto),
+    iva: round2(b.iva),
+});
+
+/**
+ * tipofactura별 집계 결과를 factura / nota de crédito / nota de débito 구분으로 정리한다.
+ * @param {Array<{tipofactura: string, count: string|number, sum_monto: string|number}>} rows GROUP BY 결과
+ * @returns {Object} summary 블록
+ */
+function buildFventasSummary(rows) {
+    const grupos = {};
+    for (const grupo of Object.keys(GRUPO_SIGNO)) {
+        grupos[grupo] = { subtotal: emptyBucket() };
+        for (const letra of LETRAS) grupos[grupo][letra] = emptyBucket();
+    }
+    const otros = new Map();
+    const total = emptyBucket();
+
+    for (const row of rows) {
+        const count = parseInt(row.count, 10) || 0;
+        const monto = parseFloat(row.sum_monto) || 0;
+        // '01', '1', '001' 모두 같은 코드로 취급
+        const codigo = parseInt(String(row.tipofactura ?? '').replace(/\D/g, ''), 10);
+        const info = COMPROBANTE_MAP[codigo];
+
+        if (!info) {
+            // 매핑되지 않은 코드는 부호를 알 수 없으므로 total에 넣지 않고 별도로 노출한다
+            const key = String(row.tipofactura ?? '');
+            if (!otros.has(key)) otros.set(key, emptyBucket());
+            addToBucket(otros.get(key), count, monto);
+            continue;
+        }
+
+        // 그룹별 소계는 항상 양수, 부호는 최종 합계에만 적용
+        addToBucket(grupos[info.grupo][info.letra], count, monto);
+        addToBucket(grupos[info.grupo].subtotal, count, monto);
+        addToBucket(total, count, monto, GRUPO_SIGNO[info.grupo]);
+    }
+
+    const summary = { iva_rate: IVA_RATE, monto_incluye_iva: true };
+    for (const [grupo, buckets] of Object.entries(grupos)) {
+        summary[grupo] = { subtotal: roundBucket(buckets.subtotal) };
+        for (const letra of LETRAS) summary[grupo][letra] = roundBucket(buckets[letra]);
+    }
+    summary.otros = Array.from(otros.entries()).map(([tipofactura, bucket]) => ({
+        tipofactura,
+        ...roundBucket(bucket),
+    }));
+    summary.total = roundBucket(total);
+    return summary;
+}
+
 router.get('/', async (req, res) => {
     try {
         const Fventas = getModelForRequest(req, 'Fventas');
@@ -133,12 +226,27 @@ router.get('/', async (req, res) => {
         }
         
         // 총 데이터 개수 조회
-        const totalCount = await Fventas.count({ 
+        const totalCount = await Fventas.count({
             where: {
                 [Op.and]: whereConditions
             }
         });
-        
+
+        // tipofactura별 집계 (페이지네이션과 무관하게 조회 조건 전체 기간이 대상)
+        const summaryRows = await Fventas.findAll({
+            attributes: [
+                'tipofactura',
+                [sequelize.fn('COUNT', sequelize.col('*')), 'count'],
+                [sequelize.fn('SUM', sequelize.col('monto')), 'sum_monto']
+            ],
+            where: {
+                [Op.and]: whereConditions
+            },
+            group: ['tipofactura'],
+            raw: true
+        });
+        const summary = buildFventasSummary(summaryRows);
+
         // 100개 단위로 제한
         const limit = 100;
         const records = await Fventas.findAll({ 
@@ -169,6 +277,7 @@ router.get('/', async (req, res) => {
         // 페이지네이션 정보와 함께 응답
         const responseData = {
             data: data,
+            summary: summary,
             pagination: {
                 count: data.length,
                 total: totalCount,
@@ -238,7 +347,6 @@ router.post('/', async (req, res) => {
         // 단일 생성/업데이트 요청도 utime 비교 + primary key 우선 순서 적용
         const rawData = req.body.new_data || req.body;
         req.body.data = Array.isArray(rawData) ? rawData : [rawData];
-        image.png   
         const result = await handleUtimeComparisonArrayData(req, res, Fventas, compositePrimaryKey, 'Fventas');
 
         // 첫 번째 결과를 기반으로 응답 구성
