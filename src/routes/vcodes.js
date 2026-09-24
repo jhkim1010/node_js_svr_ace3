@@ -8,6 +8,7 @@ const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError, buildDatabaseErrorResponse, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
+const { syncDebug } = require('../utils/sync-debug');
 
 const router = Router();
 
@@ -60,6 +61,7 @@ router.post('/', async (req, res) => {
     
     try {
         const Vcode = getModelForRequest(req, 'Vcode');
+        syncDebug('Vcode', `POST /vcodes | operation=${req.body.operation || '(없음)'} | data=${Array.isArray(req.body.data) ? `array(${req.body.data.length})` : typeof req.body.data} | handler=${req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data) ? 'BATCH_SYNC 전용 핸들러' : (Array.isArray(req.body.data) && req.body.data.length > 0 ? 'handleUtimeComparisonArrayData' : 'handleSingleItem')}`);
         
         // BATCH_SYNC 작업 처리 (Vcodes 전용 핸들러 사용)
         // vcodes는 vcode_id와 sucursal의 복합 unique key를 사용
@@ -160,6 +162,8 @@ router.put('/:id', async (req, res) => {
         const transaction = await sequelize.transaction();
         try {
             const [count] = await Vcode.update(dataToUpdate, { where: { vcode_id: id }, transaction });
+            // 주의: where 에 sucursal 이 없어 같은 vcode_id 를 가진 다른 sucursal 행까지 수정될 수 있음
+            syncDebug('Vcode', `PUT /vcodes/${id} 단일 UPDATE | where={ vcode_id: ${id} } (sucursal 조건 없음) | 영향 행 수 = ${count}`, { bodySucursal: req.body.sucursal });
             if (count === 0) {
                 await transaction.rollback();
                 return res.status(404).json({ error: 'Not found' });

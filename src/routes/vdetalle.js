@@ -7,6 +7,7 @@ const { handleSingleItem } = require('../utils/single-item-handler');
 const { notifyDbChange, notifyBatchSync } = require('../utils/websocket-notifier');
 const { handleInsertUpdateError, logTableError } = require('../utils/error-handler');
 const { processBatchedArray } = require('../utils/batch-processor');
+const { syncDebug } = require('../utils/sync-debug');
 
 const router = Router();
 
@@ -50,6 +51,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const Vdetalle = getModelForRequest(req, 'Vdetalle');
+        syncDebug('Vdetalle', `POST /vdetalle | operation=${req.body.operation || '(없음)'} | data=${Array.isArray(req.body.data) ? `array(${req.body.data.length})` : typeof req.body.data} | handler=${req.body.operation === 'BATCH_SYNC' && Array.isArray(req.body.data) ? 'BATCH_SYNC 전용 핸들러' : (Array.isArray(req.body.data) && req.body.data.length > 0 ? 'handleUtimeComparisonArrayData' : 'handleSingleItem')}`);
         
         // BATCH_SYNC 작업 처리 (Vdetalle 전용 핸들러 사용)
         // vdetalle는 (sucursal, id_vdetalle) unique 제약 사용. skip/update는 utime 기준.
@@ -110,6 +112,8 @@ router.put('/:id', async (req, res) => {
         const transaction = await sequelize.transaction();
         try {
             const [count] = await Vdetalle.update(dataToUpdate, { where: { id_vdetalle: id }, transaction });
+            // 주의: where 에 sucursal 이 없어 같은 id_vdetalle 를 가진 다른 sucursal 행까지 수정될 수 있음
+            syncDebug('Vdetalle', `PUT /vdetalle/${id} 단일 UPDATE | where={ id_vdetalle: ${id} } (sucursal 조건 없음) | 영향 행 수 = ${count}`, { bodySucursal: req.body.sucursal });
             if (count === 0) {
                 await transaction.rollback();
                 return res.status(404).json({ error: 'Not found' });

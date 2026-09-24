@@ -1,6 +1,7 @@
 // Vdetalle 테이블 전용 핸들러
 const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKey, buildWhereCondition, isUniqueConstraintError } = require('./batch-sync-handler');
 const { classifyError } = require('./error-classifier');
+const { syncDebug } = require('./sync-debug');
 
 async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
     // 데이터 개수를 req에 저장 (로깅용)
@@ -53,7 +54,13 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
                         const keysToRemove = Array.isArray(availableUniqueKey) ? availableUniqueKey : [availableUniqueKey];
                         keysToRemove.forEach(key => delete updateData[key]);
                         
+                        // Vdetalle BATCH_SYNC 는 utime 비교 없이 무조건 UPDATE (client utime 이 더 오래돼도 덮어씀)
                         const [count] = await Model.update(updateData, { where: whereCondition, transaction });
+                        syncDebug(modelName, `BATCH_SYNC Item ${i + 1}: 기존 레코드 발견 → UPDATE 영향 행 수 = ${count}`, {
+                            where: whereCondition,
+                            clientUtime: filteredItem.utime,
+                            serverUtime: existingRecord.utime
+                        });
                         
                         if (count > 0) {
                             // UPDATE 성공 - 후속 작업에서 에러가 발생해도 UPDATE는 성공한 것으로 간주
@@ -300,6 +307,10 @@ async function handleVdetalleBatchSync(req, res, Model, primaryKey, modelName) {
         }
         
         if (errors.length > 0) {
+            syncDebug(modelName, `BATCH_SYNC: ${errors.length}건 실패 → 트랜잭션 전체 ROLLBACK. 응답의 updated/created 결과도 실제로는 DB에 반영되지 않음`, {
+                failed: errors.map(e => ({ index: e.index, error: e.error })),
+                rolledBackSuccessCount: results.length
+            });
             // 트랜잭션이 아직 완료되지 않았는지 확인
             if (transaction && !transaction.finished) {
                 await transaction.rollback();

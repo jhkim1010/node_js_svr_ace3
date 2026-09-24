@@ -4,6 +4,7 @@ const { removeSyncField, filterModelFields, getUniqueKeys, findAvailableUniqueKe
 const { classifyError } = require('./error-classifier');
 const { convertUtimeToString, extractUtimeStringFromRecord, shouldUpdateBasedOnUtime } = require('./utime-helpers');
 const { convertUtimeToSequelizeLiteral } = require('./utime-helpers');
+const { syncDebug, summarizeItem, explainUtimeCompare } = require('./sync-debug');
 
 async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
     // 데이터 개수를 req에 저장 (로깅용)
@@ -79,6 +80,10 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                         
                         // utime 비교: 클라이언트 utime이 더 높을 때만 업데이트
                         const shouldUpdate = shouldUpdateBasedOnUtime(clientUtimeStr, serverUtimeStr);
+                        syncDebug(modelName, `BATCH_SYNC Item ${i + 1}: 기존 레코드 발견 → ${shouldUpdate ? 'UPDATE' : 'SKIP'}`, {
+                            where: whereCondition,
+                            utime: explainUtimeCompare(clientUtimeStr, serverUtimeStr)
+                        });
                         
                         if (shouldUpdate) {
                             const updateData = { ...filteredItem };
@@ -91,6 +96,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                             }
                             
                             const [count] = await Model.update(updateData, { where: whereCondition, transaction });
+                            syncDebug(modelName, `BATCH_SYNC Item ${i + 1}: UPDATE 영향 행 수 = ${count}`, { where: whereCondition });
                             
                             if (count > 0) {
                                 const updated = Array.isArray(availableUniqueKey)
@@ -195,6 +201,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                             console.log(`[Vcodes BatchSync] ${dbName} | Item ${i + 1}/${req.body.data.length}: SKIPPED | vcode_id=${identifier.vcode_id}, sucursal=${identifier.sucursal} | ${resultItem.reason_en}`);
                         }
                     } else {
+                        syncDebug(modelName, `BATCH_SYNC Item ${i + 1}: 기존 레코드 없음 → INSERT`, { where: whereCondition });
                         // 레코드가 없으면 INSERT 시도
                         try {
                             const createData = { ...filteredItem };
@@ -382,6 +389,7 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
                         }
                     }
                 } else {
+                    syncDebug(modelName, `BATCH_SYNC Item ${i + 1}: 사용 가능한 unique key 없음 → INSERT`, summarizeItem(filteredItem, primaryKey));
                     // unique key가 없으면 INSERT 시도
                     try {
                         const createData = { ...filteredItem };
@@ -471,6 +479,10 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
         }
         
         if (errors.length > 0) {
+            syncDebug(modelName, `BATCH_SYNC: ${errors.length}건 실패 → 트랜잭션 전체 ROLLBACK. 응답의 updated/created 결과도 실제로는 DB에 반영되지 않음`, {
+                failed: errors.map(e => ({ index: e.index, error: e.error })),
+                rolledBackSuccessCount: results.length
+            });
             // 트랜잭션이 아직 완료되지 않았는지 확인
             if (transaction && !transaction.finished) {
                 await transaction.rollback();

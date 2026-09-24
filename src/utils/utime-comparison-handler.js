@@ -5,8 +5,9 @@ const { processBatchedArray } = require('./batch-processor');
 const { convertUtimeToString, convertUtimeToSequelizeLiteral } = require('./utime-helpers');
 const { findRecordByPrimaryKey, processRecordWithUtimeComparison, handlePrimaryKeyConflict } = require('./utime-record-operations');
 const { logErrorWithLocation, logInfoWithLocation } = require('./log-utils');
-const { getTableHandlerConfig, requiresSpecialHandling } = require('./table-handler-config');
+const { getTableHandlerConfig, requiresSpecialHandling, tableHandlerConfigs } = require('./table-handler-config');
 const { formatColumnMissingMessage } = require('./error-handler');
+const { syncDebug, summarizeItem, probeExistingRecord } = require('./sync-debug');
 
 /**
  * 레코드 식별자 정보를 추출하는 헬퍼 함수
@@ -100,6 +101,15 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
         // preferredUniqueKeys를 앞에 추가
         uniqueKeys = [...tableConfig.preferredUniqueKeys, ...uniqueKeys];
     }
+
+    const debugKeys = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
+    const willUsePrimaryKeyFirst = !!(requiresSpecialHandling(modelName) && tableConfig.usePrimaryKeyFirst);
+    syncDebug(modelName, `handleUtimeComparisonArrayData 진입 | operation=${operation} | items=${Array.isArray(req.body.data) ? req.body.data.length : 0} | primaryKey=${JSON.stringify(primaryKey)}`, {
+        configFound: Object.prototype.hasOwnProperty.call(tableHandlerConfigs, modelName),
+        usePrimaryKeyFirst: !!tableConfig.usePrimaryKeyFirst,
+        useCustomHandler: !!tableConfig.useCustomHandler,
+        path: willUsePrimaryKeyFirst ? '기존 레코드 조회 → utime 비교 → UPDATE/SKIP' : '⚠️ 조회 없이 곧바로 INSERT (UPDATE 불가)'
+    });
 
     // Ingresos: 동일 (ingreso_id, sucursal, bmovido)가 한 요청에 중복되면 마지막 항목만 처리 (중복 처리·로그 감소)
     if (modelName === 'Ingresos' && Array.isArray(req.body.data) && req.body.data.length > 1) {
@@ -1966,6 +1976,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                     //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] [ELSE] Model.create 호출 직전 | ${identifierStr}`);
                     // }
                     
+                    syncDebug(modelName, `Item ${i + 1}: [ELSE] INSERT 경로 진입`, summarizeItem(filteredItem, debugKeys));
+                    await probeExistingRecord(Model, modelName, filteredItem, debugKeys, clientUtimeStr, transaction);
+
                     try {
                         const created = await Model.create(createData, { transaction });
                         
@@ -2059,6 +2072,9 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
             if (createData.utime) {
                 createData.utime = convertUtimeToSequelizeLiteral(createData.utime);
             }
+
+            syncDebug(modelName, `Item ${i + 1}: [OUTSIDE] INSERT 경로 진입 (기존 레코드 조회 없음)`, summarizeItem(filteredItem, debugKeys));
+            await probeExistingRecord(Model, modelName, filteredItem, debugKeys, clientUtimeStr, transaction);
             
             try {
                 const created = await Model.create(createData, { transaction });
@@ -2129,6 +2145,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
 
             const errorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
             const itemErrorMsg = itemErr.original ? itemErr.original.message : itemErr.message;
+            syncDebug(modelName, `Item ${i + 1}: FAILED | code=${errorCode || 'N/A'} | ${errorMsg}`, summarizeItem(req.body.data[i], debugKeys));
             const columnMissingLine = formatColumnMissingMessage(itemErr);
             const displayError = columnMissingLine
                 ? columnMissingLine
