@@ -108,17 +108,23 @@ router.put('/:id', async (req, res) => {
         const dataToUpdate = filterModelFields(Vdetalle, cleanedData);
         
         // 트랜잭션 사용하여 원자성 보장
+        // (id, sucursal) 복합 unique: sucursal 이 오면 해당 sucursal 행만 수정 (다른 sucursal 의 같은 id 보호)
+        const where = { id_vdetalle: id };
+        if (req.body.sucursal !== undefined && req.body.sucursal !== null) {
+            where.sucursal = req.body.sucursal;
+            delete dataToUpdate.sucursal;
+        }
+        
         const sequelize = Vdetalle.sequelize;
         const transaction = await sequelize.transaction();
         try {
-            const [count] = await Vdetalle.update(dataToUpdate, { where: { id_vdetalle: id }, transaction });
-            // 주의: where 에 sucursal 이 없어 같은 id_vdetalle 를 가진 다른 sucursal 행까지 수정될 수 있음
-            syncDebug('Vdetalle', `PUT /vdetalle/${id} 단일 UPDATE | where={ id_vdetalle: ${id} } (sucursal 조건 없음) | 영향 행 수 = ${count}`, { bodySucursal: req.body.sucursal });
+            const [count] = await Vdetalle.update(dataToUpdate, { where, transaction });
+            syncDebug('Vdetalle', `PUT ${req.baseUrl}/${id} 단일 UPDATE | where=${JSON.stringify(where)} | 영향 행 수 = ${count}`);
             if (count === 0) {
                 await transaction.rollback();
                 return res.status(404).json({ error: 'Not found' });
             }
-            const updated = await Vdetalle.findByPk(id, { transaction });
+            const updated = await Vdetalle.findOne({ where, transaction });
             await transaction.commit();
             await notifyDbChange(req, Vdetalle, 'update', updated);
             res.json(updated);

@@ -78,14 +78,23 @@ const tableHandlerConfigs = {
         preferredUniqueKeys: [['ingreso_id', 'sucursal', 'bmovido']]
     },
     
-    // Vcodes: 전용 핸들러 사용 (vcodes-handler.js)
-    Vcodes: {
+    // Vcode: BATCH_SYNC 는 전용 핸들러(vcodes-handler.js), 그 외 배열 UPDATE 는 primary key 조회 + utime 비교
+    // routes/vcodes.js 가 modelName 'Vcode' 로 호출하므로 키도 'Vcode' 여야 함
+    Vcode: {
+        usePrimaryKeyFirst: true,
+        useUtimeComparison: true,
+        retryWithAllUniqueKeys: true,
+        skipOnUniqueConstraintError: false,
         useCustomHandler: true,
         handlerModule: './vcodes-handler'
     },
     
-    // Vdetalle: 전용 핸들러 사용 (vdetalle-handler.js)
+    // Vdetalle: BATCH_SYNC 는 전용 핸들러(vdetalle-handler.js), 그 외 배열 UPDATE 는 primary key 조회 + utime 비교
     Vdetalle: {
+        usePrimaryKeyFirst: true,
+        useUtimeComparison: true,
+        retryWithAllUniqueKeys: true,
+        skipOnUniqueConstraintError: false,
         useCustomHandler: true,
         handlerModule: './vdetalle-handler'
     },

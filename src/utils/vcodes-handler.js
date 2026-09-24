@@ -520,6 +520,20 @@ async function handleVcodesBatchSync(req, res, Model, primaryKey, modelName) {
             };
         }
         
+        // 실패로 트랜잭션 전체가 롤백된 경우: 성공으로 보고된 항목도 DB 에 반영되지 않았으므로
+        // results 에서 빼서 클라이언트가 동기화 완료로 표시하지 않고, websocket 으로도 알리지 않게 함
+        if (errors.length > 0) {
+            result.success = false;
+            result.rolledBack = true;
+            result.message = `Vcodes processing rolled back: ${errors.length} failed, so none of the ${results.length} other items were saved`;
+            result.rolledBackResults = results.map(r => ({ ...r, action: 'rolled_back', originalAction: r.action }));
+            result.results = [];
+            result.processed = 0;
+            result.created = 0;
+            result.updated = 0;
+            if (result.skipped !== undefined) result.skipped = 0;
+        }
+        
         return result;
     } catch (err) {
         // 에러 발생 시 트랜잭션 롤백

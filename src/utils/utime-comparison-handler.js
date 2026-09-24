@@ -128,7 +128,8 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
     }
 
     // 각 항목을 독립적인 트랜잭션으로 하나씩 처리
-    for (let i = 0; i < req.body.data.length; i++) {
+    // 성공/스킵 후 '다음 항목으로' 는 continue itemLoop (그냥 continue 는 25P02 재시도 루프를 돌아 같은 항목을 최대 4번 처리함)
+    itemLoop: for (let i = 0; i < req.body.data.length; i++) {
         const maxAttempts = 4; // 25P02 시 최대 4회 시도 (동시 요청/연결 풀 이슈 완화)
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const transaction = await sequelize.transaction({
@@ -214,7 +215,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     if (transaction && !transaction.finished) {
                                         await transaction.commit();
                                     }
-                                    continue;
+                                    continue itemLoop;
                                 }
                                 
                                 if (resultPk.action === 'skipped') {
@@ -236,7 +237,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     if (transaction && !transaction.finished) {
                                         await transaction.commit();
                                     }
-                                    continue;
+                                    continue itemLoop;
                                 } // end if (resultPk.action === 'skipped') - preferredUniqueKeys 조회 결과
                                 
                                 if (resultPk.action === 'not_found') {
@@ -253,7 +254,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     // if (modelName === 'Ingresos') {
                                     //     logInfoWithLocation(`${dbName} ${modelName} [DEBUG] 예상치 못한 action: ${resultPk.action} | continue`);
                                     // }
-                                    continue;
+                                    continue itemLoop;
                                 } // end else of if (resultPk.action === 'not_found')
                             } catch (preferredKeyErr) {
                                 // 에러 발생 시 primary key 조회로 진행
@@ -334,7 +335,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                                 
                                 // primary key 기반 처리 완료 → 다음 아이템으로
-                                continue;
+                                continue itemLoop;
                             } // end if (resultPk.action === 'updated') - primary key 조회 결과
 
                             if (resultPk.action === 'skipped') { // primary key 조회 결과 - skipped
@@ -359,7 +360,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                 }
                                 
                                 // primary key 기반 처리 완료 → 다음 아이템으로
-                                continue;
+                                continue itemLoop;
                             } // end if (resultPk.action === 'skipped') - primary key 조회 결과
                             // resultPk.action === 'not_found' 인 경우만 INSERT 시도로 진행
                         } catch (pkErr) { // catch of primary key 조회 try 블록
@@ -409,7 +410,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     await transaction.commit();
                                 }
                                 
-                                continue;
+                                continue itemLoop;
                                 } else {
                                     // skip하지 않는 경우 에러로 처리
                                     throw pkErr;
@@ -583,7 +584,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             await transaction.commit();
                                         }
                                         
-                                        continue;
+                                        continue itemLoop;
                                     } // end if (resultRetry.action === 'updated') - primary key retry 결과
 
                                     if (resultRetry.action === 'skipped') { // primary key retry 결과 - skipped
@@ -608,7 +609,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                             await transaction.commit();
                                         }
                                         
-                                        continue;
+                                        continue itemLoop;
                                     } // end if (resultRetry.action === 'skipped') - primary key retry 결과
                                 } catch (retryErr) {
                                     // retry 실패 시 다른 unique key로 시도
@@ -706,7 +707,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                                     await transaction.commit();
                                 }
                                 
-                                continue;
+                                continue itemLoop;
                             } // end if (retrySuccess) - retry 성공
 
                             // Primary key로 retry 실패하거나 primary key를 사용할 수 없는 경우
@@ -813,7 +814,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                         await transaction.commit();
                     } // end if (transaction && !transaction.finished) - Codigos/Todocodigos 처리 완료
                     
-                    continue;
+                    continue itemLoop;
                 } // end if (useUtimeComparison) - useUtimeComparison 블록 종료
                 
                 // UPDATE operation 처리 (기존 공통 로직 - Codigos, Todocodigos 이외에서 사용)
