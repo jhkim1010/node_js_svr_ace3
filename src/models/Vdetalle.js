@@ -1,7 +1,8 @@
 const { DataTypes, Sequelize } = require('sequelize');
+const { attachIdentityGuard } = require('./identity-guard');
 
 function defineVdetalleModel(sequelize) {
-    return sequelize.define('Vdetalle', {
+    const model = sequelize.define('Vdetalle', {
     id_vdetalle: {
         type: DataTypes.INTEGER,
         primaryKey: true,
@@ -63,6 +64,8 @@ function defineVdetalleModel(sequelize) {
         { name: 'item_ventas_sucursal_preuni', fields: ['codigo1', 'sucursal', 'preuni'] },
     ],
     });
+    attachIdentityGuard(model, 'vcode1');
+    return model;
 }
 
 module.exports = { defineVdetalleModel };

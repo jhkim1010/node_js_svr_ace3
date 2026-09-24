@@ -1,7 +1,8 @@
 const { DataTypes, Sequelize } = require('sequelize');
+const { attachIdentityGuard } = require('./identity-guard');
 
 function defineVcodeModel(sequelize) {
-    return sequelize.define('Vcode', {
+    const model = sequelize.define('Vcode', {
     vcode_id: {
         type: DataTypes.INTEGER,
         primaryKey: true,
@@ -62,6 +63,8 @@ function defineVcodeModel(sequelize) {
         { unique: true, name: 'vcodes_unique', fields: ['vcode_id', 'sucursal'] },
     ],
     });
+    attachIdentityGuard(model, 'vcode');
+    return model;
 }
 
 // 정적 모델은 lazy하게 생성 (실제 사용 시에만)
