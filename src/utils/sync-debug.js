@@ -95,7 +95,61 @@ async function probeExistingRecord(Model, modelName, filteredItem, keys, clientU
     }
 }
 
+// UPDATE 대상 행이 정말 "같은" 레코드인지 확인하기 위한 식별 필드
+const IDENTITY_FIELDS = {
+    Vcode: ['vcode', 'fecha', 'tpago', 'cntropas', 'd_num_terminal', 'borrado'],
+    Vdetalle: ['vcode1', 'codigo1', 'cant1', 'precio', 'fecha1', 'ref_id_vcode', 'borrado']
+};
+
+// primary key 로 찾은 기존 행과 들어온 행을 비교: 키만 같고 내용이 다른 판매면 id 충돌(다른 단말기/시퀀스 리셋) 의심
+async function probeUpdateTarget(Model, modelName, dbName, index, filteredItem, where, clientUtimeStr, transaction) {
+    if (!isSyncDebugEnabled(modelName)) return;
+    const fields = (IDENTITY_FIELDS[modelName] || []).filter(f => Model.rawAttributes && Model.rawAttributes[f]);
+    const sequelize = Model.sequelize;
+    const sp = `sp_vsync_target_${Date.now()}`;
+    try {
+        await sequelize.query(`SAVEPOINT ${sp}`, { transaction });
+    } catch (_) {
+        return;
+    }
+    try {
+        const existing = await Model.findOne({
+            where,
+            transaction,
+            attributes: [...fields, [Sequelize.literal('utime::text'), 'utime_str']],
+            raw: true
+        });
+        await sequelize.query(`RELEASE SAVEPOINT ${sp}`, { transaction });
+        if (!existing) {
+            syncDebug(modelName, `${dbName} Item ${index + 1}: 기존 행 없음 → INSERT 예정`, { where });
+            return;
+        }
+        const diffs = {};
+        for (const f of fields) {
+            if (!(f in filteredItem)) continue;
+            const incoming = filteredItem[f];
+            const stored = existing[f];
+            if (String(incoming ?? '') !== String(stored ?? '')) diffs[f] = { incoming, stored };
+        }
+        const identityKey = modelName === 'Vdetalle' ? 'vcode1' : 'vcode';
+        const collision = identityKey in diffs;
+        syncDebug(modelName, `${dbName} Item ${index + 1}: 기존 행 발견${collision ? ` ⚠️ ${identityKey} 다름 → 다른 판매와 id 충돌 의심 (덮어쓰기 위험)` : ''}`, {
+            where,
+            diffs,
+            utime: explainUtimeCompare(clientUtimeStr, existing.utime_str)
+        });
+    } catch (probeErr) {
+        syncDebug(modelName, `${dbName} Item ${index + 1}: target probe 실패: ${probeErr.message}`, { where });
+        try {
+            await sequelize.query(`ROLLBACK TO SAVEPOINT ${sp}`, { transaction });
+        } catch (_) {
+            // 무시
+        }
+    }
+}
+
 module.exports = {
+    probeUpdateTarget,
     isSyncDebugEnabled,
     syncDebug,
     summarizeItem,

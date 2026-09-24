@@ -7,7 +7,7 @@ const { findRecordByPrimaryKey, processRecordWithUtimeComparison, handlePrimaryK
 const { logErrorWithLocation, logInfoWithLocation } = require('./log-utils');
 const { getTableHandlerConfig, requiresSpecialHandling, tableHandlerConfigs } = require('./table-handler-config');
 const { formatColumnMissingMessage } = require('./error-handler');
-const { syncDebug, summarizeItem, probeExistingRecord } = require('./sync-debug');
+const { syncDebug, summarizeItem, probeExistingRecord, probeUpdateTarget } = require('./sync-debug');
 
 /**
  * 레코드 식별자 정보를 추출하는 헬퍼 함수
@@ -313,6 +313,7 @@ async function handleUtimeComparisonArrayData(req, res, Model, primaryKey, model
                             }, {});
 
                             if (canUsePrimaryKey && Object.keys(primaryKeyWhere).length === primaryKeyArray.length) {
+                            await probeUpdateTarget(Model, modelName, dbName, i, filteredItem, primaryKeyWhere, clientUtimeStr, transaction);
                             try {
                                 const resultPk = await processRecordWithUtimeComparison(
                                     Model,
